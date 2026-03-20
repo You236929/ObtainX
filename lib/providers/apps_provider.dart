@@ -46,7 +46,8 @@ final pm = AndroidPackageManager();
 final packageInfoFlags = PackageInfoFlags({PMFlag.getSigningCertificates});
 
 /// True if both versions are equal or one is a prefix of the other with a
-/// non-digit next (e.g. 50.5.19 and 50.5.19-31 [0] [PR] 879778031).
+/// non-digit next (e.g. 50.5.19 and 50.5.19-31 [0] [PR] 879778031), or both
+/// contain the same commit-hash-like token (6+ hex chars), e.g. 1.5.3-DEV (75094D8) vs debug-75094d8.
 /// Avoids false match of 1.0 in 10.0 by requiring boundary after the shorter.
 bool versionsEffectivelyEqual(String installed, String latest) {
   if (installed == latest) return true;
@@ -65,11 +66,50 @@ bool versionsEffectivelyEqual(String installed, String latest) {
               !_isDigit(installed.codeUnitAt(latestLen))))) {
     return true;
   }
+  // Same build when both contain the same commit-hash-like token (e.g. OS version "1.5.3-DEV (75094D8)" vs release "debug-75094d8")
+  final hexPattern = RegExp(r'[0-9a-fA-F]{6,}');
+  final installedHashes = hexPattern.allMatches(installed).map((m) => m.group(0)!.toLowerCase()).toSet();
+  final latestHashes = hexPattern.allMatches(latest).map((m) => m.group(0)!.toLowerCase()).toSet();
+  if (installedHashes.intersection(latestHashes).isNotEmpty) {
+    return true;
+  }
   return false;
 }
 
 bool _isDigit(int codeUnit) =>
     codeUnit >= 0x30 && codeUnit <= 0x39; // '0'..'9'
+
+/// Compare version strings by numeric segments (e.g. 2.0.0 vs 1.9.9).
+/// Returns -1 if [installed] < [latest], 0 if equal, 1 if [installed] > [latest], null if not comparable.
+int? compareVersionsByNumericSegments(String installed, String latest) {
+  final installedSegments = RegExp(r'\d+')
+      .allMatches(installed)
+      .map((m) => int.tryParse(m.group(0)!) ?? 0)
+      .toList();
+  final latestSegments = RegExp(r'\d+')
+      .allMatches(latest)
+      .map((m) => int.tryParse(m.group(0)!) ?? 0)
+      .toList();
+  if (installedSegments.isEmpty || latestSegments.isEmpty) return null;
+  final maxLen = installedSegments.length > latestSegments.length
+      ? installedSegments.length
+      : latestSegments.length;
+  for (int i = 0; i < maxLen; i++) {
+    final inst = i < installedSegments.length ? installedSegments[i] : 0;
+    final lat = i < latestSegments.length ? latestSegments[i] : 0;
+    if (inst < lat) return -1;
+    if (inst > lat) return 1;
+  }
+  return 0;
+}
+
+/// True if we should not show "update available" because installed is newer than or equal to latest by version math.
+bool installedVersionIsNewerOrEqual(String? installed, String latest) {
+  if (installed == null || installed.isEmpty || latest.isEmpty) return false;
+  if (installed == latest || versionsEffectivelyEqual(installed, latest)) return true;
+  final cmp = compareVersionsByNumericSegments(installed, latest);
+  return cmp == null ? false : cmp >= 0;
+}
 
 /// Track-only open URL: RSS release page when [App.changeLog] is http(s), else [App.url].
 String trackOnlyDownloadPageUrl(App app) {
@@ -1623,18 +1663,26 @@ class AppsProvider with ChangeNotifier {
     }
     // SECOND, RECONCILE DIFFERENCES BETWEEN THE APP'S REPORTED AND REAL INSTALLED VERSIONS, WHERE NEITHER IS NULL
     if (realInstalledVersion != null &&
-        realInstalledVersion != app.installedVersion &&
-        versionDetectionIsStandard) {
-      // App's reported version and real version don't match (and it uses standard version detection)
-      // If they share a standard format (and are still different under it), update the reported version accordingly
-      var correctedInstalledVersion = reconcileVersionDifferences(
-        realInstalledVersion,
-        app.installedVersion!,
-      );
-      if (correctedInstalledVersion?.key == false) {
-        app.installedVersion = correctedInstalledVersion!.value;
-        modded = true;
-      } else if (naiveStandardVersionDetection) {
+        realInstalledVersion != app.installedVersion) {
+      var syncedFromDevice = false;
+      if (versionDetectionIsStandard) {
+        // App's reported version and real version don't match (and it uses standard version detection)
+        var correctedInstalledVersion = reconcileVersionDifferences(
+          realInstalledVersion,
+          app.installedVersion!,
+        );
+        if (correctedInstalledVersion?.key == false) {
+          app.installedVersion = correctedInstalledVersion!.value;
+          modded = true;
+          syncedFromDevice = true;
+        } else if (naiveStandardVersionDetection) {
+          app.installedVersion = realInstalledVersion;
+          modded = true;
+          syncedFromDevice = true;
+        }
+      }
+      if (!syncedFromDevice) {
+        // Device is source of truth; sync when reconciliation did not apply or failed (e.g. user updated via Play Store)
         app.installedVersion = realInstalledVersion;
         modded = true;
       }
@@ -1656,9 +1704,11 @@ class AppsProvider with ChangeNotifier {
     }
     // FOURTH, DISABLE VERSION DETECTION IF ENABLED AND THE REPORTED/REAL INSTALLED VERSIONS ARE NOT STANDARDIZED
     // Skip for track-only: do not set installedVersion = latestVersion, so "update available" can still show
+    // Do not disable when installed and latest are effectively equal (e.g. same commit hash); user may have enabled "reconcile" for that case
     if (!trackOnly &&
         installedInfo != null &&
         versionDetectionIsStandard &&
+        !versionsEffectivelyEqual(app.installedVersion!, app.latestVersion) &&
         !isVersionDetectionPossible(
           AppInMemory(app, null, installedInfo, null),
         )) {
@@ -2115,7 +2165,8 @@ class AppsProvider with ChangeNotifier {
       final installedVersion = app.installedVersion;
       final hasUpdateOrNeedsInstall = installedVersion == null ||
           (installedVersion != app.latestVersion &&
-              !versionsEffectivelyEqual(installedVersion, app.latestVersion));
+              !versionsEffectivelyEqual(installedVersion, app.latestVersion) &&
+              !installedVersionIsNewerOrEqual(installedVersion, app.latestVersion));
       if (hasUpdateOrNeedsInstall && (!installedOnly || !nonInstalledOnly)) {
         if ((app.installedVersion == null &&
                 (nonInstalledOnly || !installedOnly) ||

@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -18,6 +19,8 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:markdown/markdown.dart' as md;
+
+const double _appsListGroupCardRadius = 20;
 
 class AppsPage extends StatefulWidget {
   const AppsPage({super.key});
@@ -128,6 +131,347 @@ Null Function()? getChangeLogFn(BuildContext context, App app) {
         };
 }
 
+void showAppsViewOptionsSheet(BuildContext context) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (sheetContext) {
+      final bottomInset = MediaQuery.viewPaddingOf(sheetContext).bottom;
+      return StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          final settingsProvider = ctx.watch<SettingsProvider>();
+          final colorScheme = Theme.of(ctx).colorScheme;
+          final textTheme = Theme.of(ctx).textTheme;
+
+          Widget sectionLabel(String text) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8, top: 4),
+              child: Text(
+                text,
+                style: textTheme.labelSmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            );
+          }
+
+          Widget sortChip({
+            required String label,
+            required bool selected,
+            required VoidCallback onTap,
+          }) {
+            return FilterChip(
+              label: Text(label),
+              selected: selected,
+              onSelected: (_) => onTap(),
+              showCheckmark: false,
+              visualDensity: VisualDensity.compact,
+            );
+          }
+
+          Widget themeIconButton({
+            required IconData icon,
+            required String tooltip,
+            required bool selected,
+            required VoidCallback? onPressed,
+          }) {
+            return IconButton(
+              tooltip: tooltip,
+              visualDensity: VisualDensity.compact,
+              style: IconButton.styleFrom(
+                backgroundColor: selected
+                    ? colorScheme.primaryContainer
+                    : null,
+                foregroundColor: selected
+                    ? colorScheme.onPrimaryContainer
+                    : null,
+              ),
+              onPressed: onPressed,
+              icon: Icon(icon),
+            );
+          }
+
+          return SafeArea(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(20, 12, 20, 16 + bottomInset),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: colorScheme.onSurfaceVariant.withAlpha(80),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                    ),
+                    Text(
+                      tr('appsViewOptions'),
+                      style: textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    sectionLabel(tr('theme')),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: FutureBuilder(
+                        future: DeviceInfoPlugin().androidInfo,
+                        builder: (context, snapshot) {
+                          final sdkInt = snapshot.data?.version.sdkInt ?? 0;
+                          final showMaterialYou = sdkInt >= 31;
+                          final themeModeBlack =
+                              settingsProvider.useBlackTheme;
+                          return Row(
+                            mainAxisAlignment: MainAxisAlignment.start,
+                            children: [
+                              if (showMaterialYou) ...[
+                                themeIconButton(
+                                  icon: Icons.palette_outlined,
+                                  tooltip: tr('useMaterialYou'),
+                                  selected: settingsProvider.useMaterialYou,
+                                  onPressed: () {
+                                    settingsProvider.useMaterialYou =
+                                        !settingsProvider.useMaterialYou;
+                                    setSheetState(() {});
+                                  },
+                                ),
+                                const SizedBox(width: 16),
+                              ],
+                              themeIconButton(
+                                icon: Icons.brightness_auto,
+                                tooltip: tr('followSystem'),
+                                selected: settingsProvider.theme ==
+                                        ThemeSettings.system &&
+                                    !themeModeBlack,
+                                onPressed: () {
+                                  settingsProvider.useBlackTheme = false;
+                                  settingsProvider.theme =
+                                      ThemeSettings.system;
+                                  setSheetState(() {});
+                                },
+                              ),
+                              const SizedBox(width: 10),
+                              themeIconButton(
+                                icon: Icons.light_mode_outlined,
+                                tooltip: tr('light'),
+                                selected: settingsProvider.theme ==
+                                        ThemeSettings.light &&
+                                    !themeModeBlack,
+                                onPressed: () {
+                                  settingsProvider.useBlackTheme = false;
+                                  settingsProvider.theme =
+                                      ThemeSettings.light;
+                                  setSheetState(() {});
+                                },
+                              ),
+                              const SizedBox(width: 10),
+                              themeIconButton(
+                                icon: Icons.dark_mode_outlined,
+                                tooltip: tr('dark'),
+                                selected: settingsProvider.theme ==
+                                        ThemeSettings.dark &&
+                                    !themeModeBlack,
+                                onPressed: () {
+                                  settingsProvider.useBlackTheme = false;
+                                  settingsProvider.theme =
+                                      ThemeSettings.dark;
+                                  setSheetState(() {});
+                                },
+                              ),
+                              const SizedBox(width: 10),
+                              themeIconButton(
+                                icon: Icons.square,
+                                tooltip: tr('useBlackTheme'),
+                                selected: themeModeBlack,
+                                onPressed: () {
+                                  if (themeModeBlack) {
+                                    settingsProvider.useBlackTheme = false;
+                                    settingsProvider.theme =
+                                        ThemeSettings.dark;
+                                  } else {
+                                    settingsProvider.theme =
+                                        ThemeSettings.dark;
+                                    settingsProvider.useBlackTheme = true;
+                                  }
+                                  setSheetState(() {});
+                                },
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Divider(color: colorScheme.outlineVariant),
+                    const SizedBox(height: 8),
+                    sectionLabel(tr('sortBy')),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        sortChip(
+                          label: tr('authorName'),
+                          selected: settingsProvider.sortColumn ==
+                              SortColumnSettings.authorName,
+                          onTap: () {
+                            settingsProvider.sortColumn =
+                                SortColumnSettings.authorName;
+                            setSheetState(() {});
+                          },
+                        ),
+                        sortChip(
+                          label: tr('nameAuthor'),
+                          selected: settingsProvider.sortColumn ==
+                              SortColumnSettings.nameAuthor,
+                          onTap: () {
+                            settingsProvider.sortColumn =
+                                SortColumnSettings.nameAuthor;
+                            setSheetState(() {});
+                          },
+                        ),
+                        sortChip(
+                          label: tr('asAdded'),
+                          selected: settingsProvider.sortColumn ==
+                              SortColumnSettings.added,
+                          onTap: () {
+                            settingsProvider.sortColumn =
+                                SortColumnSettings.added;
+                            setSheetState(() {});
+                          },
+                        ),
+                        sortChip(
+                          label: tr('releaseDate'),
+                          selected: settingsProvider.sortColumn ==
+                              SortColumnSettings.releaseDate,
+                          onTap: () {
+                            settingsProvider.sortColumn =
+                                SortColumnSettings.releaseDate;
+                            setSheetState(() {});
+                          },
+                        ),
+                        sortChip(
+                          label: tr('sortByLastUpdateCheck'),
+                          selected: settingsProvider.sortColumn ==
+                              SortColumnSettings.lastUpdateCheck,
+                          onTap: () {
+                            settingsProvider.sortColumn =
+                                SortColumnSettings.lastUpdateCheck;
+                            setSheetState(() {});
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    sectionLabel(tr('sortOrder')),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        sortChip(
+                          label: tr('ascending'),
+                          selected: settingsProvider.sortOrder ==
+                              SortOrderSettings.ascending,
+                          onTap: () {
+                            settingsProvider.sortOrder =
+                                SortOrderSettings.ascending;
+                            setSheetState(() {});
+                          },
+                        ),
+                        sortChip(
+                          label: tr('descending'),
+                          selected: settingsProvider.sortOrder ==
+                              SortOrderSettings.descending,
+                          onTap: () {
+                            settingsProvider.sortOrder =
+                                SortOrderSettings.descending;
+                            setSheetState(() {});
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Divider(color: colorScheme.outlineVariant),
+                    const SizedBox(height: 8),
+                    sectionLabel(tr('groupBy')),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        sortChip(
+                          label: tr('groupByNone'),
+                          selected: settingsProvider.appsListGroupBy ==
+                              AppsListGroupBy.none,
+                          onTap: () {
+                            settingsProvider.appsListGroupBy =
+                                AppsListGroupBy.none;
+                            setSheetState(() {});
+                          },
+                        ),
+                        sortChip(
+                          label: tr('category'),
+                          selected: settingsProvider.appsListGroupBy ==
+                              AppsListGroupBy.category,
+                          onTap: () {
+                            settingsProvider.appsListGroupBy =
+                                AppsListGroupBy.category;
+                            setSheetState(() {});
+                          },
+                        ),
+                        sortChip(
+                          label: tr('groupByTrackedSource'),
+                          selected: settingsProvider.appsListGroupBy ==
+                              AppsListGroupBy.source,
+                          onTap: () {
+                            settingsProvider.appsListGroupBy =
+                                AppsListGroupBy.source;
+                            setSheetState(() {});
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Divider(color: colorScheme.outlineVariant),
+                    const SizedBox(height: 4),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(tr('pinUpdates')),
+                      value: settingsProvider.pinUpdates,
+                      onChanged: (value) {
+                        settingsProvider.pinUpdates = value;
+                        setSheetState(() {});
+                      },
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(tr('moveNonInstalledAppsToBottom')),
+                      value: settingsProvider.buryNonInstalled,
+                      onChanged: (value) {
+                        settingsProvider.buryNonInstalled = value;
+                        setSheetState(() {});
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    },
+  );
+}
+
 class AppsPageState extends State<AppsPage> {
   AppsFilter filter = AppsFilter();
   final AppsFilter neutralFilter = AppsFilter();
@@ -142,28 +486,75 @@ class AppsPageState extends State<AppsPage> {
     if (selectedAppIds.isNotEmpty) {
       setState(() {
         selectedAppIds.clear();
+        appsFooterVisible = true;
       });
       return true;
     }
     return false;
   }
 
-  void selectThese(List<App> apps) {
-    if (selectedAppIds.isEmpty) {
-      setState(() {
-        for (var a in apps) {
-          selectedAppIds.add(a.id);
-        }
-      });
-    }
-  }
-
   final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey =
       GlobalKey<RefreshIndicatorState>();
 
-  late final ScrollController scrollController = ScrollController();
+  late final ScrollController scrollController;
+  bool appsFooterVisible = true;
+  double appsScrollPreviousOffset = 0;
 
   var sourceProvider = SourceProvider();
+
+  @override
+  void initState() {
+    super.initState();
+    scrollController = ScrollController();
+    scrollController.addListener(_onAppsScrollForFooterVisibility);
+  }
+
+  void _onAppsScrollForFooterVisibility() {
+    if (!scrollController.hasClients) {
+      return;
+    }
+    if (selectedAppIds.isNotEmpty) {
+      appsScrollPreviousOffset = scrollController.offset;
+      if (!appsFooterVisible) {
+        setState(() {
+          appsFooterVisible = true;
+        });
+      }
+      return;
+    }
+    final double currentOffset = scrollController.offset;
+    final double delta = currentOffset - appsScrollPreviousOffset;
+    appsScrollPreviousOffset = currentOffset;
+    if (currentOffset <= 24) {
+      if (!appsFooterVisible) {
+        setState(() {
+          appsFooterVisible = true;
+        });
+      }
+      return;
+    }
+    const double scrollSensitivity = 10;
+    if (delta > scrollSensitivity) {
+      if (appsFooterVisible) {
+        setState(() {
+          appsFooterVisible = false;
+        });
+      }
+    } else if (delta < -scrollSensitivity) {
+      if (!appsFooterVisible) {
+        setState(() {
+          appsFooterVisible = true;
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    scrollController.removeListener(_onAppsScrollForFooterVisibility);
+    scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -213,8 +604,10 @@ class AppsPageState extends State<AppsPage> {
     listedApps = listedApps.where((app) {
       final upToDate = app.app.installedVersion == app.app.latestVersion ||
           (app.app.installedVersion != null &&
-              versionsEffectivelyEqual(
-                  app.app.installedVersion!, app.app.latestVersion));
+              (versionsEffectivelyEqual(
+                  app.app.installedVersion!, app.app.latestVersion) ||
+                  installedVersionIsNewerOrEqual(
+                      app.app.installedVersion!, app.app.latestVersion)));
       if (upToDate && !(filter.includeUptodate)) {
         return false;
       }
@@ -298,6 +691,26 @@ class AppsPageState extends State<AppsPage> {
         } else {
           result = aDate.compareTo(bDate);
         }
+      } else if (settingsProvider.sortColumn ==
+          SortColumnSettings.lastUpdateCheck) {
+        final aDate = a.app.lastUpdateCheck;
+        final bDate = b.app.lastUpdateCheck;
+        final isDescending =
+            settingsProvider.sortOrder == SortOrderSettings.descending;
+        if (aDate == null && bDate == null) {
+          result = ((a.name + a.author).toLowerCase()).compareTo(
+            (b.name + b.author).toLowerCase(),
+          );
+        } else if (aDate == null) {
+          result = isDescending ? -1 : 1;
+        } else if (bDate == null) {
+          result = isDescending ? 1 : -1;
+        } else {
+          result = aDate.compareTo(bDate);
+        }
+      } else if (settingsProvider.sortColumn == SortColumnSettings.added) {
+        // Preserve order from apps map (insertion / add order); sort is stable.
+        result = 0;
       }
       return result;
     });
@@ -394,6 +807,25 @@ class AppsPageState extends State<AppsPage> {
           ? 1
           : -1;
     });
+
+    List<String> getListedSourceKeys() {
+      if (listedApps.isEmpty) return [];
+      final keys = listedApps
+          .map(
+            (e) => sourceProvider
+                .getSource(e.app.url, overrideSource: e.app.overrideSource)
+                .runtimeType
+                .toString(),
+          )
+          .toSet()
+          .toList();
+      keys.sort(
+        (a, b) => a.toLowerCase().compareTo(b.toLowerCase()),
+      );
+      return keys;
+    }
+
+    var listedSources = getListedSourceKeys();
 
     Set<App> selectedApps = listedApps
         .map((e) => e.app)
@@ -547,7 +979,8 @@ class AppsPageState extends State<AppsPage> {
       final latest = listedApps[index].app.latestVersion;
       var hasUpdate = installed != null &&
           installed != latest &&
-          !versionsEffectivelyEqual(installed, latest);
+          !versionsEffectivelyEqual(installed, latest) &&
+          !installedVersionIsNewerOrEqual(installed, latest);
       Widget trailingRow = Row(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -732,46 +1165,115 @@ class AppsPageState extends State<AppsPage> {
           .toList();
 
       capFirstChar(String str) => str[0].toUpperCase() + str.substring(1);
-      return ExpansionTile(
-        initiallyExpanded: true,
-        title: Text(
-          capFirstChar(listedCategories[index] ?? tr('noCategory')),
-          style: const TextStyle(fontWeight: FontWeight.bold),
+      final theme = Theme.of(context);
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+        child: Material(
+          elevation: 3,
+          shadowColor: theme.colorScheme.shadow.withAlpha(100),
+          surfaceTintColor: theme.colorScheme.surfaceTint,
+          borderRadius: BorderRadius.circular(_appsListGroupCardRadius),
+          color: theme.colorScheme.surfaceContainerLow,
+          clipBehavior: Clip.antiAlias,
+          child: Theme(
+            data: theme.copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(
+                  Radius.circular(_appsListGroupCardRadius),
+                ),
+              ),
+              collapsedShape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(
+                  Radius.circular(_appsListGroupCardRadius),
+                ),
+              ),
+              initiallyExpanded: true,
+              title: Text(
+                capFirstChar(listedCategories[index] ?? tr('noCategory')),
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              controlAffinity: ListTileControlAffinity.leading,
+              trailing: Text(tiles.length.toString()),
+              children: tiles,
+            ),
+          ),
         ),
-        controlAffinity: ListTileControlAffinity.leading,
-        trailing: Text(tiles.length.toString()),
-        children: tiles,
       );
     }
 
-    getSelectAllButton() {
-      return selectedAppIds.isEmpty
-          ? TextButton.icon(
-              style: const ButtonStyle(visualDensity: VisualDensity.compact),
-              onPressed: () {
-                selectThese(listedApps.map((e) => e.app).toList());
-              },
-              icon: Icon(
-                Icons.select_all_outlined,
-                color: Theme.of(context).colorScheme.primary,
+    getSourceCollapsibleTile(int index) {
+      final sourceKey = listedSources[index];
+      final tiles = listedApps
+          .asMap()
+          .entries
+          .where(
+            (entry) =>
+                sourceProvider
+                    .getSource(
+                      entry.value.app.url,
+                      overrideSource: entry.value.app.overrideSource,
+                    )
+                    .runtimeType
+                    .toString() ==
+                sourceKey,
+          )
+          .map((entry) => getSingleAppHorizTile(entry.key))
+          .toList();
+
+      final firstForTitle = listedApps.firstWhere(
+        (appInMem) =>
+            sourceProvider
+                .getSource(
+                  appInMem.app.url,
+                  overrideSource: appInMem.app.overrideSource,
+                )
+                .runtimeType
+                .toString() ==
+            sourceKey,
+      );
+      final sourceTitle = sourceProvider
+          .getSource(
+            firstForTitle.app.url,
+            overrideSource: firstForTitle.app.overrideSource,
+          )
+          .name;
+
+      final theme = Theme.of(context);
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+        child: Material(
+          elevation: 3,
+          shadowColor: theme.colorScheme.shadow.withAlpha(100),
+          surfaceTintColor: theme.colorScheme.surfaceTint,
+          borderRadius: BorderRadius.circular(_appsListGroupCardRadius),
+          color: theme.colorScheme.surfaceContainerLow,
+          clipBehavior: Clip.antiAlias,
+          child: Theme(
+            data: theme.copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(
+                  Radius.circular(_appsListGroupCardRadius),
+                ),
               ),
-              label: Text(listedApps.length.toString()),
-            )
-          : TextButton.icon(
-              style: const ButtonStyle(visualDensity: VisualDensity.compact),
-              onPressed: () {
-                selectedAppIds.isEmpty
-                    ? selectThese(listedApps.map((e) => e.app).toList())
-                    : clearSelected();
-              },
-              icon: Icon(
-                selectedAppIds.isEmpty
-                    ? Icons.select_all_outlined
-                    : Icons.deselect_outlined,
-                color: Theme.of(context).colorScheme.primary,
+              collapsedShape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(
+                  Radius.circular(_appsListGroupCardRadius),
+                ),
               ),
-              label: Text(selectedAppIds.length.toString()),
-            );
+              initiallyExpanded: true,
+              title: Text(
+                sourceTitle,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              controlAffinity: ListTileControlAffinity.leading,
+              trailing: Text(tiles.length.toString()),
+              children: tiles,
+            ),
+          ),
+        ),
+      );
     }
 
     getMassObtainFunction() {
@@ -1146,44 +1648,6 @@ class AppsPageState extends State<AppsPage> {
       );
     }
 
-    getMainBottomButtons() {
-      return [
-        IconButton(
-          visualDensity: VisualDensity.compact,
-          onPressed: getMassObtainFunction(),
-          tooltip: selectedAppIds.isEmpty
-              ? tr('installUpdateApps')
-              : tr('installUpdateSelectedApps'),
-          icon: const Icon(Icons.file_download_outlined),
-        ),
-        IconButton(
-          visualDensity: VisualDensity.compact,
-          onPressed: selectedAppIds.isEmpty
-              ? null
-              : () {
-                  appsProvider.removeAppsWithModal(
-                    context,
-                    selectedApps.toList(),
-                  );
-                },
-          tooltip: tr('removeSelectedApps'),
-          icon: const Icon(Icons.delete_outline_outlined),
-        ),
-        IconButton(
-          visualDensity: VisualDensity.compact,
-          onPressed: selectedAppIds.isEmpty ? null : launchCategorizeDialog(),
-          tooltip: tr('categorize'),
-          icon: const Icon(Icons.category_outlined),
-        ),
-        IconButton(
-          visualDensity: VisualDensity.compact,
-          onPressed: selectedAppIds.isEmpty ? null : showMoreOptionsDialog,
-          tooltip: tr('more'),
-          icon: const Icon(Icons.more_horiz),
-        ),
-      ];
-    }
-
     showFilterDialog() async {
       var values = await showDialog<Map<String, dynamic>?>(
         context: context,
@@ -1263,33 +1727,170 @@ class AppsPageState extends State<AppsPage> {
     }
 
     getFilterButtonsRow() {
-      var isFilterOff = filter.isIdenticalTo(neutralFilter, settingsProvider);
-      return Row(
-        children: [
-          getSelectAllButton(),
-          IconButton(
-            color: Theme.of(context).colorScheme.primary,
-            style: const ButtonStyle(visualDensity: VisualDensity.compact),
-            tooltip: isFilterOff
-                ? tr('filterApps')
-                : '${tr('filter')} - ${tr('remove')}',
-            onPressed: isFilterOff
-                ? showFilterDialog
-                : () {
+      final colorScheme = Theme.of(context).colorScheme;
+      final isFilterOff = filter.isIdenticalTo(neutralFilter, settingsProvider);
+      final selectAllFooterStyle = TextButton.styleFrom(
+        foregroundColor: colorScheme.primary,
+        visualDensity: VisualDensity.compact,
+        iconSize: 24,
+        textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: colorScheme.primary,
+              fontWeight: FontWeight.w600,
+            ),
+      );
+      if (selectedAppIds.isNotEmpty) {
+        return Row(
+          children: [
+            Expanded(
+              child: Center(
+                child: Tooltip(
+                  message: tr('selectAll'),
+                  child: TextButton.icon(
+                    style: selectAllFooterStyle,
+                    onPressed: listedApps.isEmpty
+                        ? null
+                        : () {
+                            setState(() {
+                              for (final appInMem in listedApps) {
+                                selectedAppIds.add(appInMem.app.id);
+                              }
+                            });
+                          },
+                    icon: const Icon(Icons.select_all_outlined, size: 24),
+                    label: Text(selectedAppIds.length.toString()),
+                  ),
+                ),
+              ),
+            ),
+            Expanded(
+              child: Center(
+                child: IconButton(
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 24,
+                  color: colorScheme.primary,
+                  onPressed: () {
                     setState(() {
-                      filter = AppsFilter();
+                      selectedAppIds.clear();
                     });
                   },
-            icon: Icon(
-              isFilterOff ? Icons.search_rounded : Icons.search_off_rounded,
+                  tooltip: tr('deselectAll'),
+                  icon: const Icon(Icons.deselect),
+                ),
+              ),
+            ),
+            Expanded(
+              child: Center(
+                child: IconButton(
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 24,
+                  color: colorScheme.primary,
+                  onPressed: () {
+                    appsProvider.removeAppsWithModal(
+                      context,
+                      selectedApps.toList(),
+                    );
+                  },
+                  tooltip: tr('removeSelectedApps'),
+                  icon: const Icon(Icons.delete_outline_outlined),
+                ),
+              ),
+            ),
+            Expanded(
+              child: Center(
+                child: IconButton(
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 24,
+                  color: colorScheme.primary,
+                  onPressed: launchCategorizeDialog(),
+                  tooltip: tr('categorize'),
+                  icon: const Icon(Icons.category_outlined),
+                ),
+              ),
+            ),
+            Expanded(
+              child: Center(
+                child: IconButton(
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 24,
+                  color: colorScheme.primary,
+                  onPressed: showMoreOptionsDialog,
+                  tooltip: tr('more'),
+                  icon: const Icon(Icons.more_horiz),
+                ),
+              ),
+            ),
+          ],
+        );
+      }
+      return Row(
+        children: [
+          Expanded(
+            child: Center(
+              child: Tooltip(
+                message: tr('selectAll'),
+                child: TextButton.icon(
+                  style: selectAllFooterStyle,
+                  onPressed: listedApps.isEmpty
+                      ? null
+                      : () {
+                          setState(() {
+                            for (final appInMem in listedApps) {
+                              selectedAppIds.add(appInMem.app.id);
+                            }
+                          });
+                        },
+                  icon: const Icon(Icons.select_all_outlined, size: 24),
+                  label: Text(selectedAppIds.length.toString()),
+                ),
+              ),
             ),
           ),
-          const SizedBox(width: 10),
-          const VerticalDivider(),
           Expanded(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: getMainBottomButtons(),
+            child: Center(
+              child: IconButton(
+                color: colorScheme.primary,
+                iconSize: 24,
+                style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                tooltip: isFilterOff
+                    ? tr('filterApps')
+                    : '${tr('filter')} - ${tr('remove')}',
+                onPressed: isFilterOff
+                    ? showFilterDialog
+                    : () {
+                        setState(() {
+                          filter = AppsFilter();
+                        });
+                      },
+                icon: Icon(
+                  isFilterOff
+                      ? Icons.search_rounded
+                      : Icons.search_off_rounded,
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Center(
+              child: IconButton(
+                visualDensity: VisualDensity.compact,
+                iconSize: 24,
+                color: colorScheme.primary,
+                onPressed: getMassObtainFunction(),
+                tooltip: tr('installUpdateApps'),
+                icon: const Icon(Icons.file_download_outlined),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Center(
+              child: IconButton(
+                visualDensity: VisualDensity.compact,
+                iconSize: 24,
+                color: colorScheme.primary,
+                tooltip: tr('appsViewOptions'),
+                onPressed: () => showAppsViewOptionsSheet(context),
+                icon: const Icon(Icons.tune),
+              ),
             ),
           ),
         ],
@@ -1297,49 +1898,98 @@ class AppsPageState extends State<AppsPage> {
     }
 
     getDisplayedList() {
-      return settingsProvider.groupByCategory &&
-              !(listedCategories.isEmpty ||
-                  (listedCategories.length == 1 && listedCategories[0] == null))
-          ? SliverList(
-              delegate: SliverChildBuilderDelegate((
-                BuildContext context,
-                int index,
-              ) {
-                return getCategoryCollapsibleTile(index);
-              }, childCount: listedCategories.length),
-            )
-          : SliverList(
-              delegate: SliverChildBuilderDelegate((
-                BuildContext context,
-                int index,
-              ) {
-                return getSingleAppHorizTile(index);
-              }, childCount: listedApps.length),
-            );
+      final groupBy = settingsProvider.appsListGroupBy;
+      final useCategoryGroups = groupBy == AppsListGroupBy.category &&
+          !(listedCategories.isEmpty ||
+              (listedCategories.length == 1 && listedCategories[0] == null));
+      if (useCategoryGroups) {
+        return SliverList(
+          delegate: SliverChildBuilderDelegate((
+            BuildContext context,
+            int index,
+          ) {
+            return getCategoryCollapsibleTile(index);
+          }, childCount: listedCategories.length),
+        );
+      }
+      if (groupBy == AppsListGroupBy.source && listedSources.isNotEmpty) {
+        return SliverList(
+          delegate: SliverChildBuilderDelegate((
+            BuildContext context,
+            int index,
+          ) {
+            return getSourceCollapsibleTile(index);
+          }, childCount: listedSources.length),
+        );
+      }
+      return SliverList(
+        delegate: SliverChildBuilderDelegate((
+          BuildContext context,
+          int index,
+        ) {
+          return getSingleAppHorizTile(index);
+        }, childCount: listedApps.length),
+      );
     }
 
-    return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      body: RefreshIndicator(
-        key: _refreshIndicatorKey,
-        onRefresh: refresh,
-        child: Scrollbar(
-          interactive: true,
-          controller: scrollController,
-          child: CustomScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            controller: scrollController,
-            slivers: <Widget>[
-              CustomAppBar(title: tr('appsString')),
-              ...getLoadingWidgets(),
-              getDisplayedList(),
-            ],
-          ),
+    return PopScope(
+      canPop: selectedAppIds.isEmpty,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (!didPop && selectedAppIds.isNotEmpty) {
+          clearSelected();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: RefreshIndicator(
+                key: _refreshIndicatorKey,
+                onRefresh: refresh,
+                child: Scrollbar(
+                  interactive: true,
+                  controller: scrollController,
+                  child: CustomScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    controller: scrollController,
+                    slivers: <Widget>[
+                      CustomAppBar(title: tr('appsString')),
+                      ...getLoadingWidgets(),
+                      getDisplayedList(),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (appsProvider.apps.isNotEmpty)
+              AnimatedSize(
+                duration: const Duration(milliseconds: 240),
+                curve: Curves.fastOutSlowIn,
+                alignment: Alignment.topCenter,
+                clipBehavior: Clip.hardEdge,
+                child: (appsFooterVisible || selectedAppIds.isNotEmpty)
+                    ? Material(
+                        elevation: 3,
+                        surfaceTintColor:
+                            Theme.of(context).colorScheme.surfaceTint,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerLow,
+                        child: SafeArea(
+                          top: false,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: getFilterButtonsRow(),
+                          ),
+                        ),
+                      )
+                    : const SizedBox(width: double.infinity),
+              ),
+          ],
         ),
       ),
-      persistentFooterButtons: appsProvider.apps.isEmpty
-          ? null
-          : [getFilterButtonsRow()],
     );
   }
 

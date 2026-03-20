@@ -104,18 +104,6 @@ class _SettingsPageState extends State<SettingsPage> {
     initUpdateIntervalInterpolator();
     processIntervalSliderValue(settingsProvider.updateIntervalSliderVal);
 
-    var followSystemThemeExplanation = FutureBuilder(
-      builder: (ctx, val) {
-        return ((val.data?.version.sdkInt ?? 30) < 29)
-            ? Text(
-                tr('followSystemThemeExplanation'),
-                style: Theme.of(context).textTheme.labelSmall,
-              )
-            : const SizedBox.shrink();
-      },
-      future: DeviceInfoPlugin().androidInfo,
-    );
-
     Future<bool> colorPickerDialog() async {
       return ColorPicker(
         color: settingsProvider.themeColor,
@@ -201,76 +189,6 @@ class _SettingsPageState extends State<SettingsPage> {
           }
         },
       ),
-    );
-
-    var useMaterialThemeSwitch = FutureBuilder(
-      builder: (ctx, val) {
-        return ((val.data?.version.sdkInt ?? 0) >= 31)
-            ? Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Flexible(child: Text(tr('useMaterialYou'))),
-                  Switch(
-                    value: settingsProvider.useMaterialYou,
-                    onChanged: (value) {
-                      settingsProvider.useMaterialYou = value;
-                    },
-                  ),
-                ],
-              )
-            : const SizedBox.shrink();
-      },
-      future: DeviceInfoPlugin().androidInfo,
-    );
-
-    var sortDropdown = DropdownButtonFormField(
-      isExpanded: true,
-      decoration: InputDecoration(labelText: tr('appSortBy')),
-      value: settingsProvider.sortColumn,
-      items: [
-        DropdownMenuItem(
-          value: SortColumnSettings.authorName,
-          child: Text(tr('authorName')),
-        ),
-        DropdownMenuItem(
-          value: SortColumnSettings.nameAuthor,
-          child: Text(tr('nameAuthor')),
-        ),
-        DropdownMenuItem(
-          value: SortColumnSettings.added,
-          child: Text(tr('asAdded')),
-        ),
-        DropdownMenuItem(
-          value: SortColumnSettings.releaseDate,
-          child: Text(tr('releaseDate')),
-        ),
-      ],
-      onChanged: (value) {
-        if (value != null) {
-          settingsProvider.sortColumn = value;
-        }
-      },
-    );
-
-    var orderDropdown = DropdownButtonFormField(
-      isExpanded: true,
-      decoration: InputDecoration(labelText: tr('appSortOrder')),
-      value: settingsProvider.sortOrder,
-      items: [
-        DropdownMenuItem(
-          value: SortOrderSettings.ascending,
-          child: Text(tr('ascending')),
-        ),
-        DropdownMenuItem(
-          value: SortOrderSettings.descending,
-          child: Text(tr('descending')),
-        ),
-      ],
-      onChanged: (value) {
-        if (value != null) {
-          settingsProvider.sortOrder = value;
-        }
-      },
     );
 
     var localeDropdown = DropdownButtonFormField(
@@ -736,58 +654,8 @@ class _SettingsPageState extends State<SettingsPage> {
                             color: Theme.of(context).colorScheme.primary,
                           ),
                         ),
-                        DropdownButtonFormField(
-                          decoration: InputDecoration(labelText: tr('theme')),
-                          value: settingsProvider.theme,
-                          items: [
-                            DropdownMenuItem(
-                              value: ThemeSettings.system,
-                              child: Text(tr('followSystem')),
-                            ),
-                            DropdownMenuItem(
-                              value: ThemeSettings.light,
-                              child: Text(tr('light')),
-                            ),
-                            DropdownMenuItem(
-                              value: ThemeSettings.dark,
-                              child: Text(tr('dark')),
-                            ),
-                          ],
-                          onChanged: (value) {
-                            if (value != null) {
-                              settingsProvider.theme = value;
-                            }
-                          },
-                        ),
                         height8,
-                        if (settingsProvider.theme == ThemeSettings.system)
-                          followSystemThemeExplanation,
-                        height16,
-                        if (settingsProvider.theme != ThemeSettings.light)
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Flexible(child: Text(tr('useBlackTheme'))),
-                              Switch(
-                                value: settingsProvider.useBlackTheme,
-                                onChanged: (value) {
-                                  settingsProvider.useBlackTheme = value;
-                                },
-                              ),
-                            ],
-                          ),
-                        height8,
-                        useMaterialThemeSwitch,
                         if (!settingsProvider.useMaterialYou) colorPicker,
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.start,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(child: sortDropdown),
-                            const SizedBox(width: 16),
-                            Expanded(child: orderDropdown),
-                          ],
-                        ),
                         height16,
                         localeDropdown,
                         FutureBuilder(
@@ -839,47 +707,6 @@ class _SettingsPageState extends State<SettingsPage> {
                               value: settingsProvider.showAppWebpage,
                               onChanged: (value) {
                                 settingsProvider.showAppWebpage = value;
-                              },
-                            ),
-                          ],
-                        ),
-                        height16,
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Flexible(child: Text(tr('pinUpdates'))),
-                            Switch(
-                              value: settingsProvider.pinUpdates,
-                              onChanged: (value) {
-                                settingsProvider.pinUpdates = value;
-                              },
-                            ),
-                          ],
-                        ),
-                        height16,
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Flexible(
-                              child: Text(tr('moveNonInstalledAppsToBottom')),
-                            ),
-                            Switch(
-                              value: settingsProvider.buryNonInstalled,
-                              onChanged: (value) {
-                                settingsProvider.buryNonInstalled = value;
-                              },
-                            ),
-                          ],
-                        ),
-                        height16,
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Flexible(child: Text(tr('groupByCategory'))),
-                            Switch(
-                              value: settingsProvider.groupByCategory,
-                              onChanged: (value) {
-                                settingsProvider.groupByCategory = value;
                               },
                             ),
                           ],
@@ -980,6 +807,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
                     IconButton(
+                      color: Theme.of(context).colorScheme.primary,
                       onPressed: () {
                         launchUrlString(
                           settingsProvider.sourceUrl,
@@ -990,6 +818,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       tooltip: tr('appSource'),
                     ),
                     IconButton(
+                      color: Theme.of(context).colorScheme.primary,
                       onPressed: () {
                         launchUrlString(
                           'https://wiki.obtainium.imranr.dev/',
@@ -1000,6 +829,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       tooltip: tr('wiki'),
                     ),
                     IconButton(
+                      color: Theme.of(context).colorScheme.primary,
                       onPressed: () {
                         launchUrlString(
                           'https://apps.obtainium.imranr.dev/',
@@ -1010,6 +840,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       tooltip: tr('crowdsourcedConfigsLabel'),
                     ),
                     IconButton(
+                      color: Theme.of(context).colorScheme.primary,
                       onPressed: () {
                         context.read<LogsProvider>().get().then((logs) {
                           if (logs.isEmpty) {
