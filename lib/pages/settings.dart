@@ -1,6 +1,5 @@
 import 'package:device_info_plus/device_info_plus.dart';
-import 'package:easy_localization/easy_localization.dart';
-import 'package:equations/equations.dart';
+import 'package:easy_localization/easy_localization.dart' hide TextDirection;
 import 'package:flex_color_picker/flex_color_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:obtainium/components/custom_app_bar.dart';
@@ -43,57 +42,28 @@ class _SettingsPageState extends State<SettingsPage> {
     43200,
   ];
   int updateInterval = 0;
-  late SplineInterpolation updateIntervalInterpolator; // 🤓
   String updateIntervalLabel = tr('neverManualOnly');
-  bool showIntervalLabel = true;
+
   final Map<ColorSwatch<Object>, String> colorsNameMap =
       <ColorSwatch<Object>, String>{
         ColorTools.createPrimarySwatch(obtainiumThemeColor): 'Obtainium',
       };
 
-  void initUpdateIntervalInterpolator() {
-    List<InterpolationNode> nodes = [];
-    for (final (index, element) in updateIntervalNodes.indexed) {
-      nodes.add(
-        InterpolationNode(x: index.toDouble() + 1, y: element.toDouble()),
-      );
-    }
-    updateIntervalInterpolator = SplineInterpolation(nodes: nodes);
-  }
-
   void processIntervalSliderValue(double val) {
-    if (val < 0.5) {
+    final int index = val.round().clamp(0, updateIntervalNodes.length);
+    if (index == 0) {
       updateInterval = 0;
       updateIntervalLabel = tr('neverManualOnly');
       return;
     }
-    int valInterpolated = 0;
-    if (val < 1) {
-      valInterpolated = 15;
+    final int minutes = updateIntervalNodes[index - 1];
+    updateInterval = minutes;
+    if (minutes < 60) {
+      updateIntervalLabel = plural('minute', minutes);
+    } else if (minutes < 24 * 60) {
+      updateIntervalLabel = plural('hour', minutes ~/ 60);
     } else {
-      valInterpolated = updateIntervalInterpolator.compute(val).round();
-    }
-    if (valInterpolated < 60) {
-      updateInterval = valInterpolated;
-      updateIntervalLabel = plural('minute', valInterpolated);
-    } else if (valInterpolated < 8 * 60) {
-      int valRounded = (valInterpolated / 15).floor() * 15;
-      updateInterval = valRounded;
-      updateIntervalLabel = plural('hour', valRounded ~/ 60);
-      int mins = valRounded % 60;
-      if (mins != 0) updateIntervalLabel += " ${plural('minute', mins)}";
-    } else if (valInterpolated < 24 * 60) {
-      int valRounded = (valInterpolated / 30).floor() * 30;
-      updateInterval = valRounded;
-      updateIntervalLabel = plural('hour', valRounded / 60);
-    } else if (valInterpolated < 7 * 24 * 60) {
-      int valRounded = (valInterpolated / (12 * 60)).floor() * 12 * 60;
-      updateInterval = valRounded;
-      updateIntervalLabel = plural('day', valRounded / (24 * 60));
-    } else {
-      int valRounded = (valInterpolated / (24 * 60)).floor() * 24 * 60;
-      updateInterval = valRounded;
-      updateIntervalLabel = plural('day', valRounded ~/ (24 * 60));
+      updateIntervalLabel = plural('day', minutes ~/ (24 * 60));
     }
   }
 
@@ -102,7 +72,6 @@ class _SettingsPageState extends State<SettingsPage> {
     SettingsProvider settingsProvider = context.watch<SettingsProvider>();
     SourceProvider sourceProvider = SourceProvider();
     if (settingsProvider.prefs == null) settingsProvider.initializeSettings();
-    initUpdateIntervalInterpolator();
     processIntervalSliderValue(settingsProvider.updateIntervalSliderVal);
 
     Future<bool> colorPickerDialog() async {
@@ -194,7 +163,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
     var localeDropdown = DropdownButtonFormField(
       decoration: InputDecoration(labelText: tr('language')),
-      value: settingsProvider.forcedLocale,
+      initialValue: settingsProvider.forcedLocale,
       items: [
         DropdownMenuItem(value: null, child: Text(tr('followSystem'))),
         ...supportedLocales.map(
@@ -211,28 +180,35 @@ class _SettingsPageState extends State<SettingsPage> {
       },
     );
 
-    var intervalSlider = Slider(
-      value: settingsProvider.updateIntervalSliderVal,
-      max: updateIntervalNodes.length.toDouble(),
-      divisions: updateIntervalNodes.length * 20,
-      label: updateIntervalLabel,
-      onChanged: (double value) {
-        setState(() {
-          settingsProvider.updateIntervalSliderVal = value;
-          processIntervalSliderValue(value);
-        });
-      },
-      onChangeStart: (double value) {
-        setState(() {
-          showIntervalLabel = false;
-        });
-      },
-      onChangeEnd: (double value) {
-        setState(() {
-          showIntervalLabel = true;
-          settingsProvider.updateInterval = updateInterval;
-        });
-      },
+    var intervalSlider = SliderTheme(
+      data: SliderTheme.of(context).copyWith(
+        trackHeight: 16,
+        trackShape: const _GappedTrackShape(),
+        thumbShape: const _VerticalBarThumbShape(),
+        tickMarkShape: const RoundSliderTickMarkShape(tickMarkRadius: 3),
+        activeTickMarkColor: Theme.of(context).colorScheme.onPrimary,
+        inactiveTickMarkColor: Theme.of(context).colorScheme.primary,
+        overlayShape: const RoundSliderOverlayShape(overlayRadius: 20),
+      ),
+      child: Slider(
+        value: settingsProvider.updateIntervalSliderVal
+            .roundToDouble()
+            .clamp(0, updateIntervalNodes.length.toDouble()),
+        max: updateIntervalNodes.length.toDouble(),
+        divisions: updateIntervalNodes.length,
+        label: updateIntervalLabel,
+        onChanged: (double value) {
+          setState(() {
+            settingsProvider.updateIntervalSliderVal = value;
+            processIntervalSliderValue(value);
+          });
+        },
+        onChangeEnd: (double value) {
+          setState(() {
+            settingsProvider.updateInterval = updateInterval;
+          });
+        },
+      ),
     );
 
     var sourceSpecificFields = sourceProvider.sources.map((e) {
@@ -335,24 +311,38 @@ class _SettingsPageState extends State<SettingsPage> {
                         sectionHeader(tr('updates'), Icons.update_rounded),
                         settingsCard([
                           Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
-                                if (showIntervalLabel)
-                                  SizedBox(
-                                    child: Text(
-                                      "${tr('bgUpdateCheckInterval')}: $updateIntervalLabel",
-                                    ),
-                                  )
-                                else
-                                  const SizedBox(height: 16),
-                                SliderTheme(
-                                  data: SliderThemeData(
-                                    inactiveTrackColor:
-                                        cs.onSurface.withAlpha(60),
+                                Icon(
+                                  Icons.update_rounded,
+                                  color: cs.onSurfaceVariant,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                tr('bgUpdateCheckInterval'),
+                                              ),
+                                            ),
+                                            Text(updateIntervalLabel),
+                                          ],
+                                        ),
+                                      ),
+                                      intervalSlider,
+                                    ],
                                   ),
-                                  child: intervalSlider,
                                 ),
                               ],
                             ),
@@ -497,7 +487,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                       ),
                                       ButtonSegment(
                                         value: 'legacy',
-                                        label: Text(tr('installerModeLegacy')),
+                                        label: Text(tr('installerModeThirdParty')),
                                       ),
                                     ],
                                     selected: {settingsProvider.installerMode},
@@ -507,6 +497,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                         ShizukuApkInstaller().checkPermission().then((
                                           resCode,
                                         ) {
+                                          if (!context.mounted) return;
                                           if (resCode!.startsWith('granted')) {
                                             settingsProvider.installerMode = 'shizuku';
                                           } else {
@@ -558,7 +549,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           if (settingsProvider.installerMode == 'legacy')
                             Padding(
                               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                              child: _LegacyInstallerSelector(
+                              child: _ThirdPartyInstallerSelector(
                                 settingsProvider: settingsProvider,
                               ),
                             ),
@@ -656,7 +647,10 @@ class _SettingsPageState extends State<SettingsPage> {
                           ),
                         ]),
                         // ── Gestures ──────────────────────────────────────────
-                        sectionHeader(tr('gestures'), Icons.swipe_rounded),
+                        sectionHeader(
+                          '${tr('gestures')} · ${SwipeAction.values.length}',
+                          Icons.swipe_rounded,
+                        ),
                         settingsCard([
                           Padding(
                             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -669,7 +663,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                     labelText: tr('rightSwipeAction'),
                                   ),
                                   initialValue: settingsProvider.rightSwipeAction,
-                                  items: SwipeAction.values
+                                  items: swipeActionsSortedByLocalizedLabel()
                                       .map(
                                         (action) => DropdownMenuItem(
                                           value: action,
@@ -692,7 +686,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                     labelText: tr('leftSwipeAction'),
                                   ),
                                   initialValue: settingsProvider.leftSwipeAction,
-                                  items: SwipeAction.values
+                                  items: swipeActionsSortedByLocalizedLabel()
                                       .map(
                                         (action) => DropdownMenuItem(
                                           value: action,
@@ -765,6 +759,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     IconButton(
                       onPressed: () {
                         context.read<LogsProvider>().get().then((logs) {
+                          if (!context.mounted) return;
                           if (logs.isEmpty) {
                             showMessage(ObtainiumError(tr('noLogs')), context);
                           } else {
@@ -827,7 +822,7 @@ class _LogsDialogState extends State<LogsDialog> {
       content: Column(
         children: [
           DropdownButtonFormField(
-            value: days.first,
+            initialValue: days.first,
             items: days
                 .map(
                   (e) =>
@@ -860,6 +855,7 @@ class _LogsDialogState extends State<LogsDialog> {
                 null;
             if (cont) {
               logsProvider.clear();
+              if (!context.mounted) return;
               Navigator.of(context).pop();
             }
           },
@@ -873,7 +869,7 @@ class _LogsDialogState extends State<LogsDialog> {
         ),
         TextButton(
           onPressed: () {
-            Share.share(logString ?? '', subject: tr('appLogs'));
+            SharePlus.instance.share(ShareParams(text: logString ?? '', subject: tr('appLogs')));
             Navigator.of(context).pop();
           },
           child: Text(tr('share')),
@@ -955,16 +951,16 @@ class _CategoryEditorSelectorState extends State<CategoryEditorSelector> {
   }
 }
 
-class _LegacyInstallerSelector extends StatefulWidget {
+class _ThirdPartyInstallerSelector extends StatefulWidget {
   final SettingsProvider settingsProvider;
-  const _LegacyInstallerSelector({required this.settingsProvider});
+  const _ThirdPartyInstallerSelector({required this.settingsProvider});
 
   @override
-  State<_LegacyInstallerSelector> createState() =>
-      _LegacyInstallerSelectorState();
+  State<_ThirdPartyInstallerSelector> createState() =>
+      _ThirdPartyInstallerSelectorState();
 }
 
-class _LegacyInstallerSelectorState extends State<_LegacyInstallerSelector> {
+class _ThirdPartyInstallerSelectorState extends State<_ThirdPartyInstallerSelector> {
   List<installer.InstallerAppInfo>? _installerApps;
   bool _loading = true;
 
@@ -1004,58 +1000,64 @@ class _LegacyInstallerSelectorState extends State<_LegacyInstallerSelector> {
               initialChildSize: 0.5,
               maxChildSize: 0.85,
               builder: (_, scrollController) {
-                return Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(
-                        tr('legacyInstallerSelect'),
-                        style: Theme.of(builderContext).textTheme.titleMedium,
+                return RadioGroup<String>(
+                  groupValue: selectedValue,
+                  onChanged: (String? value) {
+                    setSheetState(() => selectedValue = value);
+                    if (value != null) {
+                      final selected = _installerApps!.firstWhere(
+                        (a) => '${a.packageName}|${a.activityName}' == value,
+                      );
+                      widget.settingsProvider.legacyInstallerPackage =
+                          selected.packageName;
+                      widget.settingsProvider.legacyInstallerActivity =
+                          selected.activityName;
+                    }
+                    Navigator.pop(sheetContext);
+                  },
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          tr('thirdPartyInstallerSelect'),
+                          style: Theme.of(builderContext).textTheme.titleMedium,
+                        ),
                       ),
-                    ),
-                    Expanded(
-                      child: ListView.builder(
-                        controller: scrollController,
-                        itemCount: _installerApps!.length,
-                        itemBuilder: (_, index) {
-                          final app = _installerApps![index];
-                          final radioValue = '${app.packageName}|${app.activityName}';
-                          return RadioListTile<String>(
-                            secondary: app.icon != null && app.icon!.isNotEmpty
-                                ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Image.memory(
-                                      app.icon!,
-                                      width: 40,
-                                      height: 40,
-                                      fit: BoxFit.contain,
-                                      errorBuilder: (_, __, ___) =>
-                                          const Icon(Icons.android, size: 40),
-                                    ),
-                                  )
-                                : const Icon(Icons.android, size: 40),
-                            title: Text(app.label),
-                            subtitle: Text(
-                              app.packageName,
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                            value: radioValue,
-                            groupValue: selectedValue,
-                            onChanged: (value) {
-                              setSheetState(() => selectedValue = value);
-                              if (value != null) {
-                                widget.settingsProvider.legacyInstallerPackage =
-                                    app.packageName;
-                                widget.settingsProvider.legacyInstallerActivity =
-                                    app.activityName;
-                              }
-                              Navigator.pop(sheetContext);
-                            },
-                          );
-                        },
+                      Expanded(
+                        child: ListView.builder(
+                          controller: scrollController,
+                          itemCount: _installerApps!.length,
+                          itemBuilder: (_, index) {
+                            final app = _installerApps![index];
+                            final radioValue =
+                                '${app.packageName}|${app.activityName}';
+                            return RadioListTile<String>(
+                              secondary: app.icon != null && app.icon!.isNotEmpty
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.memory(
+                                        app.icon!,
+                                        width: 40,
+                                        height: 40,
+                                        fit: BoxFit.contain,
+                                        errorBuilder: (_, _, _) =>
+                                            const Icon(Icons.android, size: 40),
+                                      ),
+                                    )
+                                  : const Icon(Icons.android, size: 40),
+                              title: Text(app.label),
+                              subtitle: Text(
+                                app.packageName,
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                              value: radioValue,
+                            );
+                          },
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 );
               },
             );
@@ -1090,20 +1092,116 @@ class _LegacyInstallerSelectorState extends State<_LegacyInstallerSelector> {
                         width: 36,
                         height: 36,
                         fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) =>
+                        errorBuilder: (_, _, _) =>
                             const Icon(Icons.android, size: 36),
                       ),
                     )
                   : null,
-              title: Text(tr('legacyInstallerSelect')),
+              title: Text(tr('thirdPartyInstallerSelect')),
               subtitle: Text(
-                selectedApp?.label ?? selectedPkg ?? tr('legacyInstallerNoneSelected'),
+                selectedApp?.label ?? selectedPkg ?? tr('thirdPartyInstallerNoneSelected'),
               ),
               trailing: const Icon(Icons.arrow_drop_down),
               onTap: _showInstallerPicker,
             ),
         ],
       ),
+    );
+  }
+}
+
+class _VerticalBarThumbShape extends SliderComponentShape {
+  const _VerticalBarThumbShape();
+
+  static const double _width = 4;
+  static const double _height = 28;
+  static const double _radius = 2;
+
+  @override
+  Size getPreferredSize(bool isEnabled, bool isDiscrete) =>
+      const Size(_width, _height);
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset center, {
+    required Animation<double> activationAnimation,
+    required Animation<double> enableAnimation,
+    required bool isDiscrete,
+    required TextPainter labelPainter,
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required TextDirection textDirection,
+    required double value,
+    required double textScaleFactor,
+    required Size sizeWithOverflow,
+  }) {
+    final canvas = context.canvas;
+    final paint = Paint()
+      ..color = sliderTheme.thumbColor ?? Colors.white
+      ..style = PaintingStyle.fill;
+    final rrect = RRect.fromRectAndRadius(
+      Rect.fromCenter(center: center, width: _width, height: _height),
+      const Radius.circular(_radius),
+    );
+    canvas.drawRRect(rrect, paint);
+  }
+}
+
+class _GappedTrackShape extends SliderTrackShape with BaseSliderTrackShape {
+  const _GappedTrackShape();
+
+  static const double _gap = 4;
+  static const double _radius = 8;
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset offset, {
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required Animation<double> enableAnimation,
+    required TextDirection textDirection,
+    required Offset thumbCenter,
+    Offset? secondaryOffset,
+    bool isDiscrete = false,
+    bool isEnabled = false,
+    double additionalActiveTrackHeight = 0,
+  }) {
+    final canvas = context.canvas;
+    final trackRect = getPreferredRect(
+      parentBox: parentBox,
+      offset: offset,
+      sliderTheme: sliderTheme,
+      isEnabled: isEnabled,
+      isDiscrete: isDiscrete,
+    );
+
+    final activePaint = Paint()
+      ..color = (sliderTheme.activeTrackColor ?? Colors.blue);
+    final inactivePaint = Paint()
+      ..color = (sliderTheme.inactiveTrackColor ?? Colors.grey);
+
+    // Active (left) track — up to thumb minus gap
+    canvas.drawRRect(
+      RRect.fromRectAndCorners(
+        Rect.fromLTRB(
+            trackRect.left, trackRect.top, thumbCenter.dx - _gap, trackRect.bottom),
+        topLeft: const Radius.circular(_radius),
+        bottomLeft: const Radius.circular(_radius),
+      ),
+      activePaint,
+    );
+
+    // Inactive (right) track — from thumb plus gap
+    canvas.drawRRect(
+      RRect.fromRectAndCorners(
+        Rect.fromLTRB(
+            thumbCenter.dx + _gap, trackRect.top, trackRect.right, trackRect.bottom),
+        topRight: const Radius.circular(_radius),
+        bottomRight: const Radius.circular(_radius),
+      ),
+      inactivePaint,
     );
   }
 }

@@ -8,7 +8,7 @@ import 'dart:typed_data';
 
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:html/dom.dart';
+import 'package:html/dom.dart' as html_dom;
 import 'package:http/http.dart';
 import 'package:obtainium/app_sources/apkmirror.dart';
 import 'package:obtainium/app_sources/apkpure.dart';
@@ -59,6 +59,9 @@ class APKDetails {
   /// Optional absolute URL to a raster app icon from the source (for non-installed apps).
   String? iconUrl;
 
+  /// Release names/titles seen before [filterReleaseTitlesByRegEx] (RegEx assist).
+  List<String> rawReleaseTitleCandidates;
+
   APKDetails(
     this.version,
     this.apkUrls,
@@ -67,6 +70,7 @@ class APKDetails {
     this.changeLog,
     this.allAssetUrls = const [],
     this.iconUrl,
+    this.rawReleaseTitleCandidates = const [],
   });
 }
 
@@ -320,6 +324,13 @@ class App {
   late String name;
   String? installedVersion;
   late String latestVersion;
+  /// Version string from the source before [extractVersion] / release-date replacement.
+  /// Not shown on the app page; used for helpers and diagnostics. Omitted from JSON when null.
+  String? rawLatestVersionFromSource;
+  /// APK row keys (e.g. filenames) before [filterApks], newline-separated. RegEx assist.
+  String? rawApkNamesFromSource;
+  /// Release title candidates before title filter, newline-separated. RegEx assist.
+  String? rawReleaseTitlesFromSource;
   List<MapEntry<String, String>> apkUrls = []; // Key is name, value is URL
   List<MapEntry<String, String>> otherAssetUrls = [];
   late int preferredApkIndex;
@@ -351,6 +362,9 @@ class App {
     this.allowIdChange = false,
     this.otherAssetUrls = const [],
     this.iconUrl,
+    this.rawLatestVersionFromSource,
+    this.rawApkNamesFromSource,
+    this.rawReleaseTitlesFromSource,
   });
 
   @override
@@ -395,6 +409,9 @@ class App {
     allowIdChange: allowIdChange,
     otherAssetUrls: otherAssetUrls,
     iconUrl: iconUrl,
+    rawLatestVersionFromSource: rawLatestVersionFromSource,
+    rawApkNamesFromSource: rawApkNamesFromSource,
+    rawReleaseTitlesFromSource: rawReleaseTitlesFromSource,
   );
 
   factory App.fromJson(Map<String, dynamic> json) {
@@ -442,6 +459,11 @@ class App {
         jsonDecode((json['otherAssetUrls'] ?? '[]')),
       ),
       iconUrl: json['iconUrl'] as String?,
+      rawLatestVersionFromSource:
+          json['rawLatestVersionFromSource'] as String?,
+      rawApkNamesFromSource: json['rawApkNamesFromSource'] as String?,
+      rawReleaseTitlesFromSource:
+          json['rawReleaseTitlesFromSource'] as String?,
     );
   }
 
@@ -464,6 +486,12 @@ class App {
     'overrideSource': overrideSource,
     'allowIdChange': allowIdChange,
     if (iconUrl != null) 'iconUrl': iconUrl,
+    if (rawLatestVersionFromSource != null)
+      'rawLatestVersionFromSource': rawLatestVersionFromSource,
+    if (rawApkNamesFromSource != null)
+      'rawApkNamesFromSource': rawApkNamesFromSource,
+    if (rawReleaseTitlesFromSource != null)
+      'rawReleaseTitlesFromSource': rawReleaseTitlesFromSource,
   };
 }
 
@@ -496,7 +524,7 @@ String preStandardizeUrl(String url) {
 String noAPKFound = tr('noAPKFound');
 
 List<String> getLinksFromParsedHTML(
-  Document dom,
+  html_dom.Document dom,
   RegExp hrefPattern,
   String prependToLinks,
 ) => dom
@@ -513,9 +541,39 @@ Map<String, dynamic> getDefaultValuesFromFormItems(
 ) {
   return Map.fromEntries(
     items
-        .map((row) => row.map((el) => MapEntry(el.key, el.defaultValue ?? '')))
-        .reduce((value, element) => [...value, ...element]),
+        .expand((row) => row)
+        .where((el) => el is! GeneratedFormSectionHeader)
+        .map((el) => MapEntry(el.key, el.defaultValue ?? '')),
   );
+}
+
+const int _maxRawAssistStoredLines = 40;
+const int _maxRawAssistStoredChars = 8000;
+
+/// Newline-separated snapshot for RegEx assist dialogs (null if empty).
+String? encodeRawAssistLines(Iterable<String> lines) {
+  final List<String> out = <String>[];
+  int chars = 0;
+  for (final String line in lines) {
+    final String trimmed = line.trim();
+    if (trimmed.isEmpty) {
+      continue;
+    }
+    if (out.length >= _maxRawAssistStoredLines) {
+      break;
+    }
+    if (chars + trimmed.length + 1 > _maxRawAssistStoredChars) {
+      break;
+    }
+    if (!out.contains(trimmed)) {
+      out.add(trimmed);
+      chars += trimmed.length + 1;
+    }
+  }
+  if (out.isEmpty) {
+    return null;
+  }
+  return out.join('\n');
 }
 
 List<MapEntry<String, String>> getApkUrlsFromUrls(List<String> urls) =>
@@ -643,6 +701,7 @@ abstract class AppSource {
   bool allowOverride = true;
   bool neverAutoSelect = false;
   bool showReleaseDateAsVersionToggle = false;
+  bool showReleaseTitleAsVersionToggle = false;
   bool versionDetectionDisallowed = false;
   List<String> excludeCommonSettingKeys = [];
   bool urlsAlwaysHaveExtension = false;
@@ -753,7 +812,45 @@ abstract class AppSource {
   // Some additional data may be needed for Apps regardless of Source
   List<List<GeneratedFormItem>>
   additionalAppSpecificSourceAgnosticSettingFormItemsNeverUseDirectly = [
-    [GeneratedFormSwitch('trackOnly', label: tr('trackOnly'))],
+    [
+      GeneratedFormSectionHeader(
+        '__formSectionTracking',
+        label: tr('additionalOptionsSectionTracking'),
+      ),
+    ],
+    [
+      GeneratedFormSwitch(
+        'trackOnly',
+        label: tr('trackOnly'),
+        labelTooltip: tr('trackOnlyAppDescription'),
+      ),
+    ],
+    [
+      GeneratedFormSwitch(
+        'onDemandOnly',
+        label: tr('onDemandOnly'),
+        defaultValue: false,
+        labelTooltip: tr('onDemandOnlyDescription'),
+      ),
+    ],
+    [
+      GeneratedFormSwitch(
+        'exemptFromBackgroundUpdates',
+        label: tr('exemptFromBackgroundUpdates'),
+      ),
+    ],
+    [
+      GeneratedFormSwitch(
+        'skipUpdateNotifications',
+        label: tr('skipUpdateNotifications'),
+      ),
+    ],
+    [
+      GeneratedFormSectionHeader(
+        '__formSectionVersion',
+        label: tr('additionalOptionsSectionVersion'),
+      ),
+    ],
     [
       GeneratedFormTextField(
         'versionExtractionRegEx',
@@ -772,16 +869,22 @@ abstract class AppSource {
     ],
     [
       GeneratedFormSwitch(
+        'useVersionCodeAsOSVersion',
+        label: tr('useVersionCodeAsOSVersion'),
+        defaultValue: false,
+      ),
+    ],
+    [
+      GeneratedFormSwitch(
         'versionDetection',
         label: tr('versionDetectionExplanation'),
         defaultValue: true,
       ),
     ],
     [
-      GeneratedFormSwitch(
-        'useVersionCodeAsOSVersion',
-        label: tr('useVersionCodeAsOSVersion'),
-        defaultValue: false,
+      GeneratedFormSectionHeader(
+        '__formSectionApk',
+        label: tr('additionalOptionsSectionApk'),
       ),
     ],
     [
@@ -799,7 +902,7 @@ abstract class AppSource {
     [
       GeneratedFormSwitch(
         'invertAPKFilter',
-        label: '${tr('invertRegEx')} (${tr('filterAPKsByRegEx')})',
+        label: tr('invertRegEx'),
         defaultValue: false,
       ),
     ],
@@ -810,8 +913,12 @@ abstract class AppSource {
         defaultValue: true,
       ),
     ],
-    [GeneratedFormTextField('appName', label: tr('appName'), required: false)],
-    [GeneratedFormTextField('appAuthor', label: tr('author'), required: false)],
+    [
+      GeneratedFormSectionHeader(
+        '__formSectionAdvanced',
+        label: tr('additionalOptionsSectionAdvanced'),
+      ),
+    ],
     [
       GeneratedFormSwitch(
         'shizukuPretendToBeGooglePlay',
@@ -826,19 +933,6 @@ abstract class AppSource {
         defaultValue: false,
       ),
     ],
-    [
-      GeneratedFormSwitch(
-        'exemptFromBackgroundUpdates',
-        label: tr('exemptFromBackgroundUpdates'),
-      ),
-    ],
-    [
-      GeneratedFormSwitch(
-        'skipUpdateNotifications',
-        label: tr('skipUpdateNotifications'),
-      ),
-    ],
-    [GeneratedFormTextField('about', label: tr('about'), required: false)],
     [
       GeneratedFormSwitch(
         'refreshBeforeDownload',
@@ -859,27 +953,74 @@ abstract class AppSource {
                     0,
               ) <
           0) {
+        final int versionMainHeaderIndex =
+            additionalAppSpecificSourceAgnosticSettingFormItemsNeverUseDirectly
+                .indexWhere(
+          (List<GeneratedFormItem> row) =>
+              row.length == 1 &&
+              row.first is GeneratedFormSectionHeader &&
+              (row.first as GeneratedFormSectionHeader).key ==
+                  '__formSectionVersion',
+        );
+        final int insertReleaseRowAfter = versionMainHeaderIndex >= 0
+            ? versionMainHeaderIndex
+            : additionalAppSpecificSourceAgnosticSettingFormItemsNeverUseDirectly
+                .indexWhere(
+                  (List<GeneratedFormItem> row) =>
+                      row.indexWhere(
+                        (GeneratedFormItem item) =>
+                            item.key == 'versionExtractionRegEx',
+                      ) >=
+                      0,
+                );
         additionalAppSpecificSourceAgnosticSettingFormItemsNeverUseDirectly
             .insert(
-              additionalAppSpecificSourceAgnosticSettingFormItemsNeverUseDirectly
-                      .indexWhere(
-                        (List<GeneratedFormItem> e) =>
-                            e.indexWhere(
-                              (GeneratedFormItem i) =>
-                                  i.key == 'versionDetection',
-                            ) >=
-                            0,
-                      ) +
-                  1,
-              [
-                GeneratedFormSwitch(
-                  'releaseDateAsVersion',
-                  label:
-                      '${tr('releaseDateAsVersion')} (${tr('pseudoVersion')})',
-                  defaultValue: false,
-                ),
-              ],
-            );
+          insertReleaseRowAfter >= 0 ? insertReleaseRowAfter + 1 : 0,
+          [
+            GeneratedFormSwitch(
+              'releaseDateAsVersion',
+              label:
+                  '${tr('releaseDateAsVersion')} (${tr('pseudoVersion')})',
+              defaultValue: false,
+            ),
+          ],
+        );
+      }
+    }
+    if (showReleaseTitleAsVersionToggle == true) {
+      if (additionalAppSpecificSourceAgnosticSettingFormItemsNeverUseDirectly
+              .indexWhere(
+                (List<GeneratedFormItem> row) =>
+                    row.indexWhere(
+                      (GeneratedFormItem item) =>
+                          item.key == 'releaseTitleAsVersion',
+                    ) >=
+                    0,
+              ) <
+          0) {
+        final int trimRowIndex =
+            additionalAppSpecificSourceAgnosticSettingFormItemsNeverUseDirectly
+                .indexWhere(
+          (List<GeneratedFormItem> row) =>
+              row.indexWhere(
+                (GeneratedFormItem item) =>
+                    item.key == 'versionExtractionRegEx',
+              ) >=
+              0,
+        );
+        if (trimRowIndex >= 0) {
+          additionalAppSpecificSourceAgnosticSettingFormItemsNeverUseDirectly
+              .insert(
+            trimRowIndex,
+            [
+              GeneratedFormSwitch(
+                'releaseTitleAsVersion',
+                label: tr('releaseTitleAsVersion'),
+                defaultValue: false,
+              ),
+            ],
+          );
+        }
       }
     }
     additionalAppSpecificSourceAgnosticSettingFormItemsNeverUseDirectly =
@@ -1233,12 +1374,19 @@ class SourceProvider {
     if (trackOnlyOverride || source.enforceTrackOnly) {
       additionalSettings['trackOnly'] = true;
     }
-    var trackOnly = additionalSettings['trackOnly'] == true;
     String standardUrl = source.standardizeUrl(url);
     APKDetails apk = await source.getLatestAPKDetails(
       standardUrl,
       additionalSettings,
     );
+    final String rawLatestVersionFromSource = apk.version;
+    final String? rawApkNamesFromSource = encodeRawAssistLines(
+      apk.apkUrls.map((MapEntry<String, String> entry) => entry.key),
+    );
+    final String? rawReleaseTitlesFromSource = encodeRawAssistLines(
+      apk.rawReleaseTitleCandidates,
+    );
+    var trackOnly = additionalSettings['trackOnly'] == true;
 
     if (source.runtimeType !=
             HTML().runtimeType && // Some sources do it separately
@@ -1308,6 +1456,9 @@ class SourceProvider {
           .where((a) => apk.apkUrls.indexWhere((p) => a.key == p.key) < 0)
           .toList(),
       iconUrl: apk.iconUrl ?? currentApp?.iconUrl,
+      rawLatestVersionFromSource: rawLatestVersionFromSource,
+      rawApkNamesFromSource: rawApkNamesFromSource,
+      rawReleaseTitlesFromSource: rawReleaseTitlesFromSource,
     );
     return source.endOfGetAppChanges(finalApp);
   }

@@ -4,7 +4,7 @@
 
 ObtainX is a fork of Obtainium. These are the extra features you get in this fork:
 
-- **📦 Installer choice** - Added a new **Legacy** install path. It sends APKs to any installer you choose (e.g. InstallerX, App Manager). Useful when you cannot grant "install unknown apps" to normal apps (e.g. when _Advanced Protection_ is enabled) but a privileged installer can still do the job.
+- **📦 Installer choice** - Added a **Third-Party** install path. It sends APKs to any installer you choose (e.g. InstallerX, App Manager). Useful when you cannot grant "install unknown apps" to normal apps (e.g. when _Advanced Protection_ is enabled) but a privileged installer can still do the job.
 
 - **🎨 Material 3 Expressive Makeover** - Different parts of the app has been overhauled with Material 3 Expressive design, with grouping in cards, slide up panels, fluid animations, expressive buttons, auto-hide menu bars, and visual consistency tweaks. 
 
@@ -36,7 +36,7 @@ ObtainX is a fork of Obtainium. These are the extra features you get in this for
 ## Screenshots
 | <img src="./assets/screenshots/1.apps.webp" alt="All Apps Page" /> | <img src="./assets/screenshots/2.view_opts.webp" alt="Themes and View Options" /> | <img src="./assets/screenshots/3.filters.webp" alt="Live Filters" /> | 
 | ------------------------------------------------------ | ----------------------------------------------------------------------- | ----------------------------------------------------------------------- | 
-| <img src="./assets/screenshots/4.app.webp" alt="Individual App Page" /> | <img src="./assets/screenshots/5.categories.webp" alt="Editing Categories" /> | <img src="./assets/screenshots/6.custom_icon.webp" alt="Add/Set Custom Icon" /> | 
+| <img src="./assets/screenshots/4.app.webp" alt="Individual App Page" /> | <img src="./assets/screenshots/5.edit.webp" alt="Editing App Details" /> | <img src="./assets/screenshots/6.options.webp" alt="Additional Options with RegEx Helper" /> | 
 | <img src="./assets/screenshots/7.settings.webp" alt="Modern Settings Page" /> | <img src="./assets/screenshots/8.installer_choice.webp" alt="Choose your own installer" /> |  | 
 
 ## Screenrecords

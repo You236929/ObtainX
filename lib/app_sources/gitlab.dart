@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:obtainium/app_sources/app_package_formats.dart';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart';
@@ -24,25 +25,15 @@ class GitLab extends AppSource {
         label: tr('gitlabPATLabel'),
         password: true,
         required: false,
-        belowWidgets: [
-          const SizedBox(height: 4),
-          GestureDetector(
-            onTap: () {
-              launchUrlString(
-                'https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html#create-a-personal-access-token',
-                mode: LaunchMode.externalApplication,
-              );
-            },
-            child: Text(
-              tr('about'),
-              style: const TextStyle(
-                decoration: TextDecoration.underline,
-                fontSize: 12,
-              ),
-            ),
+        suffixIcon: IconButton(
+          visualDensity: VisualDensity.compact,
+          icon: const Icon(Icons.help_outline, size: 18),
+          onPressed: () => launchUrlString(
+            'https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html#create-a-personal-access-token',
+            mode: LaunchMode.externalApplication,
           ),
-          const SizedBox(height: 4),
-        ],
+          tooltip: tr('about'),
+        ),
       ),
     ];
 
@@ -135,8 +126,8 @@ class GitLab extends AppSource {
     String standardUrl,
     Map<String, dynamic> additionalSettings,
   ) async {
-    String? PAT = await getPATIfAny(hostChanged ? additionalSettings : {});
-    String optionalAuth = (PAT != null) ? 'private_token=$PAT' : '';
+    String? pat = await getPATIfAny(hostChanged ? additionalSettings : {});
+    String optionalAuth = (pat != null) ? 'private_token=$pat' : '';
     return '$assetUrl${(Uri.parse(assetUrl).query.isEmpty ? '?' : '&')}$optionalAuth';
   }
 
@@ -149,8 +140,8 @@ class GitLab extends AppSource {
     var names = GitHub(hostChanged: true).getAppNames(standardUrl);
     String projectUriComponent =
         '${Uri.encodeComponent(names.author)}%2F${Uri.encodeComponent(names.name)}';
-    String? PAT = await getPATIfAny(hostChanged ? additionalSettings : {});
-    String optionalAuth = (PAT != null) ? 'private_token=$PAT' : '';
+    String? pat = await getPATIfAny(hostChanged ? additionalSettings : {});
+    String optionalAuth = (pat != null) ? 'private_token=$pat' : '';
 
     bool trackOnly = additionalSettings['trackOnly'] == true;
 
@@ -196,29 +187,21 @@ class GitLab extends AppSource {
           .where(
             (s) =>
                 s.key.isNotEmpty &&
-                (s.key.toLowerCase().endsWith('.apk') ||
-                    s.key.toLowerCase().endsWith('.xapk') ||
-                    s.value.toLowerCase().endsWith('.apk') ||
-                    s.value.toLowerCase().endsWith(
-                      '.xapk',
-                    )), // TODO: Supported file types should be centralized somewhere and shared between sources
+                (isInstallable(s.key) || isInstallable(s.value)),
           )
           .toList();
       var uploadedAPKsFromDescription = ((e['description'] ?? '') as String)
           .split('](')
           .join('\n')
-          .split('.apk)')
-          .join('.apk\n')
-          .split('.xapk)')
-          .join('.xapk\n')
+          .split('.$kApkExt)')
+          .join('.$kApkExt\n')
+          .split('.$kXapkExt)')
+          .join('.$kXapkExt\n')
           .split('\n')
           .where(
             (s) =>
                 s.startsWith('/uploads/') &&
-                (s.endsWith('apk') ||
-                    s.endsWith(
-                      'xapk',
-                    )), // TODO: Supported file types should be centralized somewhere and shared between sources
+                isInstallable(s),
           )
           .map((s) => 'https://${hosts[0]}/-/project/$projectId$s')
           .map((l) => MapEntry(Uri.parse(l).pathSegments.last, l))

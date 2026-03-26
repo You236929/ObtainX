@@ -3,6 +3,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'package:obtainium/app_sources/app_package_formats.dart';
 import 'dart:io';
 import 'dart:math';
 import 'dart:ui';
@@ -71,10 +72,13 @@ bool versionsEffectivelyEqual(String installed, String latest) {
               !_isDigit(installed.codeUnitAt(latestLen))))) {
     return true;
   }
-  // Same build when both contain the same commit-hash-like token (e.g. OS version "1.5.3-DEV (75094D8)" vs release "debug-75094d8")
-  final hexPattern = RegExp(r'[0-9a-fA-F]{6,}');
-  final installedHashes = hexPattern.allMatches(installed).map((m) => m.group(0)!.toLowerCase()).toSet();
-  final latestHashes = hexPattern.allMatches(latest).map((m) => m.group(0)!.toLowerCase()).toSet();
+  if (_oneVersionStringContainsOtherAsBoundedSubstring(installed, latest)) {
+    return true;
+  }
+  // Same build when both contain the same commit-hash-like token (e.g. OS version "1.5.3-DEV (75094D8)" vs release "debug-75094d8").
+  // Omit plausible YYYYMMDD date tokens so shared calendar segments (e.g. 20260205) are not treated as commit hashes.
+  final installedHashes = _commitHashLikeTokensFromVersion(installed);
+  final latestHashes = _commitHashLikeTokensFromVersion(latest);
   if (installedHashes.intersection(latestHashes).isNotEmpty) {
     return true;
   }
@@ -83,6 +87,227 @@ bool versionsEffectivelyEqual(String installed, String latest) {
 
 bool _isDigit(int codeUnit) =>
     codeUnit >= 0x30 && codeUnit <= 0x39; // '0'..'9'
+
+/// True when [needle] appears in [longer] as a contiguous substring with
+/// boundaries so we do not treat [2.0] as inside [12.0] or [.0] as inside [8.0].
+bool _boundedVersionSubstringInHaystack(String longer, String needle, int startIndex) {
+  final int needleLen = needle.length;
+  if (needleLen == 0 || startIndex < 0 || startIndex + needleLen > longer.length) {
+    return false;
+  }
+  if (longer.substring(startIndex, startIndex + needleLen) != needle) {
+    return false;
+  }
+  final int endIndex = startIndex + needleLen;
+  final int firstUnit = needle.codeUnitAt(0);
+  if (startIndex > 0) {
+    final int prevUnit = longer.codeUnitAt(startIndex - 1);
+    if (_isDigit(firstUnit) && _isDigit(prevUnit)) {
+      return false;
+    }
+    if (firstUnit == 0x2E && _isDigit(prevUnit)) {
+      // ".0" inside "8.0" must not match as a standalone version.
+      return false;
+    }
+  }
+  if (endIndex < longer.length) {
+    final int lastUnit = needle.codeUnitAt(needleLen - 1);
+    final int nextUnit = longer.codeUnitAt(endIndex);
+    if (_isDigit(lastUnit) && _isDigit(nextUnit)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/// True when the shorter of [a]/[b] appears inside the longer as a bounded
+/// substring (covers [1.6.5-rc0] in [v1.6.5-rc0], build ids embedded in carrier
+/// strings, and titles like [1Password: ... 8.12.8-27.BETA]).
+bool _oneVersionStringContainsOtherAsBoundedSubstring(String a, String b) {
+  if (a.isEmpty || b.isEmpty || a == b) {
+    return false;
+  }
+  final String shorter = a.length <= b.length ? a : b;
+  final String longer = a.length <= b.length ? b : a;
+  if (shorter.length == longer.length) {
+    return false;
+  }
+  int searchFrom = 0;
+  while (true) {
+    final int foundAt = longer.indexOf(shorter, searchFrom);
+    if (foundAt < 0) {
+      return false;
+    }
+    if (_boundedVersionSubstringInHaystack(longer, shorter, foundAt)) {
+      return true;
+    }
+    searchFrom = foundAt + 1;
+  }
+}
+
+/// True for 8-digit all-decimal tokens that look like YYYYMMDD (excludes them
+/// from commit-hash intersection so shared build dates do not imply same build).
+bool isPlausibleVersionDateTokenYYYYMMDD(String token) {
+  if (token.length != 8) return false;
+  if (!RegExp(r'^\d{8}$').hasMatch(token)) return false;
+  final year = int.tryParse(token.substring(0, 4));
+  final month = int.tryParse(token.substring(4, 6));
+  final day = int.tryParse(token.substring(6, 8));
+  if (year == null || month == null || day == null) return false;
+  if (year < 1990 || year > 2100) return false;
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > 31) return false;
+  return true;
+}
+
+Set<String> _commitHashLikeTokensFromVersion(String version) {
+  final hexPattern = RegExp(r'[0-9a-fA-F]{6,}');
+  final result = <String>{};
+  for (final Match match in hexPattern.allMatches(version)) {
+    final String token = match.group(0)!.toLowerCase();
+    if (isPlausibleVersionDateTokenYYYYMMDD(token)) continue;
+    result.add(token);
+  }
+  return result;
+}
+
+final RegExp _digitsOnlySegmentPattern = RegExp(r'^\d+$');
+
+/// True when dot-separated segments match numerically through the shared prefix,
+/// and the first differing part involves commit-hash-like material on at least
+/// one side so [compareVersionsByNumericSegments] must not decide order (e.g.
+/// [26.03.a4d75424] vs [26.03.0264c0ba]).
+bool _dotSeparatedNumericPrefixThenIncomparableHashRemainder(
+  String installed,
+  String latest,
+) {
+  final installedParts = installed.split('.');
+  final latestParts = latest.split('.');
+  final int pairCount = installedParts.length <= latestParts.length
+      ? installedParts.length
+      : latestParts.length;
+  for (int index = 0; index < pairCount; index++) {
+    final String installedSegment = installedParts[index];
+    final String latestSegment = latestParts[index];
+    if (installedSegment == latestSegment) continue;
+    final bool installedNumeric =
+        _digitsOnlySegmentPattern.hasMatch(installedSegment);
+    final bool latestNumeric = _digitsOnlySegmentPattern.hasMatch(latestSegment);
+    if (installedNumeric && latestNumeric) {
+      if (int.parse(installedSegment) != int.parse(latestSegment)) {
+        return false;
+      }
+      continue;
+    }
+    if (installedNumeric != latestNumeric) {
+      final bool hashInstalled =
+          _commitHashLikeTokensFromVersion(installedSegment).isNotEmpty;
+      final bool hashLatest =
+          _commitHashLikeTokensFromVersion(latestSegment).isNotEmpty;
+      if (hashInstalled || hashLatest) return true;
+      return false;
+    }
+    final bool hashInstalled =
+        _commitHashLikeTokensFromVersion(installedSegment).isNotEmpty;
+    final bool hashLatest =
+        _commitHashLikeTokensFromVersion(latestSegment).isNotEmpty;
+    if (hashInstalled || hashLatest) return true;
+    return false;
+  }
+  if (installedParts.length == latestParts.length) return false;
+  final List<String> longerParts = installedParts.length > latestParts.length
+      ? installedParts
+      : latestParts;
+  final int shorterLen = installedParts.length <= latestParts.length
+      ? installedParts.length
+      : latestParts.length;
+  for (int index = shorterLen; index < longerParts.length; index++) {
+    final String tailSegment = longerParts[index];
+    if (tailSegment.isEmpty) continue;
+    if (_digitsOnlySegmentPattern.hasMatch(tailSegment) &&
+        int.parse(tailSegment) == 0) {
+      continue;
+    }
+    if (_commitHashLikeTokensFromVersion(tailSegment).isNotEmpty) return true;
+  }
+  return false;
+}
+
+/// True when numeric segment comparison ties but [installed] and [latest] differ
+/// and are not [versionsEffectivelyEqual] (user cannot tell order from strings).
+bool versionOrderIsUnclear(String installed, String latest) {
+  if (installed.isEmpty || latest.isEmpty) return false;
+  if (installed == latest) return false;
+  if (versionsEffectivelyEqual(installed, latest)) return false;
+  if (compareVersionsByNumericSegments(installed, latest) == 0) {
+    return true;
+  }
+  return _dotSeparatedNumericPrefixThenIncomparableHashRemainder(
+    installed,
+    latest,
+  );
+}
+
+/// User skipped the current [App.latestVersion]; nagging and update badges are suppressed.
+bool isSkipActiveForCurrentLatest(App app) {
+  final dynamic skipped = app.additionalSettings['skippedLatestVersion'];
+  if (skipped is! String || skipped.isEmpty) return false;
+  return skipped == app.latestVersion;
+}
+
+/// Remove [skippedLatestVersion] when it no longer matches [App.latestVersion].
+void clearStaleSkippedLatestVersionInPlace(App app) {
+  final dynamic skipped = app.additionalSettings['skippedLatestVersion'];
+  if (skipped is! String || skipped.isEmpty) return;
+  if (skipped != app.latestVersion) {
+    app.additionalSettings.remove('skippedLatestVersion');
+  }
+}
+
+/// Clears skip when the device is clearly at or ahead of source (no misleading skip flag).
+/// Returns true if [app.additionalSettings] was changed.
+bool clearRedundantSkippedLatestForApp(App app) {
+  if (!isSkipActiveForCurrentLatest(app)) return false;
+  final String? installed = app.installedVersion;
+  final String latest = app.latestVersion;
+  if (installed == null || installed.isEmpty) return false;
+  if (installed == latest || versionsEffectivelyEqual(installed, latest)) {
+    app.additionalSettings.remove('skippedLatestVersion');
+    return true;
+  }
+  if (compareVersionsByNumericSegments(installed, latest) == 1) {
+    app.additionalSettings.remove('skippedLatestVersion');
+    return true;
+  }
+  return false;
+}
+
+/// Installed app should show update affordances and count in update lists (unless skipped).
+bool appHasActionableUpdate(App app) {
+  final String? installed = app.installedVersion;
+  final String latest = app.latestVersion;
+  if (installed == null || latest.isEmpty) return false;
+  if (isSkipActiveForCurrentLatest(app)) return false;
+  if (installed == latest) return false;
+  if (versionsEffectivelyEqual(installed, latest)) return false;
+  if (versionOrderIsUnclear(installed, latest)) return false;
+  final int? cmp = compareVersionsByNumericSegments(installed, latest);
+  if (cmp == 1) return false;
+  if (cmp == 0) return true;
+  return true;
+}
+
+/// Installed app where installed vs latest differs but ordering is ambiguous (user must decide).
+/// Mutually exclusive with [appHasActionableUpdate] for normal version strings.
+bool versionOrderUncertainUpdate(App app) {
+  final String? installed = app.installedVersion;
+  final String latest = app.latestVersion;
+  if (installed == null || latest.isEmpty) return false;
+  if (isSkipActiveForCurrentLatest(app)) return false;
+  if (installed == latest) return false;
+  if (versionsEffectivelyEqual(installed, latest)) return false;
+  return versionOrderIsUnclear(installed, latest);
+}
 
 /// Compare version strings by numeric segments (e.g. 2.0.0 vs 1.9.9).
 /// Returns -1 if [installed] < [latest], 0 if equal, 1 if [installed] > [latest], null if not comparable.
@@ -146,7 +371,7 @@ class AppInMemory {
 
   List<String> get certificateHashes {
     // https://developer.android.com/reference/android/content/pm/SigningInfo#getApkContentsSigners()
-    final signatures = this.hasMultipleSigners
+    final signatures = hasMultipleSigners
         ? installedInfo?.signingInfo?.apkContentSigners
         : installedInfo?.signingInfo?.signingCertificateHistory;
 
@@ -166,7 +391,7 @@ class DownloadedApk {
   DownloadedApk(this.appId, this.file);
 }
 
-enum DownloadedDirType { XAPK, ZIP }
+enum DownloadedDirType { xApk, zip }
 
 class DownloadedDir {
   String appId;
@@ -412,10 +637,9 @@ Future<File> downloadFile(
   if (ext.endsWith('"') || ext.endsWith("other")) {
     ext = ext.substring(0, ext.length - 1);
   }
-  if (((Uri.tryParse(url)?.path ?? url).toLowerCase().endsWith('.apk') ||
-          ext == 'attachment') &&
-      ext != 'apk') {
-    ext = 'apk';
+  if ((isApk(Uri.tryParse(url)?.path ?? url) || ext == 'attachment') &&
+      ext != kApkExt) {
+    ext = kApkExt;
   }
   fileName = fileNameHasExt
       ? fileName
@@ -598,7 +822,7 @@ Future<PackageInfo?> getInstalledInfo(
       );
     } catch (e) {
       if (printErr) {
-        print(e); // OK
+        debugPrint(e.toString()); // OK
       }
     }
   }
@@ -608,6 +832,33 @@ Future<PackageInfo?> getInstalledInfo(
 Future<Directory> getAppStorageDir() async =>
     await getExternalStorageDirectory() ??
     await getApplicationDocumentsDirectory();
+
+/// Outcome of [AppsProvider.removeAppsWithModal].
+class RemoveAppsWithModalResult {
+  const RemoveAppsWithModalResult._({
+    required this.confirmed,
+    this.deferredUndoAppIds = const <String>{},
+    this.removedFromObtainiumImmediately = false,
+    this.obtainiumEntryRemovedOrScheduled = false,
+  });
+
+  /// User dismissed the dialog with Cancel, or left both toggles off.
+  static const RemoveAppsWithModalResult cancelled = RemoveAppsWithModalResult._(
+    confirmed: false,
+  );
+
+  final bool confirmed;
+  /// When non-empty, those apps were removed from the UI and Obtainium data is
+  /// deleted after 5 seconds unless [AppsProvider.undoDeferredObtainiumRemovals] runs.
+  final Set<String> deferredUndoAppIds;
+  /// True when [removeApps] ran in the same step (remove from Obtainium + uninstall).
+  final bool removedFromObtainiumImmediately;
+  /// True when the app should disappear from the list (deferred or immediate).
+  final bool obtainiumEntryRemovedOrScheduled;
+
+  bool get shouldShowSnackBar =>
+      deferredUndoAppIds.isNotEmpty || removedFromObtainiumImmediately;
+}
 
 class AppsProvider with ChangeNotifier {
   // In memory App state (should always be kept in sync with local storage versions)
@@ -620,20 +871,26 @@ class AppsProvider with ChangeNotifier {
   // the whole provider (e.g. AppPage) don't get hammered on every byte chunk.
   Timer? _progressNotifyTimer;
 
+  /// Remove-from-Obtainium was confirmed without uninstall: JSON is stashed, UI updates,
+  /// and disk is purged after 5s unless the user undoes.
+  final Map<String, Timer> _deferredObtainiumTimers = {};
+  final Map<String, AppInMemory> _deferredObtainiumSnapshots = {};
+
   // Variables to keep track of the app foreground status (installs can't run in the background)
   bool isForeground = true;
   late Stream<FGBGType>? foregroundStream;
   late StreamSubscription<FGBGType>? foregroundSubscription;
-  late Directory APKDir;
+  late Directory apkDir;
   late Directory iconsCacheDir;
   /// User-chosen PNG overrides; under app storage, not [iconsCacheDir], so they
   /// survive Android "clear cache".
   late Directory userAppIconsDir;
-  late SettingsProvider settingsProvider = SettingsProvider();
+  late SettingsProvider settingsProvider;
 
   Iterable<AppInMemory> getAppValues() => apps.values.map((a) => a.deepCopy());
 
-  AppsProvider({isBg = false}) {
+  AppsProvider({bool isBg = false, SettingsProvider? sharedSettings}) {
+    settingsProvider = sharedSettings ?? SettingsProvider();
     // Subscribe to changes in the app foreground status
     foregroundStream = FGBGEvents.instance.stream.asBroadcastStream();
     foregroundSubscription = foregroundStream?.listen((event) async {
@@ -643,7 +900,9 @@ class AppsProvider with ChangeNotifier {
       }
     });
     () async {
-      await settingsProvider.initializeSettings();
+      if (sharedSettings == null) {
+        await settingsProvider.initializeSettings();
+      }
       var cacheDirs = await getExternalCacheDirectories();
       final Directory appStorageRoot = await getAppStorageDir();
       userAppIconsDir = Directory('${appStorageRoot.path}/user_icons');
@@ -651,15 +910,15 @@ class AppsProvider with ChangeNotifier {
         userAppIconsDir.createSync(recursive: true);
       }
       if (cacheDirs?.isNotEmpty ?? false) {
-        APKDir = cacheDirs!.first;
+        apkDir = cacheDirs!.first;
         iconsCacheDir = Directory('${cacheDirs.first.path}/icons');
         if (!iconsCacheDir.existsSync()) {
           iconsCacheDir.createSync();
         }
       } else {
-        APKDir = Directory('${appStorageRoot.path}/apks');
-        if (!APKDir.existsSync()) {
-          APKDir.createSync();
+        apkDir = Directory('${appStorageRoot.path}/apks');
+        if (!apkDir.existsSync()) {
+          apkDir.createSync();
         }
         iconsCacheDir = Directory('${appStorageRoot.path}/icons');
         if (!iconsCacheDir.existsSync()) {
@@ -672,7 +931,7 @@ class AppsProvider with ChangeNotifier {
         await loadApps();
         // Delete any partial APKs (if safe to do so)
         var cutoff = DateTime.now().subtract(const Duration(days: 7));
-        APKDir.listSync()
+        apkDir.listSync()
             .where((element) => element.statSync().modified.isBefore(cutoff))
             .forEach((partialApk) {
               if (!areDownloadsRunning()) {
@@ -780,7 +1039,7 @@ class AppsProvider with ChangeNotifier {
           }
           prevProg = prog;
         },
-        APKDir.path,
+        apkDir.path,
         useExisting: useExisting,
         allowInsecure: app.additionalSettings['allowInsecure'] == true,
         logs: logs,
@@ -793,9 +1052,9 @@ class AppsProvider with ChangeNotifier {
         notificationsProvider?.notify(notif);
       }
       PackageInfo? newInfo;
-      var isAPK = downloadedFile.path.toLowerCase().endsWith('.apk');
-      var isXAPK = downloadedFile.path.toLowerCase().endsWith('.xapk');
-      Directory? apkDir;
+      var isAPK = isApk(downloadedFile.path);
+      var isXAPK = isXapk(downloadedFile.path);
+      Directory? extractedDir;
       if (isAPK) {
         newInfo = await pm.getPackageArchiveInfo(
           archiveFilePath: downloadedFile.path,
@@ -804,10 +1063,10 @@ class AppsProvider with ChangeNotifier {
         // Assume XAPK or ZIP
         String apkDirPath = '${downloadedFile.path}-dir';
         await unzipFile(downloadedFile.path, '${downloadedFile.path}-dir');
-        apkDir = Directory(apkDirPath);
-        var apks = apkDir
+        extractedDir = Directory(apkDirPath);
+        var apks = extractedDir
             .listSync()
-            .where((e) => e.path.toLowerCase().endsWith('.apk'))
+            .where((e) => isApk(e.path))
             .toList();
 
         FileSystemEntity? temp;
@@ -878,8 +1137,8 @@ class AppsProvider with ChangeNotifier {
         return DownloadedDir(
           app.id,
           downloadedFile,
-          apkDir!,
-          isXAPK ? DownloadedDirType.XAPK : DownloadedDirType.ZIP,
+          extractedDir!,
+          isXAPK ? DownloadedDirType.xApk : DownloadedDirType.zip,
         );
       }
     } finally {
@@ -931,7 +1190,7 @@ class AppsProvider with ChangeNotifier {
     // https://developer.android.com/reference/android/content/pm/PackageInstaller.SessionParams#setRequireUserAction(int)
     if (!(targetSDK != null && targetSDK >= requiredSDK)) {
       logs.add(
-        'App currently targets API ${targetSDK} which is too low for background updates (requires API ${requiredSDK}): ${app.id}',
+        'App currently targets API $targetSDK which is too low for background updates (requires API $requiredSDK): ${app.id}',
       );
       return false;
     }
@@ -991,20 +1250,20 @@ class AppsProvider with ChangeNotifier {
     var somethingInstalled = false;
     try {
       MultiAppMultiError errors = MultiAppMultiError();
-      List<File> APKFiles = [];
+      List<File> apkFiles = [];
       for (var file
           in dir.extracted
               .listSync(recursive: true, followLinks: false)
               .whereType<File>()) {
-        if (file.path.toLowerCase().endsWith('.apk')) {
-          APKFiles.add(file);
-        } else if (file.path.toLowerCase().endsWith('.obb')) {
+        if (isApk(file.path)) {
+          apkFiles.add(file);
+        } else if (isObb(file.path)) {
           await moveObbFile(file, dir.appId);
         }
       }
 
       File? temp;
-      APKFiles.removeWhere((element) {
+      apkFiles.removeWhere((element) {
         bool res = element.uri.pathSegments.last.startsWith(dir.appId);
         if (res) {
           temp = element;
@@ -1012,16 +1271,19 @@ class AppsProvider with ChangeNotifier {
         return res;
       });
       if (temp != null) {
-        APKFiles = [temp!, ...APKFiles];
+        apkFiles = [temp!, ...apkFiles];
       }
 
       try {
+        if (firstTimeWithContext != null && !firstTimeWithContext.mounted) {
+          firstTimeWithContext = null;
+        }
         var wasInstalled = await installApk(
-          DownloadedApk(dir.appId, APKFiles[0]),
-          firstTimeWithContext,
+          DownloadedApk(dir.appId, apkFiles[0]),
+          firstTimeWithContext, // ignore: use_build_context_synchronously
           needsBGWorkaround: needsBGWorkaround,
           shizukuPretendToBeGooglePlay: shizukuPretendToBeGooglePlay,
-          additionalAPKs: APKFiles.sublist(
+          additionalAPKs: apkFiles.sublist(
             1,
           ).map((a) => DownloadedApk(dir.appId, a)).toList(),
         );
@@ -1058,7 +1320,7 @@ class AppsProvider with ChangeNotifier {
         msg: tr('appVerifierInstructionToast'),
         toastLength: Toast.LENGTH_LONG,
       );
-      await Share.shareXFiles([f]);
+      await SharePlus.instance.share(ShareParams(files: [f]));
     }
     var newInfo = await pm.getPackageArchiveInfo(
       archiveFilePath: file.file.path,
@@ -1100,21 +1362,21 @@ class AppsProvider with ChangeNotifier {
       final targetPkg = settingsProvider.legacyInstallerPackage;
       final targetAct = settingsProvider.legacyInstallerActivity;
       if (targetPkg == null || targetAct == null) {
-        throw ObtainiumError(tr('legacyInstallerNotSelected'));
+        throw ObtainiumError(tr('thirdPartyInstallerNotSelected'));
       }
-      bool legacyInstalled = await installer.installApkViaLegacy(
+      bool thirdPartyInstallSucceeded = await installer.installApkViaThirdParty(
         file.file.path,
         targetPackage: targetPkg,
         targetActivity: targetAct,
         expectedPackageName: apps[file.appId]!.app.id,
       );
-      if (legacyInstalled) {
+      if (thirdPartyInstallSucceeded) {
         apps[file.appId]!.app.installedVersion =
             apps[file.appId]!.app.latestVersion;
         file.file.delete(recursive: true);
       }
       await saveApps([apps[file.appId]!.app]);
-      return legacyInstalled;
+      return thirdPartyInstallSucceeded;
     }
     int? code;
     if (!settingsProvider.useShizuku) {
@@ -1153,7 +1415,7 @@ class AppsProvider with ChangeNotifier {
   }
 
   Future<void> moveObbFile(File file, String appId) async {
-    if (!file.path.toLowerCase().endsWith('.obb')) return;
+    if (!isObb(file.path)) return;
 
     // TODO: Does not support Android 11+
     if ((await DeviceInfoPlugin().androidInfo).version.sdkInt <= 29) {
@@ -1422,7 +1684,7 @@ class AppsProvider with ChangeNotifier {
         id = downloadedFile?.appId ?? downloadedDir!.appId;
         willBeSilent = await canInstallSilently(apps[id]!.app);
         if (settingsProvider.installerMode == 'legacy') {
-          // Legacy installer bypasses the standard permission check.
+          // Third-party installer path bypasses the standard permission check.
         } else if (!settingsProvider.useShizuku) {
           if (!(await settingsProvider.getInstallPermission(enforce: false))) {
             throw ObtainiumError(tr('cancelled'));
@@ -1509,7 +1771,7 @@ class AppsProvider with ChangeNotifier {
       }
       if (apps[id]!.app.apkUrls.isNotEmpty ||
           apps[id]!.app.otherAssetUrls.isNotEmpty) {
-        // ignore: use_build_context_synchronously
+        if (!context.mounted) return [];
         MapEntry<String, String>? tempFileUrl = await confirmAppFileUrl(
           apps[id]!.app,
           context,
@@ -1568,7 +1830,7 @@ class AppsProvider with ChangeNotifier {
               .getRequestHeaders(
                 app.additionalSettings,
                 fileUrl.value,
-                forAPKDownload: fileUrl.key.endsWith('.apk') ? true : false,
+                forAPKDownload: isApk(fileUrl.key),
               ),
           useExisting: false,
           allowInsecure: app.additionalSettings['allowInsecure'] == true,
@@ -1742,6 +2004,10 @@ class AppsProvider with ChangeNotifier {
       modded = true;
     }
 
+    if (clearRedundantSkippedLatestForApp(app)) {
+      modded = true;
+    }
+
     return modded ? app : null;
   }
 
@@ -1801,6 +2067,7 @@ class AppsProvider with ChangeNotifier {
     }
     loadingApps = true;
     notifyListeners();
+    await _purgeStalePendingRemovalFilesWithoutLiveDeferral();
     var sp = SourceProvider();
     List<List<String>> errors = [];
     var installedAppsData = await getAllInstalledInfo();
@@ -2079,21 +2346,41 @@ class AppsProvider with ChangeNotifier {
   bool hasUserAppIconOverride(String appId) =>
       _userAppIconPngFile(appId).existsSync();
 
-  /// Copies a user-selected PNG into app storage ([userAppIconsDir]) and updates memory.
+  bool validateUserAppIconPngBytes(Uint8List bytes) => _bytesLookLikePng(bytes);
+
+  /// Icon bytes as shown when the per-app user PNG override is ignored (cache,
+  /// installed app, or [App.iconUrl]). Does not read [userAppIconsDir] or mutate state.
+  Future<Uint8List?> loadIconPreviewExcludingUserOverride(String appId) async {
+    if (apps[appId] == null) return null;
+    final File cachedIcon = File('${iconsCacheDir.path}/$appId.png');
+    if (cachedIcon.existsSync()) {
+      try {
+        return await cachedIcon.readAsBytes();
+      } catch (e) {
+        logs.add('loadIconPreviewExcludingUserOverride cache: $e');
+      }
+    }
+    Uint8List? icon =
+        await apps[appId]!.installedInfo?.applicationInfo?.getAppIcon();
+    if (icon == null) {
+      final String? url = apps[appId]!.app.iconUrl;
+      if (url != null && url.isNotEmpty) {
+        icon = await _fetchIconFromUrl(url);
+      }
+    }
+    return icon;
+  }
+
+  /// Writes validated PNG bytes to [userAppIconsDir] and updates in-memory icon.
   /// Returns null on success, or a translated error string.
-  Future<String?> setUserAppIconFromPngPath(String appId, String filePath) async {
+  Future<String?> applyUserAppIconPngBytes(String appId, Uint8List bytes) async {
     if (apps[appId] == null) {
       return tr('unexpectedError');
     }
+    if (!_bytesLookLikePng(bytes)) {
+      return tr('changeAppIconInvalidPng');
+    }
     try {
-      final File sourceFile = File(filePath);
-      if (!sourceFile.existsSync()) {
-        return tr('unexpectedError');
-      }
-      final Uint8List bytes = await sourceFile.readAsBytes();
-      if (!_bytesLookLikePng(bytes)) {
-        return tr('changeAppIconInvalidPng');
-      }
       final File dest = _userAppIconPngFile(appId);
       await dest.writeAsBytes(bytes);
       apps.update(
@@ -2107,6 +2394,22 @@ class AppsProvider with ChangeNotifier {
       );
       notifyListeners();
       return null;
+    } catch (e) {
+      logs.add('applyUserAppIconPngBytes: $e');
+      return tr('unexpectedError');
+    }
+  }
+
+  /// Copies a user-selected PNG into app storage ([userAppIconsDir]) and updates memory.
+  /// Returns null on success, or a translated error string.
+  Future<String?> setUserAppIconFromPngPath(String appId, String filePath) async {
+    try {
+      final File sourceFile = File(filePath);
+      if (!sourceFile.existsSync()) {
+        return tr('unexpectedError');
+      }
+      final Uint8List bytes = await sourceFile.readAsBytes();
+      return applyUserAppIconPngBytes(appId, bytes);
     } catch (e) {
       logs.add('setUserAppIconFromPngPath: $e');
       return tr('unexpectedError');
@@ -2131,6 +2434,7 @@ class AppsProvider with ChangeNotifier {
     await Future.wait(
       apps.map((a) async {
         var app = a.deepCopy();
+        clearStaleSkippedLatestVersionInPlace(app);
         PackageInfo? info = await getInstalledInfo(app.id);
         var icon = await info?.applicationInfo?.getAppIcon();
         app.name = await (info?.applicationInfo?.getAppLabel()) ?? app.name;
@@ -2163,21 +2467,33 @@ class AppsProvider with ChangeNotifier {
     export(isAuto: true);
   }
 
-  Future<void> removeApps(List<String> appIds) async {
-    var apkFiles = APKDir.listSync();
+  String _fileBasename(String rawPath) {
+    final int unix = rawPath.lastIndexOf('/');
+    final int win = rawPath.lastIndexOf('\\');
+    final int index = unix > win ? unix : win;
+    return index < 0 ? rawPath : rawPath.substring(index + 1);
+  }
+
+  /// Deletes APK cache, icon files, and optionally the main app JSON under [getAppsDir].
+  Future<void> deleteObtainiumAppDiskData(
+    List<String> appIds, {
+    bool deleteMainJson = true,
+  }) async {
+    final List<FileSystemEntity> apkFiles = apkDir.listSync();
+    final Directory appsDirectory = await getAppsDir();
     await Future.wait(
-      appIds.map((appId) async {
-        File file = File('${(await getAppsDir()).path}/$appId.json');
-        if (file.existsSync()) {
-          deleteFile(file);
+      appIds.map((String appId) async {
+        if (deleteMainJson) {
+          final File mainJson = File('${appsDirectory.path}/$appId.json');
+          if (mainJson.existsSync()) {
+            deleteFile(mainJson);
+          }
         }
-        apkFiles
-            .where(
-              (element) => element.path.split('/').last.startsWith('$appId-'),
-            )
-            .forEach((element) {
-              element.delete(recursive: true);
-            });
+        for (final FileSystemEntity element in apkFiles) {
+          if (_fileBasename(element.path).startsWith('$appId-')) {
+            element.deleteSync(recursive: true);
+          }
+        }
         final File standardIconCache = File('${iconsCacheDir.path}/$appId.png');
         if (standardIconCache.existsSync()) {
           deleteFile(standardIconCache);
@@ -2191,15 +2507,130 @@ class AppsProvider with ChangeNotifier {
         if (legacyUserIconInCache.existsSync()) {
           deleteFile(legacyUserIconInCache);
         }
-        if (apps.containsKey(appId)) {
-          apps.remove(appId);
-        }
       }),
     );
+  }
+
+  Future<void> removeApps(List<String> appIds) async {
+    await deleteObtainiumAppDiskData(appIds, deleteMainJson: true);
+    for (final String appId in appIds) {
+      apps.remove(appId);
+    }
     if (appIds.isNotEmpty) {
       notifyListeners();
       export(isAuto: true);
     }
+  }
+
+  Future<void> _moveAppJsonToPendingRemoval(String appId) async {
+    final Directory appsDirectory = await getAppsDir();
+    final Directory pendingDir =
+        Directory('${appsDirectory.path}/pending_removal');
+    if (!pendingDir.existsSync()) {
+      pendingDir.createSync(recursive: true);
+    }
+    final File sourceJson = File('${appsDirectory.path}/$appId.json');
+    if (!sourceJson.existsSync()) {
+      return;
+    }
+    final File destinationJson = File('${pendingDir.path}/$appId.json');
+    if (destinationJson.existsSync()) {
+      deleteFile(destinationJson);
+    }
+    sourceJson.renameSync(destinationJson.path);
+  }
+
+  Future<void> _restoreAppJsonFromPendingRemoval(String appId) async {
+    final Directory appsDirectory = await getAppsDir();
+    final File pendingJson =
+        File('${appsDirectory.path}/pending_removal/$appId.json');
+    final File mainJson = File('${appsDirectory.path}/$appId.json');
+    if (!pendingJson.existsSync()) {
+      return;
+    }
+    if (mainJson.existsSync()) {
+      deleteFile(pendingJson);
+      return;
+    }
+    pendingJson.renameSync(mainJson.path);
+  }
+
+  /// Drops pending-removal JSON that no longer has an in-memory deferral (e.g. after process restart).
+  Future<void> _purgeStalePendingRemovalFilesWithoutLiveDeferral() async {
+    final Directory appsDirectory = await getAppsDir();
+    final Directory pendingDir =
+        Directory('${appsDirectory.path}/pending_removal');
+    if (!pendingDir.existsSync()) {
+      return;
+    }
+    for (final FileSystemEntity entity in pendingDir.listSync()) {
+      if (entity is! File) continue;
+      if (!entity.path.toLowerCase().endsWith('.json')) continue;
+      final String fileName = _fileBasename(entity.path);
+      final String appId = fileName.substring(0, fileName.length - 5);
+      if (_deferredObtainiumSnapshots.containsKey(appId)) {
+        continue;
+      }
+      deleteFile(entity);
+      await deleteObtainiumAppDiskData([appId], deleteMainJson: false);
+    }
+  }
+
+  Future<void> scheduleDeferredObtainiumRemovals(
+    List<AppInMemory> rowSnapshots,
+  ) async {
+    for (final AppInMemory row in rowSnapshots) {
+      final String appId = row.app.id;
+      _deferredObtainiumSnapshots[appId] = row.deepCopy();
+      await _moveAppJsonToPendingRemoval(appId);
+      apps.remove(appId);
+      _deferredObtainiumTimers[appId]?.cancel();
+      _deferredObtainiumTimers[appId] = Timer(const Duration(seconds: 5), () {
+        _finalizeDeferredObtainiumRemoval(appId);
+      });
+    }
+    notifyListeners();
+    export(isAuto: true);
+  }
+
+  Future<void> undoDeferredObtainiumRemovals(Set<String> appIds) async {
+    for (final String appId in appIds) {
+      _deferredObtainiumTimers[appId]?.cancel();
+      _deferredObtainiumTimers.remove(appId);
+      final AppInMemory? snapshot = _deferredObtainiumSnapshots.remove(appId);
+      if (snapshot == null) continue;
+      await _restoreAppJsonFromPendingRemoval(appId);
+      final File mainJson = File('${(await getAppsDir()).path}/$appId.json');
+      if (!mainJson.existsSync()) {
+        await saveApps([snapshot.app], onlyIfExists: false);
+      }
+      apps[appId] = snapshot.deepCopy();
+    }
+    notifyListeners();
+    export(isAuto: true);
+  }
+
+  Future<void> _finalizeDeferredObtainiumRemoval(String appId) async {
+    _deferredObtainiumTimers.remove(appId)?.cancel();
+    _deferredObtainiumSnapshots.remove(appId);
+    final Directory appsDirectory = await getAppsDir();
+    final File mainJson = File('${appsDirectory.path}/$appId.json');
+    if (mainJson.existsSync()) {
+      final File stalePending =
+          File('${appsDirectory.path}/pending_removal/$appId.json');
+      if (stalePending.existsSync()) {
+        deleteFile(stalePending);
+      }
+      return;
+    }
+    final File pendingJson =
+        File('${appsDirectory.path}/pending_removal/$appId.json');
+    if (pendingJson.existsSync()) {
+      deleteFile(pendingJson);
+    }
+    await deleteObtainiumAppDiskData([appId], deleteMainJson: false);
+    export(isAuto: true);
+    notifyListeners();
   }
 
   Future<void> changeTrackOnlyAppPackageId(
@@ -2234,20 +2665,23 @@ class AppsProvider with ChangeNotifier {
     await saveApps([updatedApp], onlyIfExists: false);
   }
 
-  Future<bool> removeAppsWithModal(BuildContext context, List<App> apps) async {
-    var showUninstallOption = apps
+  Future<RemoveAppsWithModalResult> removeAppsWithModal(
+    BuildContext context,
+    List<App> appsToAffect,
+  ) async {
+    final bool showUninstallOption = appsToAffect
         .where(
           (a) =>
               a.installedVersion != null &&
               a.additionalSettings['trackOnly'] != true,
         )
         .isNotEmpty;
-    var values = await showDialog(
+    final Map<String, dynamic>? values = await showDialog(
       context: context,
       builder: (BuildContext ctx) {
         return GeneratedFormModal(
           primaryActionColour: Theme.of(context).colorScheme.error,
-          title: plural('removeAppQuestion', apps.length),
+          title: plural('removeAppQuestion', appsToAffect.length),
           items: !showUninstallOption
               ? []
               : [
@@ -2269,24 +2703,48 @@ class AppsProvider with ChangeNotifier {
         );
       },
     );
-    if (values != null) {
-      bool uninstall = values['uninstallApp'] == true && showUninstallOption;
-      bool remove = values['rmAppEntry'] == true || !showUninstallOption;
-      if (uninstall) {
-        for (var i = 0; i < apps.length; i++) {
-          if (apps[i].installedVersion != null) {
-            uninstallApp(apps[i].id);
-            apps[i].installedVersion = null;
-          }
-        }
-        await saveApps(apps, attemptToCorrectInstallStatus: false);
-      }
-      if (remove) {
-        await removeApps(apps.map((e) => e.id).toList());
-      }
-      return uninstall || remove;
+    if (values == null) {
+      return RemoveAppsWithModalResult.cancelled;
     }
-    return false;
+    final bool uninstall =
+        values['uninstallApp'] == true && showUninstallOption;
+    final bool removeFromObtainx =
+        !showUninstallOption || values['rmAppEntry'] == true;
+    if (!removeFromObtainx && !uninstall) {
+      return RemoveAppsWithModalResult.cancelled;
+    }
+    final List<AppInMemory> rowSnapshots = appsToAffect
+        .map((App a) => apps[a.id]!.deepCopy())
+        .toList();
+    if (uninstall) {
+      for (final App appEntry in appsToAffect) {
+        if (appEntry.installedVersion != null) {
+          uninstallApp(appEntry.id);
+        }
+      }
+    }
+    if (removeFromObtainx) {
+      if (uninstall) {
+        await removeApps(appsToAffect.map((e) => e.id).toList());
+        return const RemoveAppsWithModalResult._(
+          confirmed: true,
+          removedFromObtainiumImmediately: true,
+          obtainiumEntryRemovedOrScheduled: true,
+        );
+      } else {
+        await scheduleDeferredObtainiumRemovals(rowSnapshots);
+        return RemoveAppsWithModalResult._(
+          confirmed: true,
+          deferredUndoAppIds: appsToAffect.map((App e) => e.id).toSet(),
+          obtainiumEntryRemovedOrScheduled: true,
+        );
+      }
+    }
+    if (uninstall) {
+      await saveApps(appsToAffect, attemptToCorrectInstallStatus: false);
+      return const RemoveAppsWithModalResult._(confirmed: true);
+    }
+    return RemoveAppsWithModalResult.cancelled;
   }
 
   Future<void> openAppSettings(String appId) async {
@@ -2302,7 +2760,7 @@ class AppsProvider with ChangeNotifier {
     apps.forEach((key, value) {
       for (var c in value.app.categories) {
         if (!cats.containsKey(c)) {
-          cats[c] = generateRandomLightColor().value;
+          cats[c] = generateRandomLightColor().toARGB32();
         }
       }
     });
@@ -2347,6 +2805,9 @@ class AppsProvider with ChangeNotifier {
                 app.app.additionalSettings['trackOnly'] == true;
           }
         })
+        .where(
+          (app) => app.app.additionalSettings['onDemandOnly'] != true,
+        )
         .map((e) => e.app.id)
         .toList();
     appIds.sort(
@@ -2373,13 +2834,31 @@ class AppsProvider with ChangeNotifier {
     if (!gettingUpdates) {
       gettingUpdates = true;
       try {
-        List<String> appIds = getAppsSortedByUpdateCheckTime(
-          ignoreAppsCheckedAfter: ignoreAppsCheckedAfter,
-          onlyCheckInstalledOrTrackOnlyApps:
-              settingsProvider.onlyCheckInstalledOrTrackOnlyApps,
-        );
+        late List<String> appIds;
         if (specificIds != null) {
-          appIds = appIds.where((aId) => specificIds.contains(aId)).toList();
+          appIds = specificIds.where((id) => apps.containsKey(id)).toList();
+          if (ignoreAppsCheckedAfter != null) {
+            final DateTime cutoff = ignoreAppsCheckedAfter;
+            appIds = appIds.where((id) {
+              final last = apps[id]!.app.lastUpdateCheck;
+              return last == null || last.isBefore(cutoff);
+            }).toList();
+          }
+          appIds.sort(
+            (a, b) =>
+                (apps[a]!.app.lastUpdateCheck ??
+                        DateTime.fromMicrosecondsSinceEpoch(0))
+                    .compareTo(
+                      apps[b]!.app.lastUpdateCheck ??
+                          DateTime.fromMicrosecondsSinceEpoch(0),
+                    ),
+          );
+        } else {
+          appIds = getAppsSortedByUpdateCheckTime(
+            ignoreAppsCheckedAfter: ignoreAppsCheckedAfter,
+            onlyCheckInstalledOrTrackOnlyApps:
+                settingsProvider.onlyCheckInstalledOrTrackOnlyApps,
+          );
         }
         await Future.wait(
           appIds.map((appId) async {
@@ -2412,9 +2891,16 @@ class AppsProvider with ChangeNotifier {
     return updates;
   }
 
+  /// Returns app ids with an installable or attention-needed update.
+  /// When [includeVersionOrderUncertain] is false (default), only
+  /// [appHasActionableUpdate] counts for installed apps so "update all" and
+  /// background install do not treat ambiguous ordering as a known behind-latest case.
+  /// When true, [versionOrderUncertainUpdate] apps are included too (e.g. tab badge).
   List<String> findExistingUpdates({
     bool installedOnly = false,
     bool nonInstalledOnly = false,
+    bool excludeOnDemandOnly = false,
+    bool includeVersionOrderUncertain = false,
   }) {
     if (installedOnly && nonInstalledOnly) {
       return [];
@@ -2422,6 +2908,9 @@ class AppsProvider with ChangeNotifier {
     final List<String> updateAppIds = [];
     for (final appInMemory in apps.values) {
       final app = appInMemory.app;
+      if (excludeOnDemandOnly && app.additionalSettings['onDemandOnly'] == true) {
+        continue;
+      }
       final installed = app.installedVersion;
       final latest = app.latestVersion;
 
@@ -2432,10 +2921,9 @@ class AppsProvider with ChangeNotifier {
         }
       } else {
         if (!(installedOnly || !nonInstalledOnly)) continue;
-        final hasEffectiveUpdate = installed != latest &&
-            !versionsEffectivelyEqual(installed, latest) &&
-            !installedVersionIsNewerOrEqual(installed, latest);
-        if (hasEffectiveUpdate) {
+        if (appHasActionableUpdate(app) ||
+            (includeVersionOrderUncertain &&
+                versionOrderUncertainUpdate(app))) {
           updateAppIds.add(app.id);
         }
       }
@@ -2575,6 +3063,14 @@ class AppsProvider with ChangeNotifier {
 
   @override
   void dispose() {
+    _progressNotifyTimer?.cancel();
+    for (final Timer timer in _deferredObtainiumTimers.values) {
+      timer.cancel();
+    }
+    _deferredObtainiumTimers.clear();
+    // Pending JSON under pending_removal/ is left on disk; the next [loadApps]
+    // run commits removal via [_purgeStalePendingRemovalFilesWithoutLiveDeferral]
+    // when no in-memory deferral tracks that id.
     foregroundSubscription?.cancel();
     super.dispose();
   }
@@ -2647,16 +3143,21 @@ class _AppFilePickerState extends State<AppFilePicker> {
                 )
               : const SizedBox.shrink(),
           const SizedBox(height: 16),
-          ...urlsToSelectFrom.map(
-            (u) => RadioListTile<String>(
-              title: Text(u.key),
-              value: u.value,
-              groupValue: fileUrl!.value,
-              onChanged: (String? val) {
-                setState(() {
-                  fileUrl = urlsToSelectFrom.where((e) => e.value == val).first;
-                });
-              },
+          RadioGroup<String>(
+            groupValue: fileUrl!.value,
+            onChanged: (String? val) {
+              if (val == null) return;
+              setState(() {
+                fileUrl = urlsToSelectFrom.where((e) => e.value == val).first;
+              });
+            },
+            child: Column(
+              children: urlsToSelectFrom
+                  .map((u) => RadioListTile<String>(
+                        title: Text(u.key),
+                        value: u.value,
+                      ))
+                  .toList(),
             ),
           ),
           if (widget.archs != null) const SizedBox(height: 16),
@@ -2741,9 +3242,9 @@ class _APKOriginWarningDialogState extends State<APKOriginWarningDialog> {
 
 /// Background updater function
 ///
-/// @param List<MapEntry<String, int>>? toCheck: The appIds to check for updates (with the number of previous attempts made per appid) (defaults to all apps)
+/// @param `List<MapEntry<String, int>>?` toCheck: The appIds to check for updates (with the number of previous attempts made per appid) (defaults to all apps)
 ///
-/// @param List<String>? toInstall: The appIds to attempt to update (if empty - which is the default - all pending updates are taken)
+/// @param `List<String>?` toInstall: The appIds to attempt to update (if empty - which is the default - all pending updates are taken)
 ///
 /// When toCheck is empty, the function is in "install mode" (else it is in "update mode").
 /// In update mode, all apps in toCheck are checked for updates (in parallel).
@@ -2923,17 +3424,23 @@ Future<void> bgUpdateCheck(String taskId, Map<String, dynamic>? params) async {
       notificationsProvider.cancel(notif.id);
     }
 
-    // Filter out updates that will be installed silently (the rest go into toNotify)
+    // Filter out updates that will be installed silently (the rest go into toNotify).
+    // Only notify for definite behind-latest updates, not version-order-unclear rows
+    // (those are surfaced on the app page and apps list without a push ping).
     for (var i = 0; i < updates.length; i++) {
+      final App checkedApp = updates[i];
+      if (!appHasActionableUpdate(checkedApp)) {
+        continue;
+      }
       var canInstallSilently = await appsProvider.canInstallSilently(
-        updates[i],
+        checkedApp,
       );
       if (networkRestricted || chargingRestricted || !canInstallSilently) {
-        if (updates[i].additionalSettings['skipUpdateNotifications'] != true) {
+        if (checkedApp.additionalSettings['skipUpdateNotifications'] != true) {
           logs.add(
-            'BG update task notifying for ${updates[i].id} (networkRestricted $networkRestricted, chargingRestricted: $chargingRestricted, canInstallSilently: $canInstallSilently).',
+            'BG update task notifying for ${checkedApp.id} (networkRestricted $networkRestricted, chargingRestricted: $chargingRestricted, canInstallSilently: $canInstallSilently).',
           );
-          toNotify.add(updates[i]);
+          toNotify.add(checkedApp);
         }
       }
     }
@@ -2985,7 +3492,10 @@ Future<void> bgUpdateCheck(String taskId, Map<String, dynamic>? params) async {
     // If you haven't explicitly been given updates to install, grab all available silent updates
     logs.add('BG install task: Started (${toInstall.length}).');
     if (toInstall.isEmpty && !networkRestricted && !chargingRestricted) {
-      var temp = appsProvider.findExistingUpdates(installedOnly: true);
+      var temp = appsProvider.findExistingUpdates(
+        installedOnly: true,
+        excludeOnDemandOnly: true,
+      );
       for (var i = 0; i < temp.length; i++) {
         if (await appsProvider.canInstallSilently(
           appsProvider.apps[temp[i]]!.app,

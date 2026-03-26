@@ -32,7 +32,30 @@ enum SortOrderSettings { ascending, descending }
 
 enum AppsListGroupBy { none, category, source }
 
-enum SwipeAction { update, pin, edit, delete, open, appInfo, none }
+enum SwipeAction {
+  update,
+  pin,
+  appOptions,
+  delete,
+  open,
+  appInfo,
+  edit,
+  none,
+}
+
+/// Order for settings dropdowns: alphabetical by localized action label,
+/// with [SwipeAction.none] ("None") always last.
+List<SwipeAction> swipeActionsSortedByLocalizedLabel() {
+  final List<SwipeAction> actions = List<SwipeAction>.from(SwipeAction.values);
+  actions.sort((SwipeAction first, SwipeAction second) {
+    if (first == SwipeAction.none) return 1;
+    if (second == SwipeAction.none) return -1;
+    final String labelFirst = tr('swipeAction_${first.name}').toLowerCase();
+    final String labelSecond = tr('swipeAction_${second.name}').toLowerCase();
+    return labelFirst.compareTo(labelSecond);
+  });
+  return actions;
+}
 
 class SettingsProvider with ChangeNotifier {
   SharedPreferences? prefs;
@@ -46,7 +69,66 @@ class SettingsProvider with ChangeNotifier {
     prefs = await SharedPreferences.getInstance();
     defaultAppDir = (await getAppStorageDir()).path;
     _migrateShizukuSetting();
+    _migrateSwipeActionPrefs();
+    _syncSwipeActionNameStringsIfMissing();
     notifyListeners();
+  }
+
+  static const String _rightSwipeNameKey = 'rightSwipeActionName';
+  static const String _leftSwipeNameKey = 'leftSwipeActionName';
+
+  /// v1: [SwipeAction.none] was index 6 on the 7-value enum. v2 remaps that to index 7.
+  /// v3 clears stored swipe name prefs once so they are rebuilt from ints (fixes stale
+  /// [rightSwipeActionName] / [leftSwipeActionName] from older ObtainX builds).
+  void _migrateSwipeActionPrefs() {
+    if (prefs == null) return;
+    int schemaVersion = prefs!.getInt('swipeActionEnumVersion') ?? 0;
+
+    if (schemaVersion < 2) {
+      for (final String prefKey in ['rightSwipeAction', 'leftSwipeAction']) {
+        if (prefs!.containsKey(prefKey) && prefs!.getInt(prefKey) == 6) {
+          prefs!.setInt(prefKey, SwipeAction.none.index);
+        }
+      }
+      prefs!.setInt('swipeActionEnumVersion', 2);
+      schemaVersion = 2;
+    }
+
+    if (schemaVersion < 3) {
+      prefs!.remove(_rightSwipeNameKey);
+      prefs!.remove(_leftSwipeNameKey);
+      prefs!.setInt('swipeActionEnumVersion', 3);
+    }
+  }
+
+  /// Prefer stable enum [SwipeAction.name] in prefs so reordering does not break gestures.
+  void _syncSwipeActionNameStringsIfMissing() {
+    if (prefs == null) return;
+    void syncOne(String intKey, String nameKey, int defaultIndex) {
+      if (prefs!.containsKey(nameKey)) return;
+      final int raw = prefs!.getInt(intKey) ?? defaultIndex;
+      final SwipeAction action =
+          SwipeAction.values[raw.clamp(0, SwipeAction.values.length - 1)];
+      prefs!.setString(nameKey, action.name);
+    }
+
+    syncOne('rightSwipeAction', _rightSwipeNameKey, SwipeAction.update.index);
+    syncOne('leftSwipeAction', _leftSwipeNameKey, SwipeAction.pin.index);
+  }
+
+  SwipeAction _swipeActionFromPrefs(
+    String intKey,
+    String nameKey,
+    int defaultIndex,
+  ) {
+    final String? storedName = prefs?.getString(nameKey);
+    if (storedName != null && storedName.isNotEmpty) {
+      for (final SwipeAction candidate in SwipeAction.values) {
+        if (candidate.name == storedName) return candidate;
+      }
+    }
+    final int index = prefs?.getInt(intKey) ?? defaultIndex;
+    return SwipeAction.values[index.clamp(0, SwipeAction.values.length - 1)];
   }
 
   void _migrateShizukuSetting() {
@@ -66,7 +148,7 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // 'stock' = default Android installer, 'shizuku' = Shizuku, 'legacy' = Droid-ify style legacy installer
+  // 'stock' = default Android installer, 'shizuku' = Shizuku, 'Third-Party' = third-party installer (user-chosen app; stored value unchanged for prefs compatibility)
   String get installerMode {
     return prefs?.getString('installerMode') ?? 'stock';
   }
@@ -128,7 +210,7 @@ class SettingsProvider with ChangeNotifier {
   }
 
   set themeColor(Color themeColor) {
-    prefs?.setInt('themeColor', themeColor.value);
+    prefs?.setInt('themeColor', themeColor.toARGB32());
     notifyListeners();
   }
 
@@ -517,38 +599,65 @@ class SettingsProvider with ChangeNotifier {
   }
 
   Future<Uri?> getExportDir() async {
-    var uriString = prefs?.getString('exportDir');
-    if (uriString != null) {
-      Uri? uri = Uri.parse(uriString);
-      if (!(await saf.canRead(uri) ?? false) ||
-          !(await saf.canWrite(uri) ?? false)) {
-        uri = null;
-        prefs?.remove('exportDir');
-        notifyListeners();
-      }
-      return uri;
-    } else {
+    final String? uriString = prefs?.getString('exportDir');
+    if (uriString == null) {
       return null;
     }
+    final Uri uri = Uri.parse(uriString);
+    Future<bool> canAccessExportTree(Uri treeUri) async {
+      final bool readable = await saf.canRead(treeUri) ?? false;
+      final bool writable = await saf.canWrite(treeUri) ?? false;
+      return readable && writable;
+    }
+    if (!await canAccessExportTree(uri)) {
+      // Transient SAF failures should not wipe a still-valid grant.
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      if (!await canAccessExportTree(uri)) {
+        prefs?.remove('exportDir');
+        notifyListeners();
+        return null;
+      }
+    }
+    return uri;
   }
 
+  /// Lets the user pick a folder for exports. Cancelling the system picker
+  /// leaves the previous folder and persisted URI permission unchanged.
+  /// Only the replaced export URI is released when the user picks a new tree.
   Future<void> pickExportDir({bool remove = false}) async {
-    var existingSAFPerms = (await saf.persistedUriPermissions()) ?? [];
-    var currentOneWayDataSyncDir = await getExportDir();
-    Uri? newOneWayDataSyncDir;
-    if (!remove) {
-      newOneWayDataSyncDir = (await saf.openDocumentTree());
-    }
-    if (currentOneWayDataSyncDir?.path != newOneWayDataSyncDir?.path) {
-      if (newOneWayDataSyncDir == null) {
-        prefs?.remove('exportDir');
-      } else {
-        prefs?.setString('exportDir', newOneWayDataSyncDir.toString());
-      }
+    if (remove) {
+      final String? saved = prefs?.getString('exportDir');
+      prefs?.remove('exportDir');
       notifyListeners();
+      if (saved != null && saved.isNotEmpty) {
+        try {
+          await saf.releasePersistableUriPermission(Uri.parse(saved));
+        } catch (_) {}
+      }
+      return;
     }
-    for (var e in existingSAFPerms) {
-      await saf.releasePersistableUriPermission(e.uri);
+
+    final String? previousExportDirString = prefs?.getString('exportDir');
+    final Uri? newUri = await saf.openDocumentTree();
+
+    if (newUri == null) {
+      return;
+    }
+
+    final String newUriString = newUri.toString();
+    if (previousExportDirString == newUriString) {
+      return;
+    }
+
+    prefs?.setString('exportDir', newUriString);
+    notifyListeners();
+
+    if (previousExportDirString != null && previousExportDirString.isNotEmpty) {
+      try {
+        await saf.releasePersistableUriPermission(
+          Uri.parse(previousExportDirString),
+        );
+      } catch (_) {}
     }
   }
 
@@ -633,22 +742,30 @@ class SettingsProvider with ChangeNotifier {
   }
 
   SwipeAction get rightSwipeAction {
-    final index = prefs?.getInt('rightSwipeAction') ?? SwipeAction.update.index;
-    return SwipeAction.values[index.clamp(0, SwipeAction.values.length - 1)];
+    return _swipeActionFromPrefs(
+      'rightSwipeAction',
+      _rightSwipeNameKey,
+      SwipeAction.update.index,
+    );
   }
 
   set rightSwipeAction(SwipeAction action) {
     prefs?.setInt('rightSwipeAction', action.index);
+    prefs?.setString(_rightSwipeNameKey, action.name);
     notifyListeners();
   }
 
   SwipeAction get leftSwipeAction {
-    final index = prefs?.getInt('leftSwipeAction') ?? SwipeAction.pin.index;
-    return SwipeAction.values[index.clamp(0, SwipeAction.values.length - 1)];
+    return _swipeActionFromPrefs(
+      'leftSwipeAction',
+      _leftSwipeNameKey,
+      SwipeAction.pin.index,
+    );
   }
 
   set leftSwipeAction(SwipeAction action) {
     prefs?.setInt('leftSwipeAction', action.index);
+    prefs?.setString(_leftSwipeNameKey, action.name);
     notifyListeners();
   }
 }

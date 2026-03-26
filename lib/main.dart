@@ -93,7 +93,7 @@ void backgroundFetchHeadlessTask(HeadlessTask task) async {
   String taskId = task.taskId;
   bool isTimeout = task.timeout;
   if (isTimeout) {
-    print('BG update task timed out.');
+    debugPrint('BG update task timed out.');
     BackgroundFetch.finish(taskId);
     return;
   }
@@ -111,7 +111,7 @@ class MyTaskHandler extends TaskHandler {
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
-    print('onStart(starter: ${starter.name})');
+    debugPrint('onStart(starter: ${starter.name})');
     bgUpdateCheck('bg_check', null);
   }
 
@@ -122,7 +122,7 @@ class MyTaskHandler extends TaskHandler {
 
   @override
   Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
-    print('Foreground service onDestroy(isTimeout: $isTimeout)');
+    debugPrint('Foreground service onDestroy(isTimeout: $isTimeout)');
   }
 
   @override
@@ -148,14 +148,19 @@ void main() async {
     );
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   }
+  final SettingsProvider settingsProvider = SettingsProvider();
+  await settingsProvider.initializeSettings();
   final np = NotificationsProvider();
   await np.initialize();
   FlutterForegroundTask.initCommunicationPort();
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (context) => AppsProvider()),
-        ChangeNotifierProvider(create: (context) => SettingsProvider()),
+        ChangeNotifierProvider(
+          create: (context) =>
+              AppsProvider(sharedSettings: settingsProvider),
+        ),
+        ChangeNotifierProvider.value(value: settingsProvider),
         Provider(create: (context) => np),
         Provider(create: (context) => LogsProvider()),
       ],
@@ -247,7 +252,7 @@ class _ObtainiumState extends State<Obtainium> {
     return null;
   }
 
-  stopForegroundService() async {
+  Future<dynamic> stopForegroundService() async {
     if (await FlutterForegroundTask.isRunningService) {
       return FlutterForegroundTask.stopService();
     }
@@ -340,7 +345,7 @@ class _ObtainiumState extends State<Obtainium> {
                 }
               })
               .catchError((err) {
-                print(err);
+                debugPrint(err.toString());
               });
         }
       }
