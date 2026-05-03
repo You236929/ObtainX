@@ -42,9 +42,10 @@ String _formatBytes(int bytes) {
   }
 }
 
-// TEMP APKMIRROR SIZE DEBUG: remove before production.
+/// Optional debug logger — guarded by the consolidated [apkMirrorSizeDebug]
+/// flag so it short-circuits in release builds.
 void _logApkMirrorSizeDebugFromAppPage(String message) {
-  if (!apkMirrorSizeDebugLoggingEnabled) {
+  if (!apkMirrorSizeDebug) {
     return;
   }
   unawaited(() async {
@@ -268,6 +269,10 @@ class _AppPageState extends State<AppPage> {
   bool _webViewUrlLoaded = false;
   bool _scheduledDetailPageRefresh = false;
   bool _requestedMissingIconLoad = false;
+  // Once true, the lazy APKMirror size resolver has fired for this AppPage
+  // mount and won't run again until the user navigates to a different app.
+  // Re-resets in [didUpdateWidget] when [widget.appId] changes.
+  bool _attemptedApkMirrorSizeResolution = false;
   Color? _lastWebViewSurfaceColorApplied;
   bool updating = false;
 
@@ -326,12 +331,17 @@ class _AppPageState extends State<AppPage> {
       _webViewUrlLoaded = false;
       _scheduledDetailPageRefresh = false;
       _requestedMissingIconLoad = false;
+      _attemptedApkMirrorSizeResolution = false;
       _lastWebViewSurfaceColorApplied = null;
       _scheduledOpenInEditMode = false;
       _clearEditIconStaging();
       _storeAvailabilityCacheFuture = BulkScanCache.load().then(
         (cache) => cache[widget.appId],
       );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        unawaited(_maybeLazyResolveApkMirrorSize());
+      });
     } else if (oldWidget.openInEditMode != widget.openInEditMode) {
       _scheduledOpenInEditMode = false;
     }
@@ -590,7 +600,7 @@ class _AppPageState extends State<AppPage> {
         _editStagedIconBytes!,
       );
       if (iconErr != null) {
-        if (mounted) showError(ObtainiumError(iconErr), context);
+        if (mounted) _showPageError(ObtainiumError(iconErr), context);
         return;
       }
     }
@@ -619,7 +629,7 @@ class _AppPageState extends State<AppPage> {
     if (bytes == null) return;
     if (!appsProvider.validateUserAppIconPngBytes(bytes)) {
       if (mounted) {
-        showError(ObtainiumError(tr('changeAppIconInvalidPng')), context);
+        _showPageError(ObtainiumError(tr('changeAppIconInvalidPng')), context);
       }
       return;
     }
@@ -660,6 +670,32 @@ class _AppPageState extends State<AppPage> {
     launchUrlString(
       'https://images.google.com/search?tbm=isch&q=${Uri.encodeComponent(query)}',
       mode: LaunchMode.externalApplication,
+    );
+  }
+
+  void _showPageError(dynamic error, BuildContext hostContext) {
+    if (!hostContext.mounted) return;
+    showError(error, hostContext, theme: _cachedPageTheme);
+  }
+
+  void _showPageMessage(dynamic message, BuildContext hostContext) {
+    if (!hostContext.mounted) return;
+    showMessage(message, hostContext, theme: _cachedPageTheme);
+  }
+
+  Future<T?> _showPageDialog<T>({
+    required BuildContext hostContext,
+    required WidgetBuilder builder,
+  }) {
+    final ThemeData? pageTheme = _cachedPageTheme;
+    return showDialog<T>(
+      context: hostContext,
+      builder: (BuildContext dialogContext) {
+        final Widget dialog = builder(dialogContext);
+        return pageTheme == null
+            ? dialog
+            : Theme(data: pageTheme, child: dialog);
+      },
     );
   }
 
@@ -971,7 +1007,7 @@ class _AppPageState extends State<AppPage> {
                             color: colorScheme.outlineVariant,
                           ),
                         ),
-                        elevation: WidgetStatePropertyAll(0),
+                        elevation: const WidgetStatePropertyAll(0),
                         overlayColor: WidgetStateProperty.fromMap({
                           WidgetState.disabled: colorScheme.onSurfaceVariant
                               .withAlpha(0),
@@ -1003,7 +1039,7 @@ class _AppPageState extends State<AppPage> {
                   Expanded(
                     child: FilledButton.tonal(
                       style: ButtonStyle(
-                        elevation: WidgetStatePropertyAll(0),
+                        elevation: const WidgetStatePropertyAll(0),
                         textStyle: WidgetStatePropertyAll(
                           textTheme.labelLarge?.copyWith(
                             fontWeight: FontWeight.w600,
@@ -1048,6 +1084,14 @@ class _AppPageState extends State<AppPage> {
     final Uint8List? bytesForImage = exclusiveIconMemoryBytes
         ? iconMemoryBytes
         : (iconMemoryBytes ?? appInMemory?.icon);
+    // Cap the decoded bitmap at the rendered logical size × DPR. Without
+    // this hint, [Image.memory] decodes the full source PNG (often 512×512
+    // for a launcher icon) and keeps it in the raster cache at full
+    // resolution even when displayed at 56 logical px. Sizing the cache
+    // here keeps RAM usage bounded for the AppPage's hero icon and the
+    // large-format dialog preview.
+    final int iconCachePx =
+        (size * MediaQuery.devicePixelRatioOf(themeContext)).round();
     Widget iconChild;
     if (bytesForImage != null) {
       iconChild = GestureDetector(
@@ -1060,6 +1104,8 @@ class _AppPageState extends State<AppPage> {
             width: size,
             fit: BoxFit.cover,
             gaplessPlayback: true,
+            cacheWidth: iconCachePx,
+            cacheHeight: iconCachePx,
           ),
         ),
       );
@@ -1087,6 +1133,8 @@ class _AppPageState extends State<AppPage> {
                     width: size,
                     fit: BoxFit.cover,
                     gaplessPlayback: true,
+                    cacheWidth: iconCachePx,
+                    cacheHeight: iconCachePx,
                   ),
                 );
               }
@@ -1150,6 +1198,12 @@ class _AppPageState extends State<AppPage> {
     _storeAvailabilityCacheFuture = BulkScanCache.load().then(
       (cache) => cache[widget.appId],
     );
+    // Defer to post-frame so the first paint isn't competing with our
+    // SourceProvider lookup. The actual HTTP walk inside is fully async.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_maybeLazyResolveApkMirrorSize());
+    });
     _notesEditFocusNode.addListener(() {
       if (!_notesEditFocusNode.hasFocus || !mounted) return;
       void scrollNotesIntoView() {
@@ -1179,7 +1233,7 @@ class _AppPageState extends State<AppPage> {
         NavigationDelegate(
           onWebResourceError: (WebResourceError error) {
             if (error.isForMainFrame == true) {
-              showError(
+              _showPageError(
                 ObtainiumError(error.description, unexpected: true),
                 context,
               );
@@ -1264,6 +1318,69 @@ class _AppPageState extends State<AppPage> {
     }
   }
 
+  /// Lazily fills in [App.apkSizeBytes] for APKMirror apps the first time
+  /// the user opens the AppPage after a refresh that bumped the version.
+  ///
+  /// Why this lives here and not in the update-check pipeline:
+  /// resolving an APKMirror size requires walking the release page plus
+  /// one GET per ranked download candidate, so doing it on every refresh
+  /// for every APKMirror app — just to display " · 43 MB" next to the
+  /// install/update button — was the worst single offender in the update
+  /// path. Doing it lazily on AppPage open means at most one app pays
+  /// the cost, and only when the user actually looks at it.
+  ///
+  /// The resolved value is persisted onto the App via [AppsProvider.saveApps];
+  /// [SourceProvider.getApp] preserves it across refreshes that don't
+  /// change [App.latestVersion] and clears it when the version changes,
+  /// so the cache key is effectively `(appId, latestVersion)`.
+  Future<void> _maybeLazyResolveApkMirrorSize() async {
+    if (_attemptedApkMirrorSizeResolution) return;
+    final AppsProvider appsProvider = Provider.of<AppsProvider>(
+      context,
+      listen: false,
+    );
+    final App? currentApp = appsProvider.apps[widget.appId]?.app;
+    if (currentApp == null) return;
+    if (currentApp.apkSizeBytes != null) {
+      // Already cached on the App itself.
+      _attemptedApkMirrorSizeResolution = true;
+      return;
+    }
+    final AppSource source = SourceProvider().getSource(
+      currentApp.url,
+      overrideSource: currentApp.overrideSource,
+    );
+    if (source is! APKMirror) return;
+    _attemptedApkMirrorSizeResolution = true;
+    try {
+      final int? resolvedSize = await source.resolveLatestApkSizeBytes(
+        releasePageUrl: currentApp.changeLog,
+        additionalSettings: currentApp.additionalSettings,
+      );
+      if (!mounted || resolvedSize == null) return;
+      final App? freshApp = appsProvider.apps[widget.appId]?.app;
+      if (freshApp == null) return;
+      // The user may have navigated away or the app may have been
+      // refreshed onto a new version while the network walk was running;
+      // in either case we want to skip the stale write.
+      if (freshApp.latestVersion != currentApp.latestVersion) return;
+      if (freshApp.apkSizeBytes == resolvedSize) return;
+      final App updated = freshApp.deepCopy()..apkSizeBytes = resolvedSize;
+      await appsProvider.saveApps(
+        [updated],
+        // No need to re-export to disk just because we filled in a size.
+        autoExportAfterSave: false,
+      );
+      _logApkMirrorSizeDebugFromAppPage(
+        'lazy resolve persisted id=${widget.appId} size=$resolvedSize',
+      );
+    } catch (error) {
+      _logApkMirrorSizeDebugFromAppPage(
+        'lazy resolve error id=${widget.appId} error=${error.toString()}',
+      );
+    }
+  }
+
   Future<void> _runCheckUpdate(String id, {bool resetVersion = false}) async {
     final AppsProvider appsProvider = Provider.of<AppsProvider>(
       context,
@@ -1290,6 +1407,11 @@ class _AppPageState extends State<AppPage> {
       // buttons (F-Droid, APKPure, APKMirror) appear immediately from cache
       // without waiting for the Play Store network round-trip.
       _maybeCheckAndCacheAllStores();
+      // The version may have just bumped, in which case [SourceProvider.getApp]
+      // cleared the cached size and we need to walk APKMirror again. The
+      // resolver is a no-op when the size is still present.
+      _attemptedApkMirrorSizeResolution = false;
+      unawaited(_maybeLazyResolveApkMirrorSize());
       if (resetVersion) {
         appsProvider.apps[id]?.app.additionalSettings['versionDetection'] =
             true;
@@ -1304,7 +1426,7 @@ class _AppPageState extends State<AppPage> {
         await appsProvider.updatePendingRepoRename(id, err.newUrl);
       } else if (context.mounted) {
         // ignore: use_build_context_synchronously
-        showError(err, context);
+        _showPageError(err, context);
       }
     } finally {
       if (context.mounted) {
@@ -1828,7 +1950,7 @@ class _AppPageState extends State<AppPage> {
           await appsProvider.saveApps([appToSave]);
         } catch (err) {
           if (context.mounted) {
-            showError(err, context);
+            _showPageError(err, context);
           }
         } finally {
           if (context.mounted) {
@@ -1842,8 +1964,8 @@ class _AppPageState extends State<AppPage> {
       Future<void> openFixTrackOnlyPackageIdDialog() async {
         if (app == null) return;
         final packageIdController = TextEditingController(text: app.app.id);
-        final submittedPackageId = await showDialog<String>(
-          context: context,
+        final submittedPackageId = await _showPageDialog<String>(
+          hostContext: context,
           builder: (dialogContext) => AlertDialog(
             title: Text(tr('fixPackageId')),
             content: SingleChildScrollView(
@@ -1908,7 +2030,7 @@ class _AppPageState extends State<AppPage> {
           );
         } catch (err) {
           if (context.mounted) {
-            showError(err, context);
+            _showPageError(err, context);
           }
         } finally {
           if (context.mounted) {
@@ -2068,12 +2190,14 @@ class _AppPageState extends State<AppPage> {
                   ? null
                   : () async {
                       try {
-                        await appsProvider.downloadAppAssets([
-                          app.app.id,
-                        ], context);
+                        await appsProvider.downloadAppAssets(
+                          [app.app.id],
+                          context,
+                          dialogTheme: pageTheme,
+                        );
                       } catch (e) {
                         if (!context.mounted) return;
-                        showError(e, context);
+                        _showPageError(e, context);
                       }
                     },
             ),
@@ -2124,12 +2248,14 @@ class _AppPageState extends State<AppPage> {
                   ? null
                   : () async {
                       try {
-                        await appsProvider.downloadAppAssets([
-                          app.app.id,
-                        ], context);
+                        await appsProvider.downloadAppAssets(
+                          [app.app.id],
+                          context,
+                          dialogTheme: pageTheme,
+                        );
                       } catch (e) {
                         if (!context.mounted) return;
-                        showError(e, context);
+                        _showPageError(e, context);
                       }
                     },
             ),
@@ -2518,7 +2644,7 @@ class _AppPageState extends State<AppPage> {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 iconWidget,
-                SizedBox(width: 12 * heroScale),
+                const SizedBox(width: 12 * heroScale),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -2563,7 +2689,7 @@ class _AppPageState extends State<AppPage> {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
-                      SizedBox(height: 2 * heroScale),
+                      const SizedBox(height: 2 * heroScale),
                       Text(
                         tr('byX', args: [app?.author ?? tr('unknown')]),
                         style: bylineStyle?.copyWith(
@@ -2717,8 +2843,8 @@ class _AppPageState extends State<AppPage> {
     }
 
     showMarkUpdatedDialog() {
-      return showDialog(
-        context: context,
+      return _showPageDialog(
+        hostContext: context,
         builder: (BuildContext ctx) {
           return AlertDialog(
             title: Text(tr('alreadyUpToDateQuestion')),
@@ -2950,14 +3076,15 @@ class _AppPageState extends State<AppPage> {
           HapticFeedback.heavyImpact();
           final res = await appsProvider.downloadAndInstallLatestApps(
             app?.app.id != null ? [app!.app.id] : [],
-            globalNavigatorKey.currentContext,
+            context,
+            dialogTheme: _cachedPageTheme,
           );
           if (res.isNotEmpty && !trackOnly && context.mounted) {
-            showMessage(successMessage, context);
+            _showPageMessage(successMessage, context);
           }
         } catch (e) {
           if (context.mounted) {
-            showError(e, context);
+            _showPageError(e, context);
           }
         }
       }
@@ -3484,6 +3611,22 @@ class _AppPageState extends State<AppPage> {
                                       children: [
                                         IconButton(
                                           icon: const Icon(Icons.arrow_back),
+                                          // Pin to the per-app PRIMARY
+                                          // colour. The previous attempt
+                                          // used [colorScheme.onSurface],
+                                          // which on light themes is a
+                                          // near-black and on dark themes
+                                          // a near-white - effectively the
+                                          // same value the main app theme
+                                          // produces, so the per-app tint
+                                          // wasn't visible.
+                                          // [colorScheme.primary] is the
+                                          // accent derived from this app's
+                                          // icon, so the back button now
+                                          // visibly belongs to the page.
+                                          color: pageThemeForPage
+                                              .colorScheme
+                                              .primary,
                                           onPressed: updating
                                               ? null
                                               : () => Navigator.of(

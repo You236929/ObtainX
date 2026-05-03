@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:progress_indicator_m3e/progress_indicator_m3e.dart';
 import 'package:obtainium/app_sources/fdroidrepo.dart';
 import 'package:obtainium/components/custom_app_bar.dart';
 import 'package:obtainium/components/generated_form.dart';
@@ -56,8 +57,22 @@ class _ImportExportPageState extends State<ImportExportPage> {
   @override
   Widget build(BuildContext context) {
     SourceProvider sourceProvider = SourceProvider();
+    // [appsProvider] is intentionally a broad watch — this page lists
+    // every tracked app to drive the export selection, and any add /
+    // remove / rename should refresh the list. The expensive cost is
+    // [settingsProvider] which used to broad-watch and rebuild this
+    // long page on every unrelated settings change. Narrow it to only
+    // the four fields actually read in build.
     var appsProvider = context.watch<AppsProvider>();
-    var settingsProvider = context.watch<SettingsProvider>();
+    context.select<SettingsProvider, int>(
+      (s) => Object.hash(
+        s.useGradientBackground,
+        s.saveDownloadedApkCopies,
+        s.exportSettings,
+        s.autoExportOnChanges,
+      ),
+    );
+    var settingsProvider = context.read<SettingsProvider>();
 
     var outlineButtonStyle = ButtonStyle(
       shape: WidgetStateProperty.all(
@@ -171,12 +186,17 @@ class _ImportExportPageState extends State<ImportExportPage> {
     runObtainiumImport() {
       HapticFeedback.selectionClick();
       FilePicker.pickFiles()
-          .then((result) {
+          .then((result) async {
             setState(() {
               importInProgress = true;
             });
             if (result != null) {
-              String data = File(result.files.single.path!).readAsStringSync();
+              // [readAsString] (async) instead of [readAsStringSync] so a
+              // multi-megabyte backup file doesn't freeze the UI thread
+              // while it's being slurped in.
+              String data = await File(
+                result.files.single.path!,
+              ).readAsString();
               try {
                 jsonDecode(data);
               } catch (e) {
@@ -214,12 +234,17 @@ class _ImportExportPageState extends State<ImportExportPage> {
     }
 
     runUrlImport() {
-      FilePicker.pickFiles().then((result) {
+      FilePicker.pickFiles().then((result) async {
         if (result != null) {
+          // Async read so picking a large URL-list dump doesn't freeze the UI.
+          final String fileContents = await File(
+            result.files.single.path!,
+          ).readAsString();
+          if (!context.mounted) return;
           urlListImport(
             overrideInitValid: true,
             initValue: RegExp('https?://[^"]+')
-                .allMatches(File(result.files.single.path!).readAsStringSync())
+                .allMatches(fileContents)
                 .map((e) => e.input.substring(e.start, e.end))
                 .toSet()
                 .toList()
@@ -896,7 +921,7 @@ class _ImportExportPageState extends State<ImportExportPage> {
                       ),
                       if (importInProgress) ...[
                         const SizedBox(height: 14),
-                        const LinearProgressIndicator(),
+                        const LinearProgressIndicatorM3E(),
                         const SizedBox(height: 14),
                       ],
                       importPageSectionTitle(
@@ -923,7 +948,7 @@ class _ImportExportPageState extends State<ImportExportPage> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Expanded(child: batchImportCells[rowStart]),
-                                    SizedBox(width: importPageBatchCellGap),
+                                    const SizedBox(width: importPageBatchCellGap),
                                     Expanded(
                                       child:
                                           rowStart + 1 < batchImportCells.length
@@ -1118,7 +1143,7 @@ class _SelectionModalState extends State<SelectionModal> {
     }
     getSelectAllButton() {
       if (widget.onlyOneSelectionAllowed) {
-        return SizedBox.shrink();
+        return const SizedBox.shrink();
       }
       var noneSelected = entrySelections.values.where((v) => v == true).isEmpty;
       return noneSelected

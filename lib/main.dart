@@ -13,7 +13,7 @@ import 'package:obtainium/providers/notifications_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
 import 'package:provider/provider.dart';
-import 'package:dynamic_system_colors/dynamic_system_colors.dart';
+import 'package:dynamic_color/dynamic_color.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:background_fetch/background_fetch.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -245,7 +245,7 @@ class _ObtainiumState extends State<Obtainium> {
         serviceId: 666,
         notificationTitle: tr('foregroundService'),
         notificationText: tr('fgServiceNotice'),
-        notificationIcon: NotificationIcon(
+        notificationIcon: const NotificationIcon(
           metaDataName: 'dev.imranr.obtainium.service.NOTIFICATION_ICON',
         ),
         callback: startCallback,
@@ -298,7 +298,29 @@ class _ObtainiumState extends State<Obtainium> {
 
   @override
   Widget build(BuildContext context) {
-    SettingsProvider settingsProvider = context.watch<SettingsProvider>();
+    // Same pattern as on the apps page: subscribe to a hash of the
+    // SettingsProvider fields this build actually reads, then grab the
+    // instance via [context.read] for non-reactive access. Without this,
+    // every notify (categories, swipe actions, sort columns, folders,
+    // …) rebuilds the entire MaterialApp tree even though those settings
+    // don't affect anything inside this build method.
+    context.select<SettingsProvider, int>(
+      (s) => Object.hash(
+        s.updateInterval,
+        s.useFGService,
+        s.prefs == null,
+        s.forcedLocale,
+        s.appAccentColorSource,
+        s.appThemePaletteStyle,
+        s.activeCustomSeedHex,
+        s.useBlackTheme,
+        s.useGradientBackground,
+        s.useSystemFont,
+        s.theme,
+        s.appUiScale,
+      ),
+    );
+    SettingsProvider settingsProvider = context.read<SettingsProvider>();
     AppsProvider appsProvider = context.read<AppsProvider>();
     LogsProvider logs = context.read<LogsProvider>();
     NotificationsProvider notifs = context.read<NotificationsProvider>();
@@ -414,6 +436,45 @@ class _ObtainiumState extends State<Obtainium> {
               ? lightColorScheme
               : darkColorScheme;
 
+          // Material 3 styled tooltips used app-wide. The default Flutter
+          // tooltip is a small dark rounded-rectangle with white text - a
+          // Material 2 holdover. Theming it lifts every Tooltip in the app
+          // (action button hover hints, settings help icons, IconButton
+          // tooltips on toolbars) to a consistent, M3-themed look without
+          // any per-call-site changes.
+          //
+          // Uses `inverseSurface` / `onInverseSurface` per the M3 spec for
+          // plain tooltips: a high-contrast block of colour against the
+          // surrounding app surface, so it reads clearly without competing
+          // with surrounding content. Auto-flips with light/dark mode
+          // because [inverseSurface] is dark in light themes and light in
+          // dark themes.
+          //
+          // [triggerMode] / [waitDuration] / [showDuration] are deliberately
+          // NOT theme-set: per-Tooltip overrides drive the interaction
+          // semantics (long-press for action buttons, tap for help icons),
+          // and we want each call site to keep its current behaviour.
+          TooltipThemeData tooltipThemeFor(ColorScheme scheme) {
+            return TooltipThemeData(
+              decoration: BoxDecoration(
+                color: scheme.inverseSurface,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              textStyle: TextStyle(
+                color: scheme.onInverseSurface,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                height: 1.4,
+              ),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 10,
+              ),
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              preferBelow: true,
+            );
+          }
+
           NavigationBarThemeData navigationBarThemeFor(ColorScheme scheme) {
             // Use labelMedium as base so nav labels keep M3 size (bare color-only TextStyle inherits body scale and can wrap).
             final TextStyle navLabelBase = Theme.of(
@@ -492,6 +553,17 @@ class _ObtainiumState extends State<Obtainium> {
               navigationBarTheme: navigationBarThemeFor(themeColorScheme),
               segmentedButtonTheme: appSegmentedButtonTheme(themeColorScheme),
               switchTheme: appSwitchTheme(themeColorScheme),
+              tooltipTheme: tooltipThemeFor(themeColorScheme),
+              // splashFactory: deliberately NOT overridden. Briefly tried
+              // [InkRipple.splashFactory] for a more visible
+              // expanding-circle ripple, but its longer animation
+              // duration (~1s confirmed expand) made toggles in the view
+              // options sheet feel laggy - the switch's state-change
+              // animation got visually conflated with the slower ripple,
+              // producing a "tap → wait → toggle" perception. Falling
+              // back to Flutter's M3 default ([InkSparkle]) keeps the
+              // snappy feel, at the cost of the ripple looking more like
+              // a quick fade-tint than a classic ripple.
             ),
             darkTheme: ThemeData(
               useMaterial3: true,
@@ -504,6 +576,7 @@ class _ObtainiumState extends State<Obtainium> {
                 darkThemeColorScheme,
               ),
               switchTheme: appSwitchTheme(darkThemeColorScheme),
+              tooltipTheme: tooltipThemeFor(darkThemeColorScheme),
             ),
             home: Shortcuts(
               shortcuts: <LogicalKeySet, Intent>{

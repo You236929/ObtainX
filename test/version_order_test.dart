@@ -182,6 +182,27 @@ void main() {
     },
   );
 
+  test('legacy release-date microseconds compare with ISO release dates', () {
+    expect(
+      versionsEffectivelyEqual('1777370225000000', '2026-04-28T09:57:05.000Z'),
+      true,
+    );
+    expect(
+      compareVersionsByNumericSegments(
+        '1777370225000000',
+        '2026-04-28T09:57:06.000Z',
+      ),
+      -1,
+    );
+    expect(
+      compareVersionsByNumericSegments(
+        '1777370225000000',
+        '2026-04-28T09:57:04.000Z',
+      ),
+      1,
+    );
+  });
+
   test('f-droid regex version filter keeps newest matching release', () async {
     final details = await FDroid().getAPKUrlsFromFDroidPackagesAPIResponse(
       Response('''
@@ -239,18 +260,10 @@ void main() {
     );
   });
 
-  test('apk mirror fallback download urls are generated from release url', () {
-    expect(
-      apkMirrorFallbackDownloadPageUrlsFromReleasePageUrl(
-        'https://www.apkmirror.com/apk/google-inc/youtube/youtube-21-18-163-release/',
-      ).take(3).toList(),
-      [
-        'https://www.apkmirror.com/apk/google-inc/youtube/youtube-21-18-163-release/youtube-21-18-163-android-apk-download/',
-        'https://www.apkmirror.com/apk/google-inc/youtube/youtube-21-18-163-release/youtube-21-18-163-2-android-apk-download/',
-        'https://www.apkmirror.com/apk/google-inc/youtube/youtube-21-18-163-release/youtube-21-18-163-3-android-apk-download/',
-      ],
-    );
-  });
+  // The URL-pattern-guessing fallback was removed: it issued up to 20
+  // speculative HTTP requests per APKMirror app per refresh and the
+  // success rate was abysmal. The lazy size resolver now only walks the
+  // actual download links found on the release page HTML.
 
   test('apk mirror app slug aliases standardize to canonical app slug', () {
     expect(

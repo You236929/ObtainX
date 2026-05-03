@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:obtainium/components/theme_accent_settings_section.dart'
     show buildThemeAccentSettingsCardItems;
 import 'package:obtainium/providers/settings_provider.dart';
+import 'package:obtainium/widgets/help_hint_icon.dart';
 import 'package:provider/provider.dart';
 
 enum _ThemeBrightnessSegment { system, light, dark, black }
@@ -49,7 +50,19 @@ List<Widget> buildThemesSettingsCardItems(
   BuildContext context,
   Future<AndroidDeviceInfo> androidInfoFuture,
 ) {
-  final SettingsProvider settings = context.watch<SettingsProvider>();
+  // Narrow watch: this section only reflects six theme-related toggles.
+  // Without this, every settings notify rebuilt the whole themes card.
+  context.select<SettingsProvider, int>(
+    (s) => Object.hash(
+      s.useBlackTheme,
+      s.theme,
+      s.useGradientBackground,
+      s.progressiveBlurEnabled,
+      s.matchAppPageToIconColors,
+      s.reduceVisualEffects,
+    ),
+  );
+  final SettingsProvider settings = context.read<SettingsProvider>();
 
   return [
     Padding(
@@ -99,19 +112,14 @@ List<Widget> buildThemesSettingsCardItems(
               icon: const Icon(Icons.square_outlined, size: 18),
             ),
           ],
-          selected: <_ThemeBrightnessSegment>{
-            _segmentForSettings(settings),
-          },
+          selected: <_ThemeBrightnessSegment>{_segmentForSettings(settings)},
           onSelectionChanged: (Set<_ThemeBrightnessSegment> selected) {
             if (selected.isEmpty) return;
             _applyThemeSegment(settings, selected.first);
           },
           showSelectedIcon: false,
           style: SegmentedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(
-              vertical: 10,
-              horizontal: 4,
-            ),
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
             visualDensity: VisualDensity.standard,
             tapTargetSize: MaterialTapTargetSize.padded,
           ),
@@ -126,18 +134,65 @@ List<Widget> buildThemesSettingsCardItems(
         settings.useGradientBackground = value;
       },
     ),
-    SwitchListTile(
+    ListTile(
       title: Text(tr('settingsProgressiveBlur')),
-      value: settings.progressiveBlurEnabled,
-      onChanged: (bool value) {
-        settings.progressiveBlurEnabled = value;
-      },
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          HelpHintIcon(
+            message: tr('settingsProgressiveBlurSubtitle'),
+            padding: EdgeInsets.zero,
+          ),
+          Switch(
+            value: settings.progressiveBlurEnabled,
+            onChanged: settings.reduceVisualEffects
+                ? null
+                : (bool value) {
+                    settings.progressiveBlurEnabled = value;
+                  },
+          ),
+        ],
+      ),
+      // Hard-disabled when the master "reduce visual effects" switch is
+      // on - no point letting users toggle a control that won't take
+      // effect.
+      onTap: settings.reduceVisualEffects
+          ? null
+          : () {
+              settings.progressiveBlurEnabled =
+                  !settings.progressiveBlurEnabled;
+            },
     ),
     SwitchListTile(
       title: Text(tr('matchAppPageToIconColors')),
       value: settings.matchAppPageToIconColors,
       onChanged: (bool value) {
         settings.matchAppPageToIconColors = value;
+      },
+    ),
+    // Master "low-fidelity mode" toggle. Forces blur off and skips the
+    // OpenContainer container-transform morph for apps-list -> AppPage
+    // navigation. Single-switch escape hatch for users on weaker
+    // hardware who report frame-rate drops.
+    ListTile(
+      title: Text(tr('settingsReduceVisualEffects')),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          HelpHintIcon(
+            message: tr('settingsReduceVisualEffectsSubtitle'),
+            padding: EdgeInsets.zero,
+          ),
+          Switch(
+            value: settings.reduceVisualEffects,
+            onChanged: (bool value) {
+              settings.reduceVisualEffects = value;
+            },
+          ),
+        ],
+      ),
+      onTap: () {
+        settings.reduceVisualEffects = !settings.reduceVisualEffects;
       },
     ),
   ];

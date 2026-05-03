@@ -5,6 +5,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:easy_localization/easy_localization.dart' hide TextDirection;
 import 'package:expressive_loading_indicator/expressive_loading_indicator.dart';
 import 'package:flutter/material.dart';
+import 'package:obtainium/widgets/help_hint_icon.dart';
 import 'package:obtainium/components/custom_app_bar.dart';
 import 'package:obtainium/components/themes_settings_section.dart';
 import 'package:obtainium/components/generated_form.dart';
@@ -103,59 +104,50 @@ class _SettingsPageState extends State<SettingsPage> {
             settingsProvider.useShizuku);
     if (showBgControls) {
       rows.add(
-        SwitchListTile(
-          title: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+        ListTile(
+          title: Text(tr('foregroundServiceForUpdateChecking')),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Expanded(child: Text(tr('foregroundServiceForUpdateChecking'))),
-              Tooltip(
+              HelpHintIcon(
                 message: tr('foregroundServiceReliabilityNote'),
-                triggerMode: TooltipTriggerMode.tap,
-                waitDuration: Duration.zero,
-                showDuration: const Duration(seconds: 5),
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 6),
-                  child: Icon(
-                    Icons.help_outline,
-                    size: 20,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
+                padding: EdgeInsets.zero,
+              ),
+              Switch(
+                value: settingsProvider.useFGService,
+                onChanged: (bool value) {
+                  settingsProvider.useFGService = value;
+                },
               ),
             ],
           ),
-          value: settingsProvider.useFGService,
-          onChanged: (bool value) {
-            settingsProvider.useFGService = value;
+          onTap: () {
+            settingsProvider.useFGService = !settingsProvider.useFGService;
           },
         ),
       );
       rows.add(
-        SwitchListTile(
-          title: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+        ListTile(
+          title: Text(tr('enableBackgroundUpdates')),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Expanded(child: Text(tr('enableBackgroundUpdates'))),
-              Tooltip(
+              HelpHintIcon(
                 message:
                     '${tr('backgroundUpdateReqsExplanation')}\n\n${tr('backgroundUpdateLimitsExplanation')}',
-                triggerMode: TooltipTriggerMode.tap,
-                waitDuration: Duration.zero,
-                showDuration: const Duration(seconds: 5),
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 6),
-                  child: Icon(
-                    Icons.help_outline,
-                    size: 20,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
+                padding: EdgeInsets.zero,
+              ),
+              Switch(
+                value: settingsProvider.enableBackgroundUpdates,
+                onChanged: (bool value) {
+                  settingsProvider.enableBackgroundUpdates = value;
+                },
               ),
             ],
           ),
-          value: settingsProvider.enableBackgroundUpdates,
-          onChanged: (bool value) {
-            settingsProvider.enableBackgroundUpdates = value;
+          onTap: () {
+            settingsProvider.enableBackgroundUpdates =
+                !settingsProvider.enableBackgroundUpdates;
           },
         ),
       );
@@ -371,6 +363,12 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
     );
 
+    // M3 Expressive slider design - thick gapped track + vertical-bar thumb.
+    // Implemented via custom [SliderTrackShape] / [SliderComponentShape]
+    // painters at the bottom of this file. The slider_m3e package's
+    // "round" / "square" thumb variants don't match the M3E reference
+    // (which is a vertical-pill thumb), so we keep our spec-correct
+    // hand-built shapes.
     var intervalSlider = SliderTheme(
       data: SliderTheme.of(context).copyWith(
         trackHeight: 16,
@@ -732,15 +730,9 @@ class _SettingsPageState extends State<SettingsPage> {
                               // track + vertical-bar thumb + tick marks)
                               // for consistency across the settings page.
                               Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  16,
-                                  8,
-                                  8,
-                                  8,
-                                ),
+                                padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
                                 child: Row(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
                                     Icon(
                                       Icons.format_size_rounded,
@@ -755,10 +747,9 @@ class _SettingsPageState extends State<SettingsPage> {
                                             CrossAxisAlignment.start,
                                         children: [
                                           Padding(
-                                            padding:
-                                                const EdgeInsets.symmetric(
-                                                  horizontal: 8,
-                                                ),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                            ),
                                             child: Row(
                                               children: [
                                                 Expanded(
@@ -771,48 +762,43 @@ class _SettingsPageState extends State<SettingsPage> {
                                             ),
                                           ),
                                           SliderTheme(
-                                            data: SliderTheme.of(context)
-                                                .copyWith(
-                                                  trackHeight: 16,
-                                                  trackShape:
-                                                      const _GappedTrackShape(),
-                                                  thumbShape:
-                                                      const _VerticalBarThumbShape(),
-                                                  tickMarkShape:
-                                                      const RoundSliderTickMarkShape(
-                                                        tickMarkRadius: 3,
-                                                      ),
-                                                  activeTickMarkColor:
-                                                      Theme.of(
-                                                        context,
-                                                      ).colorScheme.onPrimary,
-                                                  inactiveTickMarkColor:
-                                                      Theme.of(
-                                                        context,
-                                                      ).colorScheme.primary,
-                                                  overlayShape:
-                                                      const RoundSliderOverlayShape(
-                                                        overlayRadius: 20,
-                                                      ),
-                                                ),
+                                            data: SliderTheme.of(context).copyWith(
+                                              trackHeight: 16,
+                                              trackShape:
+                                                  const _GappedTrackShape(),
+                                              thumbShape:
+                                                  const _VerticalBarThumbShape(),
+                                              tickMarkShape:
+                                                  const RoundSliderTickMarkShape(
+                                                    tickMarkRadius: 3,
+                                                  ),
+                                              activeTickMarkColor: Theme.of(
+                                                context,
+                                              ).colorScheme.onPrimary,
+                                              inactiveTickMarkColor: Theme.of(
+                                                context,
+                                              ).colorScheme.primary,
+                                              overlayShape:
+                                                  const RoundSliderOverlayShape(
+                                                    overlayRadius: 20,
+                                                  ),
+                                            ),
                                             child: Slider(
                                               min: SettingsProvider
                                                   .appUiScaleMin,
                                               max: SettingsProvider
                                                   .appUiScaleMax,
-                                              // 0.05 increments between
-                                              // [appUiScaleMin]..[appUiScaleMax].
                                               divisions:
                                                   ((SettingsProvider
-                                                                          .appUiScaleMax -
-                                                                      SettingsProvider
-                                                                          .appUiScaleMin) /
-                                                              0.05)
-                                                          .round(),
+                                                                  .appUiScaleMax -
+                                                              SettingsProvider
+                                                                  .appUiScaleMin) /
+                                                          0.05)
+                                                      .round(),
                                               label:
                                                   '${(settingsProvider.appUiScale * 100).round()}%',
-                                              value: settingsProvider
-                                                  .appUiScale,
+                                              value:
+                                                  settingsProvider.appUiScale,
                                               onChanged: (double value) {
                                                 settingsProvider.appUiScale =
                                                     value;
@@ -832,15 +818,15 @@ class _SettingsPageState extends State<SettingsPage> {
                                   settingsProvider.showAppWebpage = value;
                                 },
                               ),
-                              SwitchListTile(
-                                title: Text(tr('showFolderedAppsOnMainPage')),
-                                value:
-                                    settingsProvider.showFolderedAppsOnMainPage,
-                                onChanged: (value) {
-                                  settingsProvider.showFolderedAppsOnMainPage =
-                                      value;
-                                },
-                              ),
+                              // [showFolderedAppsOnMainPage] toggle moved
+                              // to the apps-list view options sheet (open
+                              // via the apps tab's filter / view-options
+                              // entry point) - it's a main-tab-scoped
+                              // setting and belongs alongside the other
+                              // view options (sort / group / pin updates
+                              // etc.) rather than in the global Settings
+                              // page where it competed with truly app-wide
+                              // controls. See [showAppsViewOptionsSheet].
                               SwitchListTile(
                                 title: Text(tr('dontShowTrackOnlyWarnings')),
                                 value: settingsProvider.hideTrackOnlyWarning,
@@ -987,8 +973,8 @@ class _SettingsPageState extends State<SettingsPage> {
                               'categories',
                             ),
                             collapsibleCard('categories', [
-                              Padding(
-                                padding: const EdgeInsets.all(16),
+                              const Padding(
+                                padding: EdgeInsets.all(16),
                                 child: CategoryEditorSelector(
                                   showLabelWhenNotEmpty: false,
                                 ),
@@ -1443,6 +1429,22 @@ class _ThirdPartyInstallerSelectorState
                                         width: 40,
                                         height: 40,
                                         fit: BoxFit.contain,
+                                        // Decode at the rendered size × DPR
+                                        // so a 512×512 launcher icon doesn't
+                                        // sit at full resolution in the
+                                        // raster cache for a 40-px row.
+                                        cacheWidth:
+                                            (40 *
+                                                    MediaQuery.devicePixelRatioOf(
+                                                      context,
+                                                    ))
+                                                .round(),
+                                        cacheHeight:
+                                            (40 *
+                                                    MediaQuery.devicePixelRatioOf(
+                                                      context,
+                                                    ))
+                                                .round(),
                                         errorBuilder: (_, _, _) =>
                                             const Icon(Icons.android, size: 40),
                                       ),
@@ -1493,6 +1495,10 @@ class _ThirdPartyInstallerSelectorState
                       width: 36,
                       height: 36,
                       fit: BoxFit.contain,
+                      cacheWidth: (36 * MediaQuery.devicePixelRatioOf(context))
+                          .round(),
+                      cacheHeight: (36 * MediaQuery.devicePixelRatioOf(context))
+                          .round(),
                       errorBuilder: (_, _, _) =>
                           const Icon(Icons.android, size: 36),
                     ),
@@ -1538,12 +1544,45 @@ class _VerticalBarThumbShape extends SliderComponentShape {
     required double textScaleFactor,
     required Size sizeWithOverflow,
   }) {
+    // Flutter's slider computes the framework-provided [center.dx] using
+    // the FULL trackRect width:
+    //   thumbX = trackRect.left + value * trackRect.width
+    // ...but tick marks are inset on each side by trackHeight/2:
+    //   tickX  = trackRect.left + value * (trackRect.width - trackHeight)
+    //                           + trackHeight/2
+    // The two only coincide at value == 0.5. Everywhere else the thumb
+    // drifts off the tick proportionally to (value - 0.5) * trackHeight.
+    // For a default 4dp track this drift is sub-pixel and unnoticeable;
+    // for our M3E 16dp track it's a visible 8dp at the endpoints.
+    //
+    // Re-project the framework-provided center onto the tick-aligned
+    // x-axis so the vertical bar thumb lands exactly on each dot.
+    final Rect trackRect = sliderTheme.trackShape!.getPreferredRect(
+      parentBox: parentBox,
+      offset: Offset.zero,
+      sliderTheme: sliderTheme,
+      isEnabled: enableAnimation.value > 0,
+      isDiscrete: isDiscrete,
+    );
+    final double trackHeight = trackRect.height;
+    final double trackWidth = trackRect.width;
+    Offset alignedCenter = center;
+    if (trackWidth > trackHeight) {
+      final double valueRatio = textDirection == TextDirection.rtl
+          ? 1.0 - value
+          : value;
+      final double alignedX =
+          trackRect.left +
+          valueRatio * (trackWidth - trackHeight) +
+          trackHeight / 2;
+      alignedCenter = Offset(alignedX, center.dy);
+    }
     final canvas = context.canvas;
     final paint = Paint()
       ..color = sliderTheme.thumbColor ?? Colors.white
       ..style = PaintingStyle.fill;
     final rrect = RRect.fromRectAndRadius(
-      Rect.fromCenter(center: center, width: _width, height: _height),
+      Rect.fromCenter(center: alignedCenter, width: _width, height: _height),
       const Radius.circular(_radius),
     );
     canvas.drawRRect(rrect, paint);
@@ -1579,6 +1618,24 @@ class _GappedTrackShape extends SliderTrackShape with BaseSliderTrackShape {
       isDiscrete: isDiscrete,
     );
 
+    // Re-project thumbCenter.dx onto the tick-aligned axis so the split
+    // between active and inactive lanes coincides with the rendered
+    // thumb position. See the long comment in [_VerticalBarThumbShape]
+    // for why this re-projection is needed (Flutter's tick range is
+    // inset by trackHeight/2 on each side; the framework-provided
+    // thumbCenter is on the un-inset full-track axis).
+    double thumbX = thumbCenter.dx;
+    final double trackHeight = trackRect.height;
+    final double trackWidth = trackRect.width;
+    if (trackWidth > trackHeight) {
+      final double valueRatio = ((thumbCenter.dx - trackRect.left) / trackWidth)
+          .clamp(0.0, 1.0);
+      thumbX =
+          trackRect.left +
+          valueRatio * (trackWidth - trackHeight) +
+          trackHeight / 2;
+    }
+
     final activePaint = Paint()
       ..color = (sliderTheme.activeTrackColor ?? Colors.blue);
     final inactivePaint = Paint()
@@ -1590,7 +1647,7 @@ class _GappedTrackShape extends SliderTrackShape with BaseSliderTrackShape {
         Rect.fromLTRB(
           trackRect.left,
           trackRect.top,
-          thumbCenter.dx - _gap,
+          thumbX - _gap,
           trackRect.bottom,
         ),
         topLeft: const Radius.circular(_radius),
@@ -1603,7 +1660,7 @@ class _GappedTrackShape extends SliderTrackShape with BaseSliderTrackShape {
     canvas.drawRRect(
       RRect.fromRectAndCorners(
         Rect.fromLTRB(
-          thumbCenter.dx + _gap,
+          thumbX + _gap,
           trackRect.top,
           trackRect.right,
           trackRect.bottom,

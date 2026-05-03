@@ -79,6 +79,68 @@ class APKDetails {
   });
 }
 
+const String versionStringSourceDefault = 'default';
+const String versionStringSourceReleaseTitle = 'releaseTitle';
+const String versionStringSourceAssetName = 'assetName';
+const String versionStringSourceReleaseDate = 'releaseDate';
+const String versionStringSourceReleaseCommitSha = 'releaseCommitSha';
+
+const Set<String> validVersionStringSources = {
+  versionStringSourceDefault,
+  versionStringSourceReleaseTitle,
+  versionStringSourceAssetName,
+  versionStringSourceReleaseDate,
+  versionStringSourceReleaseCommitSha,
+};
+
+String getVersionStringSource(
+  Map<String, dynamic> additionalSettings, {
+  bool preferConfiguredSource = true,
+}) {
+  final dynamic configuredSource = additionalSettings['versionStringSource'];
+  if (configuredSource is String &&
+      preferConfiguredSource &&
+      validVersionStringSources.contains(configuredSource)) {
+    return configuredSource;
+  }
+  if (additionalSettings['releaseDateAsVersion'] == true) {
+    return versionStringSourceReleaseDate;
+  }
+  if (additionalSettings['releaseTitleAsVersion'] == true) {
+    return versionStringSourceReleaseTitle;
+  }
+  if (additionalSettings['extractVersionFromAssetName'] == true) {
+    return versionStringSourceAssetName;
+  }
+  if (additionalSettings['releaseCommitShaAsVersion'] == true) {
+    return versionStringSourceReleaseCommitSha;
+  }
+  if (configuredSource is String &&
+      validVersionStringSources.contains(configuredSource)) {
+    return configuredSource;
+  }
+  return versionStringSourceDefault;
+}
+
+void syncVersionStringSourceSettings(
+  Map<String, dynamic> additionalSettings, {
+  bool preferConfiguredSource = true,
+}) {
+  final String versionStringSource = getVersionStringSource(
+    additionalSettings,
+    preferConfiguredSource: preferConfiguredSource,
+  );
+  additionalSettings['versionStringSource'] = versionStringSource;
+  additionalSettings['releaseDateAsVersion'] =
+      versionStringSource == versionStringSourceReleaseDate;
+  additionalSettings['releaseTitleAsVersion'] =
+      versionStringSource == versionStringSourceReleaseTitle;
+  additionalSettings['extractVersionFromAssetName'] =
+      versionStringSource == versionStringSourceAssetName;
+  additionalSettings['releaseCommitShaAsVersion'] =
+      versionStringSource == versionStringSourceReleaseCommitSha;
+}
+
 List<List<String>> stringMapListTo2DList(
   List<MapEntry<String, String>> mapList,
 ) => mapList.map((e) => [e.key, e.value]).toList();
@@ -147,6 +209,12 @@ Map<String, dynamic> appJSONCompatibilityModifiers(Map<String, dynamic> json) {
     additionalSettings['versionDetection'] = false;
     additionalSettings['releaseDateAsVersion'] = true;
   }
+  syncVersionStringSourceSettings(
+    additionalSettings,
+    preferConfiguredSource: originalAdditionalSettings.containsKey(
+      'versionStringSource',
+    ),
+  );
   // Convert bool style pseudo version method to dropdown style
   if (originalAdditionalSettings['supportFixedAPKURL'] == true) {
     additionalSettings['defaultPseudoVersioningMethod'] = 'partialAPKHash';
@@ -322,6 +390,26 @@ Map<String, dynamic> appJSONCompatibilityModifiers(Map<String, dynamic> json) {
   return json;
 }
 
+DateTime? dateTimeFromJsonValue(dynamic value) {
+  if (value == null) {
+    return null;
+  }
+  if (value is int) {
+    return DateTime.fromMicrosecondsSinceEpoch(value);
+  }
+  if (value is String) {
+    final DateTime? isoDateTime = DateTime.tryParse(value);
+    if (isoDateTime != null) {
+      return isoDateTime;
+    }
+    final int? microsecondsSinceEpoch = int.tryParse(value);
+    if (microsecondsSinceEpoch != null) {
+      return DateTime.fromMicrosecondsSinceEpoch(microsecondsSinceEpoch);
+    }
+  }
+  return null;
+}
+
 class App {
   late String id;
   late String url;
@@ -457,9 +545,7 @@ class App {
       ),
       (json['preferredApkIndex'] ?? -1) as int,
       jsonDecode(json['additionalSettings']) as Map<String, dynamic>,
-      json['lastUpdateCheck'] == null
-          ? null
-          : DateTime.fromMicrosecondsSinceEpoch(json['lastUpdateCheck']),
+      dateTimeFromJsonValue(json['lastUpdateCheck']),
       json['pinned'] ?? false,
       categories: json['categories'] != null
           ? (json['categories'] as List<dynamic>)
@@ -468,9 +554,7 @@ class App {
           : json['category'] != null
           ? [json['category'] as String]
           : [],
-      releaseDate: json['releaseDate'] == null
-          ? null
-          : DateTime.fromMicrosecondsSinceEpoch(json['releaseDate']),
+      releaseDate: dateTimeFromJsonValue(json['releaseDate']),
       changeLog: json['changeLog'] == null ? null : json['changeLog'] as String,
       overrideSource: json['overrideSource'],
       allowIdChange: json['allowIdChange'] ?? false,
@@ -727,6 +811,7 @@ abstract class AppSource {
   bool showReleaseDateAsVersionToggle = false;
   bool showReleaseTitleAsVersionToggle = false;
   bool showExtractVersionFromAssetNameToggle = false;
+  bool showReleaseCommitShaAsVersionToggle = false;
   bool versionDetectionDisallowed = false;
   List<String> excludeCommonSettingKeys = [];
   bool urlsAlwaysHaveExtension = false;
@@ -951,99 +1036,74 @@ abstract class AppSource {
     ],
   ];
 
+  List<MapEntry<String, String>> get versionStringSourceOptions {
+    final List<MapEntry<String, String>> options = [
+      MapEntry(versionStringSourceDefault, tr('versionStringSourceDefault')),
+    ];
+    if (showReleaseTitleAsVersionToggle) {
+      options.add(
+        MapEntry(
+          versionStringSourceReleaseTitle,
+          tr('versionStringSourceReleaseTitle'),
+        ),
+      );
+    }
+    if (showExtractVersionFromAssetNameToggle) {
+      options.add(
+        MapEntry(
+          versionStringSourceAssetName,
+          tr('versionStringSourceAssetName'),
+        ),
+      );
+    }
+    if (showReleaseDateAsVersionToggle) {
+      options.add(
+        MapEntry(
+          versionStringSourceReleaseDate,
+          tr('versionStringSourceReleaseDate'),
+        ),
+      );
+    }
+    if (showReleaseCommitShaAsVersionToggle) {
+      options.add(
+        MapEntry(
+          versionStringSourceReleaseCommitSha,
+          tr('versionStringSourceReleaseCommitSha'),
+        ),
+      );
+    }
+    return options;
+  }
+
   // Previous 2 variables combined into one at runtime for convenient usage + additional processing
   List<List<GeneratedFormItem>> get combinedAppSpecificSettingFormItems {
     var agnosticItems = cloneFormItems(
       additionalAppSpecificSourceAgnosticSettingFormItemsNeverUseDirectly,
     );
 
-    final versionDetectionIdx = agnosticItems.indexWhere(
-      (row) => row.any((item) => item.key == 'versionDetection'),
+    final int versionSectionHeaderIndex = agnosticItems.indexWhere(
+      (List<GeneratedFormItem> row) =>
+          row.length == 1 && row.first.key == '__formSectionVersion',
     );
-    if (showReleaseDateAsVersionToggle &&
-        versionDetectionIdx >= 0 &&
+    final List<MapEntry<String, String>> versionSourceOptions =
+        versionStringSourceOptions;
+    if (versionSourceOptions.length > 1 &&
         !agnosticItems.any(
-          (row) => row.any((item) => item.key == 'releaseDateAsVersion'),
+          (List<GeneratedFormItem> row) => row.any(
+            (GeneratedFormItem item) => item.key == 'versionStringSource',
+          ),
         )) {
-      agnosticItems.insert(versionDetectionIdx + 1, [
-        GeneratedFormSwitch(
-          'releaseDateAsVersion',
-          label: '${tr('releaseDateAsVersion')} (${tr('pseudoVersion')})',
-          defaultValue: false,
-        ),
-      ]);
-    }
-
-    if (showReleaseTitleAsVersionToggle) {
-      if (agnosticItems.indexWhere(
-            (List<GeneratedFormItem> row) =>
-                row.indexWhere(
-                  (GeneratedFormItem item) =>
-                      item.key == 'releaseTitleAsVersion',
-                ) >=
-                0,
-          ) <
-          0) {
-        final int trimRowIndex = agnosticItems.indexWhere(
-          (List<GeneratedFormItem> row) =>
-              row.indexWhere(
-                (GeneratedFormItem item) =>
-                    item.key == 'versionExtractionRegEx',
-              ) >=
-              0,
-        );
-        if (trimRowIndex >= 0) {
-          agnosticItems.insert(trimRowIndex, [
-            GeneratedFormSwitch(
-              'releaseTitleAsVersion',
-              label: tr('releaseTitleAsVersion'),
-              defaultValue: false,
-              turnsOffKeys: const ['extractVersionFromAssetName'],
-            ),
-          ]);
-        }
-      }
-    }
-
-    if (showExtractVersionFromAssetNameToggle) {
-      if (agnosticItems.indexWhere(
-            (List<GeneratedFormItem> row) =>
-                row.indexWhere(
-                  (GeneratedFormItem item) =>
-                      item.key == 'extractVersionFromAssetName',
-                ) >=
-                0,
-          ) <
-          0) {
-        final int releaseTitleRowIndex = agnosticItems.indexWhere(
-          (List<GeneratedFormItem> row) =>
-              row.indexWhere(
-                (GeneratedFormItem item) => item.key == 'releaseTitleAsVersion',
-              ) >=
-              0,
-        );
-        final int trimRowIndex = agnosticItems.indexWhere(
-          (List<GeneratedFormItem> row) =>
-              row.indexWhere(
-                (GeneratedFormItem item) =>
-                    item.key == 'versionExtractionRegEx',
-              ) >=
-              0,
-        );
-        final int insertRowIndex = releaseTitleRowIndex >= 0
-            ? releaseTitleRowIndex + 1
-            : trimRowIndex;
-        if (insertRowIndex >= 0) {
-          agnosticItems.insert(insertRowIndex, [
-            GeneratedFormSwitch(
-              'extractVersionFromAssetName',
-              label: tr('extractVersionFromAssetName'),
-              defaultValue: false,
-              turnsOffKeys: const ['releaseTitleAsVersion'],
-            ),
-          ]);
-        }
-      }
+      agnosticItems.insert(
+        versionSectionHeaderIndex >= 0 ? versionSectionHeaderIndex + 1 : 0,
+        [
+          GeneratedFormDropdown(
+            'versionStringSource',
+            versionSourceOptions,
+            label: tr('versionStringSource'),
+            defaultValue: versionStringSourceDefault,
+          ),
+        ],
+      );
     }
 
     agnosticItems = agnosticItems
@@ -1402,12 +1462,12 @@ class SourceProvider {
     if (trackOnlyOverride || source.enforceTrackOnly) {
       additionalSettings['trackOnly'] = true;
     }
+    syncVersionStringSourceSettings(additionalSettings);
     String standardUrl = source.standardizeUrl(url);
     APKDetails apk = await source.getLatestAPKDetails(
       standardUrl,
       additionalSettings,
     );
-    final String rawLatestVersionFromSource = apk.version;
     final String? rawApkNamesFromSource = encodeRawAssistLines(
       apk.apkUrls.map((MapEntry<String, String> entry) => entry.key),
     );
@@ -1415,6 +1475,12 @@ class SourceProvider {
       apk.rawReleaseTitleCandidates,
     );
     var trackOnly = additionalSettings['trackOnly'] == true;
+    final String rawLatestVersionFromSource = apk.version;
+
+    if (additionalSettings['releaseDateAsVersion'] == true &&
+        apk.releaseDate != null) {
+      apk.version = apk.releaseDate!.toUtc().toIso8601String();
+    }
 
     if (source.runtimeType !=
             HTML().runtimeType && // Some sources do it separately
@@ -1427,11 +1493,6 @@ class SourceProvider {
       if (extractedVersion != null) {
         apk.version = extractedVersion;
       }
-    }
-
-    if (additionalSettings['releaseDateAsVersion'] == true &&
-        apk.releaseDate != null) {
-      apk.version = apk.releaseDate!.microsecondsSinceEpoch.toString();
     }
     apk.apkUrls = filterApks(
       apk.apkUrls,
@@ -1487,21 +1548,20 @@ class SourceProvider {
       rawLatestVersionFromSource: rawLatestVersionFromSource,
       rawApkNamesFromSource: rawApkNamesFromSource,
       rawReleaseTitlesFromSource: rawReleaseTitlesFromSource,
+      // Cache key for the size is effectively (appId, latestVersion):
+      // we keep the previously-resolved size when version is unchanged,
+      // and clear it whenever the source reports a new version. This
+      // applies uniformly to every source - including APKMirror, whose
+      // size is now resolved lazily on the AppPage. The previous
+      // `source is APKMirror ? null : ...` distrust treatment is gone:
+      // it was compensating for an unreliable in-update-check resolver
+      // that no longer exists.
       apkSizeBytes:
           apk.apkSizeBytes ??
-          (source is APKMirror ? null : currentApp?.apkSizeBytes),
+          (currentApp != null && currentApp.latestVersion == apk.version
+              ? currentApp.apkSizeBytes
+              : null),
     );
-    // TEMP APKMIRROR SIZE DEBUG: remove before production.
-    if (apkMirrorSizeDebugLoggingEnabled && source is APKMirror) {
-      try {
-        await LogsProvider(runDefaultClear: false).add(
-          'OBTAINX-APK-SIZE-DEBUG SourceProvider: id=${finalApp.id} standardUrl=$standardUrl rawSize=${apk.apkSizeBytes?.toString() ?? "<null>"} previousSize=${currentApp?.apkSizeBytes?.toString() ?? "<null>"} finalSize=${finalApp.apkSizeBytes?.toString() ?? "<null>"} currentLatest=${currentApp?.latestVersion ?? "<null>"} newLatest=${finalApp.latestVersion} installed=${finalApp.installedVersion ?? "<null>"} trackOnly=${finalApp.additionalSettings['trackOnly'] == true}',
-          level: LogLevels.debug,
-        );
-      } catch (_) {
-        // Debug logging must never affect source refreshes.
-      }
-    }
     return source.endOfGetAppChanges(finalApp);
   }
 

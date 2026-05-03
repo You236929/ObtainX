@@ -88,9 +88,9 @@ class _HomePageState extends State<HomePage> {
                         mode: LaunchMode.externalApplication,
                       );
                     },
-                    child: Text(
+                    child: const Text(
                       'https://github.com/bikram-agarwal/ObtainX/blob/main/README.md',
-                      style: const TextStyle(
+                      style: TextStyle(
                         decoration: TextDecoration.underline,
                         fontWeight: FontWeight.bold,
                       ),
@@ -242,7 +242,7 @@ class _HomePageState extends State<HomePage> {
                     items: const [],
                     additionalWidgets: [
                       ExpansionTile(
-                        title: const Text('Raw JSON'),
+                        title: Text(tr('rawJson')),
                         children: [
                           Text(
                             dataStr,
@@ -334,6 +334,13 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
+    if (!await _confirmActivePageCanNavigateAway(activeIndex)) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+
     pageSwitchRequestId += 1;
     final int currentRequestId = pageSwitchRequestId;
 
@@ -366,6 +373,15 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<bool> _confirmActivePageCanNavigateAway(int activeIndex) async {
+    final currentKey = pages[activeIndex].widget.key;
+    if (currentKey is GlobalKey<AddAppPageState>) {
+      return currentKey.currentState?.confirmCancelBulkScanForNavigation() ??
+          true;
+    }
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
     // Only the app-count, loading flag, and update count are needed here;
@@ -385,7 +401,18 @@ class _HomePageState extends State<HomePage> {
                 .length,
           ),
         );
-    SettingsProvider settingsProvider = context.watch<SettingsProvider>();
+    // Subscribe only to the three settings home.dart actually reads in
+    // build (blur toggle, page-transition disable, reverse direction).
+    // Without this, every notify on SettingsProvider rebuilt the entire
+    // navigation shell — including the apps page IndexedStack child.
+    context.select<SettingsProvider, int>(
+      (s) => Object.hash(
+        s.progressiveBlurEnabled,
+        s.disablePageTransitions,
+        s.reversePageTransitions,
+      ),
+    );
+    SettingsProvider settingsProvider = context.read<SettingsProvider>();
 
     final AddAppPageState? addPageState =
         (pages[1].widget.key as GlobalKey<AddAppPageState>).currentState;
@@ -406,14 +433,23 @@ class _HomePageState extends State<HomePage> {
           isLinkActivity &&
           selectedIndexHistory.length == 1 &&
           selectedIndexHistory.last == 1,
-      onPopInvokedWithResult: (bool didPop, dynamic result) {
+      onPopInvokedWithResult: (bool didPop, dynamic result) async {
         if (didPop) return;
         final int activeIndex = selectedIndexHistory.isEmpty
             ? 0
             : selectedIndexHistory.last;
         final currentKey = pages[activeIndex].widget.key;
         if (currentKey is GlobalKey<AddAppPageState>) {
-          if (currentKey.currentState?.handleBack() == true) return;
+          final AddAppPageState? addAppPageState = currentKey.currentState;
+          if (addAppPageState != null) {
+            if (!await addAppPageState.confirmCancelBulkScanForNavigation()) {
+              return;
+            }
+            if (!mounted || !addAppPageState.mounted) {
+              return;
+            }
+            if (addAppPageState.handleBack()) return;
+          }
         }
         if (currentKey is GlobalKey<AppsPageState>) {
           if (currentKey.currentState?.handleBack() == true) return;

@@ -23,6 +23,7 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/io_client.dart';
+import 'package:obtainium/app_sources/apkmirror.dart' show apkMirrorSizeDebug;
 import 'package:obtainium/app_sources/direct_apk_link.dart';
 import 'package:obtainium/app_sources/html.dart';
 import 'package:obtainium/components/generated_form.dart';
@@ -32,6 +33,7 @@ import 'package:obtainium/main.dart';
 import 'package:obtainium/providers/logs_provider.dart';
 import 'package:obtainium/providers/notifications_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
+import 'package:obtainium/services/bulk_import_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
@@ -45,9 +47,6 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shared_storage/shared_storage.dart' as saf;
 import 'package:shizuku_apk_installer/shizuku_apk_installer.dart';
 import 'package:obtainium/folders/app_folder.dart';
-
-// TEMP APKMIRROR SIZE DEBUG: remove before production.
-const bool _apkMirrorSizeDebugLoggingEnabledForAppsProvider = true;
 
 final pm = AndroidPackageManager();
 final packageInfoFlags = PackageInfoFlags({PMFlag.getSigningCertificates});
@@ -63,6 +62,13 @@ final RegExp _androidApplicationIdPattern = RegExp(
 bool versionsEffectivelyEqual(String installed, String latest) {
   if (installed == latest) return true;
   if (installed.isEmpty || latest.isEmpty) return false;
+  final int? releaseDateVersionComparison = compareReleaseDateVersionStrings(
+    installed,
+    latest,
+  );
+  if (releaseDateVersionComparison == 0) {
+    return true;
+  }
   final installedLen = installed.length;
   final latestLen = latest.length;
   if (latest.startsWith(installed) &&
@@ -91,6 +97,33 @@ bool versionsEffectivelyEqual(String installed, String latest) {
 }
 
 bool _isDigit(int codeUnit) => codeUnit >= 0x30 && codeUnit <= 0x39; // '0'..'9'
+
+DateTime? _dateFromReleaseDateVersionString(String version) {
+  final String trimmedVersion = version.trim();
+  if (trimmedVersion.isEmpty) {
+    return null;
+  }
+  if (RegExp(r'^\d{15,17}$').hasMatch(trimmedVersion)) {
+    try {
+      return DateTime.fromMicrosecondsSinceEpoch(int.parse(trimmedVersion));
+    } catch (_) {
+      return null;
+    }
+  }
+  if (!RegExp(r'^\d{4}-\d{2}-\d{2}(?:[T ].*)?$').hasMatch(trimmedVersion)) {
+    return null;
+  }
+  return DateTime.tryParse(trimmedVersion);
+}
+
+int? compareReleaseDateVersionStrings(String installed, String latest) {
+  final DateTime? installedDate = _dateFromReleaseDateVersionString(installed);
+  final DateTime? latestDate = _dateFromReleaseDateVersionString(latest);
+  if (installedDate == null || latestDate == null) {
+    return null;
+  }
+  return installedDate.toUtc().compareTo(latestDate.toUtc()).sign;
+}
 
 /// True when [needle] appears in [longer] as a contiguous substring with
 /// boundaries so we do not treat [2.0] as inside [12.0] or [.0] as inside [8.0].
@@ -259,6 +292,9 @@ bool versionOrderIsUnclear(String installed, String latest) {
   if (installed.isEmpty || latest.isEmpty) return false;
   if (installed == latest) return false;
   if (versionsEffectivelyEqual(installed, latest)) return false;
+  if (compareReleaseDateVersionStrings(installed, latest) != null) {
+    return false;
+  }
   if (compareVersionsByNumericSegments(installed, latest) == 0) {
     return true;
   }
@@ -332,6 +368,13 @@ bool versionOrderUncertainUpdate(App app) {
 /// Compare version strings by numeric segments (e.g. 2.0.0 vs 1.9.9).
 /// Returns -1 if [installed] < [latest], 0 if equal, 1 if [installed] > [latest], null if not comparable.
 int? compareVersionsByNumericSegments(String installed, String latest) {
+  final int? releaseDateVersionComparison = compareReleaseDateVersionStrings(
+    installed,
+    latest,
+  );
+  if (releaseDateVersionComparison != null) {
+    return releaseDateVersionComparison;
+  }
   final installedSegments = RegExp(
     r'\d+',
   ).allMatches(installed).map((m) => int.tryParse(m.group(0)!) ?? 0).toList();
@@ -549,7 +592,7 @@ class DownloadCancelToken {
     if (!_isCancelled) {
       return;
     }
-    throw ObtainiumError(tr('cancelled'));
+    throw DownloadCancelledError();
   }
 }
 
@@ -583,7 +626,7 @@ Future<File> downloadFileWithRetry(
     );
   } catch (e) {
     if (cancelToken?.isCancelled == true) {
-      throw ObtainiumError(tr('cancelled'));
+      throw DownloadCancelledError();
     }
     if (retries > 0 && e is ClientException) {
       await Future.delayed(const Duration(seconds: 5));
@@ -814,7 +857,7 @@ Future<File> downloadFile(
     bool shouldReturn = false;
     while (isDownloading) {
       cancelToken?.throwIfCancelled();
-      await Future.delayed(Duration(seconds: 7));
+      await Future.delayed(const Duration(seconds: 7));
       cancelToken?.throwIfCancelled();
       if (tempDownloadedFile.existsSync()) {
         int newTempFileSize = await tempDownloadedFile.length();
@@ -925,7 +968,7 @@ Future<File> downloadFile(
       if (tempDownloadedFile.existsSync()) {
         deleteFile(tempDownloadedFile);
       }
-      throw ObtainiumError(tr('cancelled'));
+      throw DownloadCancelledError();
     }
     rethrow;
   } finally {
@@ -1881,6 +1924,7 @@ class AppsProvider with ChangeNotifier {
     BuildContext? context,
     bool pickAnyAsset, {
     bool evenIfSingleChoice = false,
+    ThemeData? dialogTheme,
   }) async {
     var urlsToSelectFrom = app.apkUrls;
     if (pickAnyAsset) {
@@ -1893,6 +1937,9 @@ class AppsProvider with ChangeNotifier {
             : 0];
     // get device supported architecture
     List<String> archs = (await DeviceInfoPlugin().androidInfo).supportedAbis;
+    if (context != null && !context.mounted) {
+      return appFileUrl;
+    }
 
     if ((urlsToSelectFrom.length > 1 || evenIfSingleChoice) &&
         context != null) {
@@ -1900,12 +1947,15 @@ class AppsProvider with ChangeNotifier {
         // ignore: use_build_context_synchronously
         context: context,
         builder: (BuildContext ctx) {
-          return AppFilePicker(
+          final Widget dialog = AppFilePicker(
             app: app,
             initVal: appFileUrl,
             archs: archs,
             pickAnyAsset: pickAnyAsset,
           );
+          return dialogTheme == null
+              ? dialog
+              : Theme(data: dialogTheme, child: dialog);
         },
       );
     }
@@ -1924,15 +1974,21 @@ class AppsProvider with ChangeNotifier {
           'placeholder',
         ].contains(getHost(appFileUrl.value)) &&
         context != null) {
+      if (!context.mounted) {
+        return null;
+      }
       if (!(settingsProvider.hideAPKOriginWarning) &&
           await showDialog(
                 // ignore: use_build_context_synchronously
                 context: context,
                 builder: (BuildContext ctx) {
-                  return APKOriginWarningDialog(
+                  final Widget dialog = APKOriginWarningDialog(
                     sourceUrl: app.url,
                     apkUrl: appFileUrl!.value,
                   );
+                  return dialogTheme == null
+                      ? dialog
+                      : Theme(data: dialogTheme, child: dialog);
                 },
               ) !=
               true) {
@@ -1953,6 +2009,7 @@ class AppsProvider with ChangeNotifier {
     NotificationsProvider? notificationsProvider,
     bool forceParallelDownloads = false,
     bool useExisting = true,
+    ThemeData? dialogTheme,
   }) async {
     notificationsProvider =
         notificationsProvider ?? context?.read<NotificationsProvider>();
@@ -1975,8 +2032,14 @@ class AppsProvider with ChangeNotifier {
         await checkUpdate(apps[id]!.app.id);
       }
       if (!trackOnly) {
+        if (context != null && !context.mounted) return [];
         // ignore: use_build_context_synchronously
-        apkUrl = await confirmAppFileUrl(apps[id]!.app, context, false);
+        apkUrl = await confirmAppFileUrl(
+          apps[id]!.app,
+          context,
+          false,
+          dialogTheme: dialogTheme,
+        );
       }
       if (apkUrl != null) {
         int urlInd = apps[id]!.app.apkUrls
@@ -2146,11 +2209,22 @@ class AppsProvider with ChangeNotifier {
       } catch (e) {
         apps[id]?.downloadProgress = null;
         apps[id]?.downloadTotalBytes = null;
+        if (e is DownloadCancelledError) {
+          notifyListeners();
+          return {
+            'id': id,
+            'cancelled': true,
+            'willBeSilent': willBeSilent,
+            'downloadedFile': downloadedFile,
+            'downloadedDir': downloadedDir,
+          };
+        }
         errors.add(id, e, appName: apps[id]?.name);
         notifyListeners();
       }
       return {
         'id': id,
+        'cancelled': false,
         'willBeSilent': willBeSilent,
         'downloadedFile': downloadedFile,
         'downloadedDir': downloadedDir,
@@ -2169,6 +2243,9 @@ class AppsProvider with ChangeNotifier {
     }
     bool needsLegacyInterInstallDelay = false;
     for (var res in downloadResults) {
+      if (res['cancelled'] == true) {
+        continue;
+      }
       if (!errors.appIdNames.containsKey(res['id'])) {
         try {
           if (settingsProvider.installerMode == 'legacy' &&
@@ -2202,6 +2279,7 @@ class AppsProvider with ChangeNotifier {
     List<String> appIds,
     BuildContext context, {
     bool forceParallelDownloads = false,
+    ThemeData? dialogTheme,
   }) async {
     NotificationsProvider notificationsProvider = context
         .read<NotificationsProvider>();
@@ -2226,6 +2304,7 @@ class AppsProvider with ChangeNotifier {
           context,
           true,
           evenIfSingleChoice: true,
+          dialogTheme: dialogTheme,
         );
         if (tempFileUrl != null) {
           var s = SourceProvider().getSource(
@@ -2887,18 +2966,15 @@ class AppsProvider with ChangeNotifier {
   }) async {
     attemptToCorrectInstallStatus = attemptToCorrectInstallStatus;
     await Future.wait(
-      apps.map((a) async {
-        var app = a.deepCopy();
+      apps.map((appToSave) async {
+        var app = appToSave.deepCopy();
         clearStaleSkippedLatestVersionInPlace(app);
         PackageInfo? info = await getInstalledInfo(app.id);
-        // Reuse the cached icon and OS label whenever the installed package
+        // Reuse the cached icon whenever the installed package
         // hasn't changed since the last save. [getAppIcon] returns large PNG
-        // bytes via a JNI hop and [getAppLabel] is another platform-channel
-        // round-trip; doing them per-app on every checkUpdate run (50+ apps
-        // on a pull-to-refresh) is the second-largest source of UI-isolate
-        // jank after the rebuild storm. We still call [getInstalledInfo]
-        // unconditionally - it's cheap and we need the current versionName
-        // to detect external uninstalls / updates.
+        // bytes via a JNI hop. We still call [getInstalledInfo]
+        // unconditionally because it is cheap and we need the current
+        // versionName to detect external uninstalls / updates.
         final AppInMemory? cachedInMemory = this.apps[app.id];
         final bool installedUnchanged =
             cachedInMemory != null &&
@@ -2908,12 +2984,24 @@ class AppsProvider with ChangeNotifier {
         Uint8List? icon;
         if (installedUnchanged) {
           icon = cachedInMemory.icon;
-          // Preserve the previously-saved name (which already reflects the
-          // OS label from the last save, if one was available).
           app.name = cachedInMemory.app.name;
         } else {
           icon = await info?.applicationInfo?.getAppIcon();
-          app.name = await (info?.applicationInfo?.getAppLabel()) ?? app.name;
+          String? localizedLabel;
+          if (Platform.isAndroid && info != null) {
+            final labelsByPackageName =
+                await BulkImportService.getApplicationLabels([app.id]);
+            localizedLabel = labelsByPackageName[app.id]?.trim();
+            if (localizedLabel?.isNotEmpty != true) {
+              info = await getInstalledInfo(app.id);
+            }
+          }
+          final String? appLabel = localizedLabel?.isNotEmpty == true
+              ? localizedLabel
+              : info?.applicationInfo?.nonLocalizedLabel?.toString().trim();
+          if (appLabel?.isNotEmpty == true) {
+            app.name = appLabel!;
+          }
         }
         if (attemptToCorrectInstallStatus) {
           app = getCorrectedInstallStatusAppIfPossible(app, info) ?? app;
@@ -3282,8 +3370,7 @@ class AppsProvider with ChangeNotifier {
       notifyListenersAfterSave: notifyListenersAfterSave,
       autoExportAfterSave: autoExportAfterSave,
     );
-    if (_apkMirrorSizeDebugLoggingEnabledForAppsProvider &&
-        currentApp.url.contains('apkmirror.com')) {
+    if (apkMirrorSizeDebug && currentApp.url.contains('apkmirror.com')) {
       final App? savedApp = apps[appId]?.app;
       try {
         await LogsProvider(runDefaultClear: false).add(
@@ -3481,7 +3568,9 @@ class AppsProvider with ChangeNotifier {
   Map<String, dynamic> generateExportJSON({
     List<String>? appIds,
     int? overrideExportSettings,
+    SettingsProvider? sp,
   }) {
+    final SettingsProvider exportSettingsProvider = sp ?? settingsProvider;
     Map<String, dynamic> finalExport = {};
     finalExport['apps'] = apps.values
         .where((e) {
@@ -3493,18 +3582,21 @@ class AppsProvider with ChangeNotifier {
         })
         .map((e) => e.app.toJson())
         .toList();
-    int shouldExportSettings = settingsProvider.exportSettings;
+    int shouldExportSettings = exportSettingsProvider.exportSettings;
     if (overrideExportSettings != null) {
       shouldExportSettings = overrideExportSettings;
     }
     if (shouldExportSettings > 0) {
-      var settingsValueKeys = settingsProvider.prefs?.getKeys();
+      var settingsValueKeys = exportSettingsProvider.prefs?.getKeys();
       if (shouldExportSettings < 2) {
         settingsValueKeys?.removeWhere((k) => k.endsWith('-creds'));
       }
       finalExport['settings'] = Map<String, Object?>.fromEntries(
         (settingsValueKeys
-                ?.map((key) => MapEntry(key, settingsProvider.prefs?.get(key)))
+                ?.map(
+                  (key) =>
+                      MapEntry(key, exportSettingsProvider.prefs?.get(key)),
+                )
                 .toList()) ??
             [],
       );
@@ -3517,7 +3609,6 @@ class AppsProvider with ChangeNotifier {
     isAuto = false,
     SettingsProvider? sp,
   }) async {
-    final SettingsProvider settingsProvider = sp ?? this.settingsProvider;
     // Auto exports get debounced - bursts of saveApps calls coalesce into a
     // single trailing-edge fire 2s after the last call. Manual exports
     // (pickOnly or user-triggered Save) bypass the debounce and run inline
@@ -3571,7 +3662,9 @@ class AppsProvider with ChangeNotifier {
     }
     String? returnPath;
     if (!pickOnly) {
-      Map<String, dynamic> finalExport = generateExportJSON();
+      Map<String, dynamic> finalExport = generateExportJSON(
+        sp: settingsProvider,
+      );
       // Heavy work - JsonEncoder.withIndent over the whole apps+settings
       // payload plus utf8 encoding - is run on a background isolate so the
       // UI thread stays responsive even when the export is large.
@@ -3868,8 +3961,7 @@ class _APKOriginWarningDialogState extends State<APKOriginWarningDialog> {
 /// If there is an error, the user is notified.
 ///
 Future<void> bgUpdateCheck(String taskId, Map<String, dynamic>? params) async {
-  // ignore: avoid_print
-  print('BG task started $taskId: ${params.toString()}');
+  debugPrint('BG task started $taskId: ${params.toString()}');
   WidgetsFlutterBinding.ensureInitialized();
   await EasyLocalization.ensureInitialized();
   await loadTranslations();
@@ -3966,8 +4058,7 @@ Future<void> bgUpdateCheck(String taskId, Map<String, dynamic>? params) async {
             )
             .isBefore(DateTime.now());
     if (!enoughTimePassed) {
-      // ignore: avoid_print
-      print(
+      debugPrint(
         'BG update task: Too early for another check (last check was ${appsProvider.settingsProvider.lastCompletedBGCheckTime.toIso8601String()}, interval is ${appsProvider.settingsProvider.updateInterval}).',
       );
       return;

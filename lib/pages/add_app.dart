@@ -59,6 +59,14 @@ class AddAppPageState extends State<AddAppPage> {
       _mode == _AddMode.fromDevice &&
       (_bulkWidgetKey.currentState?.isAdding ?? false);
 
+  Future<bool> confirmCancelBulkScanForNavigation() async {
+    if (_mode != _AddMode.fromDevice) return true;
+    return _bulkWidgetKey.currentState?.confirmCancelScanForNavigation(
+          context,
+        ) ??
+        true;
+  }
+
   /// Called by [HomePageState] when the user presses back while this tab is
   /// active. Returns true if the bulk flow consumed the event (moved one step
   /// back). Returns false so the caller falls through to normal tab navigation.
@@ -201,7 +209,22 @@ class AddAppPageState extends State<AddAppPage> {
   @override
   Widget build(BuildContext context) {
     AppsProvider appsProvider = context.read<AppsProvider>();
-    SettingsProvider settingsProvider = context.watch<SettingsProvider>();
+    // Narrow subscription to only the settings this page actually reads
+    // in build. The previous broad watch rebuilt the (long, expensive)
+    // add-app form on every settings notify, including ones unrelated to
+    // this page (categories, sort, swipe actions, etc.).
+    context.select<SettingsProvider, int>(
+      (s) => Object.hash(
+        // [searchDeselected] is a List<String>; hash its contents,
+        // because the getter returns a fresh list every call so reference
+        // hashing would either always re-trigger or never trigger.
+        Object.hashAll(s.searchDeselected),
+        s.hideTrackOnlyWarning,
+        s.useGradientBackground,
+        s.progressiveBlurEnabled,
+      ),
+    );
+    SettingsProvider settingsProvider = context.read<SettingsProvider>();
     NotificationsProvider notificationsProvider = context
         .read<NotificationsProvider>();
 
@@ -248,7 +271,8 @@ class AddAppPageState extends State<AddAppPage> {
     getReleaseDateAsVersionConfirmationIfNeeded(
       bool userPickedTrackOnly,
     ) async {
-      return (!(additionalSettings['releaseDateAsVersion'] == true &&
+      return (!(getVersionStringSource(additionalSettings) ==
+              versionStringSourceReleaseDate &&
           // ignore: use_build_context_synchronously
           await showDialog(
                 context: context,
@@ -1151,10 +1175,16 @@ class AddAppPageState extends State<AddAppPage> {
             ),
           ],
           selected: {_mode},
-          onSelectionChanged: (Set<_AddMode> selection) {
+          onSelectionChanged: (Set<_AddMode> selection) async {
+            final _AddMode nextMode = selection.first;
+            if (nextMode == _mode) return;
+            if (!await confirmCancelBulkScanForNavigation()) {
+              return;
+            }
+            if (!mounted) return;
             setState(() {
               _byUrlOpenedFromSearchPick = false;
-              _mode = selection.first;
+              _mode = nextMode;
             });
           },
           style: const ButtonStyle(visualDensity: VisualDensity.compact),

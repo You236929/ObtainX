@@ -9,6 +9,7 @@ import 'package:obtainium/components/generated_form_modal.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/theme/app_form_field_styles.dart';
 import 'package:obtainium/theme/app_page_icon_colors.dart';
+import 'package:obtainium/widgets/help_hint_icon.dart';
 import 'package:obtainium/providers/source_provider.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:provider/provider.dart';
@@ -1166,38 +1167,27 @@ class _GeneratedFormState extends State<GeneratedForm> {
         if (widget.items[r][e] is GeneratedFormSwitch) {
           final GeneratedFormSwitch switchItem =
               widget.items[r][e] as GeneratedFormSwitch;
-          final ColorScheme switchScheme = Theme.of(context).colorScheme;
           final Widget? switchHelpIcon =
               switchItem.labelTooltip != null &&
                   switchItem.labelTooltip!.isNotEmpty
-              ? Tooltip(
+              ? HelpHintIcon(
                   message: switchItem.labelTooltip!,
-                  triggerMode: TooltipTriggerMode.tap,
-                  waitDuration: Duration.zero,
-                  showDuration: const Duration(seconds: 5),
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 6),
-                    child: Icon(
-                      Icons.help_outline,
-                      size: 20,
-                      color: switchScheme.onSurfaceVariant,
-                    ),
-                  ),
+                  padding: EdgeInsets.zero,
                 )
               : null;
           formInputs[r][e] = Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Flexible(child: Text(switchItem.label)),
-                    ...[?switchHelpIcon],
-                  ],
+                child: Text(
+                  switchItem.label,
+                  style: Theme.of(context).textTheme.bodyLarge,
                 ),
               ),
-              const SizedBox(width: 8),
+              if (switchHelpIcon != null)
+                switchHelpIcon
+              else
+                const SizedBox(width: 8),
               Switch(
                 value: values[fieldKey],
                 onChanged: switchItem.disabled
