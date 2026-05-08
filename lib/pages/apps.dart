@@ -38,6 +38,7 @@ const double _appsListGroupCardRadius = kM3eGroupCardRadius;
 /// row fill (common with Material You), nudge toward [surfaceBright] so the
 /// header still reads as its own band.
 Color _appsListGroupHeaderColor(ColorScheme scheme) {
+  if (scheme.usesPureBlackBackgrounds) return Colors.black;
   final Color rowFill = m3eGroupedListRowFill(scheme);
   Color header = Color.lerp(
     scheme.surfaceContainerHighest,
@@ -69,6 +70,13 @@ const RoundedRectangleBorder _appsExpansionTileExpandedShape =
         bottomRight: Radius.circular(kM3eInnerRadius),
       ),
     );
+
+RoundedRectangleBorder _appsExpansionGroupMaterialShape(ColorScheme scheme) {
+  return RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(_appsListGroupCardRadius),
+    side: m3ePureBlackOutlineSide(scheme, alpha: 0.22),
+  );
+}
 
 Widget _appsGroupedExpansionListBody({
   required ColorScheme scheme,
@@ -478,6 +486,27 @@ class _AppListItem extends StatelessWidget {
       1,
     ];
     if (stops.length == 2) stops[0] = 0.9999;
+    final bool pinned = app.app.pinned;
+    // Pinned rows get a tonal fill (constant, persistent — pinning is a
+    // set-and-forget intent). Selected rows get an outline + a subtle
+    // 1dp lift + a checkmark on the leading icon (transient, action-mode
+    // affordance). The two states are on completely orthogonal axes —
+    // fill vs. stroke vs. icon-replacement — so a row that is BOTH
+    // pinned and selected reads as "filled, framed, and check-marked"
+    // with no visual collision.
+    //
+    // Alpha tuned per brightness: M3 secondaryContainer-ish saturation in
+    // light mode is naturally stronger than dark, so dark gets a touch
+    // more alpha to match perceptual contrast.
+    final bool showBlackThemeOutline = colorScheme.usesPureBlackBackgrounds;
+    final Color rowFillColor = pinned && !showBlackThemeOutline
+        ? Color.alphaBlend(
+            colorScheme.primary.withValues(
+              alpha: colorScheme.brightness == Brightness.light ? 0.10 : 0.14,
+            ),
+            m3eGroupedListRowFill(colorScheme),
+          )
+        : m3eGroupedListRowFill(colorScheme);
 
     // App-type badge at bottom-right of icon — icon only, no background.
     final appType = classifyAppType(app);
@@ -501,14 +530,38 @@ class _AppListItem extends StatelessWidget {
           )
         : iconWidget;
 
-    // Leading = [icon+type-badge] + [store column] inside ListTile.leading.
+    // When the row is selected, the app icon is replaced with a primary
+    // circle + checkmark — Material's standard "selected list item" lead
+    // affordance, the same vocabulary M3 uses for selected contacts.
+    // This is the third orthogonal selection cue (alongside the row
+    // outline and 1dp lift) and is what makes selection unmistakable in
+    // multi-select mode without leaning on a fill that would collide
+    // with the pinned-row tonal fill.
+    final Widget leadingIconForSlot = isSelected
+        ? Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: colorScheme.primary,
+              shape: BoxShape.circle,
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              Icons.check_rounded,
+              color: colorScheme.onPrimary,
+              size: 24,
+            ),
+          )
+        : iconWithBadge;
+
+    // Leading = [icon+type-badge or check] + [store column] inside ListTile.leading.
     // Store column always rendered (keeps title position stable); badge shown
     // only when showTrackedStoreBadge is true and sourceHost is known.
     final Widget leadingWidget = Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        iconWithBadge,
+        leadingIconForSlot,
         const SizedBox(width: 6),
         SizedBox(
           width: 20,
@@ -526,6 +579,36 @@ class _AppListItem extends StatelessWidget {
 
     final Widget tile = Container(
       decoration: BoxDecoration(
+        color: rowFillColor,
+        // Match the per-row corner radius the parent grouped-list ClipRRect
+        // applies. Without this, the outline below paints to the
+        // rectangular bounds and gets clipped at the rounded edge.
+        borderRadius: itemBorderRadius,
+        // Outline-only treatment for SELECTED rows. [Border.all] paints
+        // inside the box bounds so the outline doesn't push neighbours
+        // around. ~0.7 alpha so the line reads as "framed" without
+        // looking as loud as a button. Pinned uses fill, so the two
+        // signals never collide — a selected pinned card cleanly shows
+        // tonal fill (pinned) plus outline (selected).
+        border: isSelected
+            ? Border.all(
+                color: colorScheme.primary.withValues(alpha: 0.7),
+                width: 1.5,
+              )
+            : showBlackThemeOutline
+            ? Border.fromBorderSide(m3ePureBlackOutlineSide(colorScheme))
+            : null,
+        // Subtle 1dp lift on selected rows. M3 elevation as a "this row
+        // is currently the action target" cue.
+        boxShadow: isSelected
+            ? [
+                BoxShadow(
+                  color: colorScheme.shadow.withValues(alpha: 0.06),
+                  offset: const Offset(0, 1),
+                  blurRadius: 2,
+                ),
+              ]
+            : null,
         gradient: LinearGradient(
           stops: stops,
           begin: const Alignment(-1, 0),
@@ -534,34 +617,52 @@ class _AppListItem extends StatelessWidget {
             ...app.app.categories.map(
               (e) => Color(categoryColors[e] ?? transparent).withAlpha(255),
             ),
+            // Always transparent now (no separate pinned fill); category
+            // strip simply fades into the row's normal background.
             Color(transparent),
           ],
         ),
       ),
       child: ListTile(
-        tileColor: app.app.pinned
-            ? Colors.grey.withValues(alpha: 0.1)
-            : Colors.transparent,
-        selectedTileColor: colorScheme.primary.withValues(
-          alpha: app.app.pinned ? 0.2 : 0.1,
-        ),
+        tileColor: Colors.transparent,
+        // Selection no longer uses [selectedTileColor]; the visual
+        // treatment lives in the parent [Container] (outline + 1dp
+        // shadow) and on the leading icon (replaced with a checkmark
+        // when selected). Keeping the ListTile fill transparent on
+        // both states preserves the pinned-fill underneath.
+        selectedTileColor: Colors.transparent,
         selected: isSelected,
         onLongPress: onLongPress,
         leading: leadingWidget,
-        title: Text(
-          app.name,
-          maxLines: 1,
-          style: TextStyle(
-            overflow: TextOverflow.ellipsis,
-            fontWeight: app.app.pinned ? FontWeight.bold : FontWeight.normal,
-          ),
+        title: Row(
+          children: [
+            if (pinned)
+              Padding(
+                padding: const EdgeInsetsDirectional.only(end: 6),
+                child: Icon(
+                  Icons.push_pin_rounded,
+                  size: 16,
+                  color: colorScheme.primary,
+                ),
+              ),
+            Expanded(
+              child: Text(
+                app.name,
+                maxLines: 1,
+                style: TextStyle(
+                  overflow: TextOverflow.ellipsis,
+                  fontWeight: pinned ? FontWeight.w700 : FontWeight.normal,
+                ),
+              ),
+            ),
+          ],
         ),
         subtitle: Text(
           tr('byX', args: [app.author]),
           maxLines: 1,
           style: TextStyle(
             overflow: TextOverflow.ellipsis,
-            fontWeight: app.app.pinned ? FontWeight.bold : FontWeight.normal,
+            fontWeight: pinned ? FontWeight.w600 : FontWeight.normal,
           ),
         ),
         trailing: downloadProgress != null
@@ -586,7 +687,7 @@ class _AppListItem extends StatelessWidget {
     if (itemBorderRadius != null) {
       return RepaintBoundary(
         child: Material(
-          color: m3eGroupedListRowFill(colorScheme),
+          color: rowFillColor,
           shape: RoundedRectangleBorder(borderRadius: itemBorderRadius!),
           clipBehavior: Clip.antiAlias,
           child: tile,
@@ -968,6 +1069,7 @@ void showAppsViewOptionsSheet(BuildContext context, {String? folderId}) {
   showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
+    useSafeArea: true,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
@@ -1063,7 +1165,12 @@ void showAppsViewOptionsSheet(BuildContext context, {String? folderId}) {
             );
           }
 
-          return SafeArea(
+          final double screenHeight = MediaQuery.sizeOf(ctx).height;
+          final EdgeInsets viewPadding = MediaQuery.viewPaddingOf(ctx);
+          final double maxSheetHeight = screenHeight - viewPadding.top - 12;
+
+          return ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxSheetHeight),
             child: Padding(
               padding: EdgeInsets.fromLTRB(20, 12, 20, 16 + bottomInset),
               child: SingleChildScrollView(
@@ -1089,33 +1196,42 @@ void showAppsViewOptionsSheet(BuildContext context, {String? folderId}) {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    Row(
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           tr('showBadges'),
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
-                        const SizedBox(width: 12),
-                        FilterChip(
-                          avatar: const Icon(Icons.person_rounded, size: 16),
-                          showCheckmark: false,
-                          label: Text(tr('showAppTypeBadge')),
-                          selected: settingsProvider.showAppTypeBadge,
-                          onSelected: (value) {
-                            settingsProvider.showAppTypeBadge = value;
-                            setSheetState(() {});
-                          },
-                        ),
-                        const SizedBox(width: 8),
-                        FilterChip(
-                          avatar: const Icon(Icons.store_rounded, size: 16),
-                          showCheckmark: false,
-                          label: Text(tr('showTrackedStoreBadge')),
-                          selected: settingsProvider.showTrackedStoreBadge,
-                          onSelected: (value) {
-                            settingsProvider.showTrackedStoreBadge = value;
-                            setSheetState(() {});
-                          },
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            FilterChip(
+                              avatar: const Icon(
+                                Icons.person_rounded,
+                                size: 16,
+                              ),
+                              showCheckmark: false,
+                              label: Text(tr('showAppTypeBadge')),
+                              selected: settingsProvider.showAppTypeBadge,
+                              onSelected: (value) {
+                                settingsProvider.showAppTypeBadge = value;
+                                setSheetState(() {});
+                              },
+                            ),
+                            FilterChip(
+                              avatar: const Icon(Icons.store_rounded, size: 16),
+                              showCheckmark: false,
+                              label: Text(tr('showTrackedStoreBadge')),
+                              selected: settingsProvider.showTrackedStoreBadge,
+                              onSelected: (value) {
+                                settingsProvider.showTrackedStoreBadge = value;
+                                setSheetState(() {});
+                              },
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -2886,7 +3002,7 @@ class AppsPageState extends State<AppsPage> {
             elevation: 3,
             shadowColor: theme.colorScheme.shadow.withAlpha(100),
             surfaceTintColor: theme.colorScheme.surfaceTint,
-            borderRadius: BorderRadius.circular(_appsListGroupCardRadius),
+            shape: _appsExpansionGroupMaterialShape(theme.colorScheme),
             color: _appsListGroupHeaderColor(theme.colorScheme),
             clipBehavior: Clip.antiAlias,
             child: Theme(
@@ -2940,7 +3056,7 @@ class AppsPageState extends State<AppsPage> {
             elevation: 3,
             shadowColor: theme.colorScheme.shadow.withAlpha(100),
             surfaceTintColor: theme.colorScheme.surfaceTint,
-            borderRadius: BorderRadius.circular(_appsListGroupCardRadius),
+            shape: _appsExpansionGroupMaterialShape(theme.colorScheme),
             color: _appsListGroupHeaderColor(theme.colorScheme),
             clipBehavior: Clip.antiAlias,
             child: Theme(
@@ -3016,7 +3132,7 @@ class AppsPageState extends State<AppsPage> {
             elevation: 3,
             shadowColor: theme.colorScheme.shadow.withAlpha(100),
             surfaceTintColor: theme.colorScheme.surfaceTint,
-            borderRadius: BorderRadius.circular(_appsListGroupCardRadius),
+            shape: _appsExpansionGroupMaterialShape(theme.colorScheme),
             color: _appsListGroupHeaderColor(theme.colorScheme),
             clipBehavior: Clip.antiAlias,
             child: Theme(
@@ -3071,7 +3187,7 @@ class AppsPageState extends State<AppsPage> {
             elevation: 3,
             shadowColor: theme.colorScheme.shadow.withAlpha(100),
             surfaceTintColor: theme.colorScheme.surfaceTint,
-            borderRadius: BorderRadius.circular(_appsListGroupCardRadius),
+            shape: _appsExpansionGroupMaterialShape(theme.colorScheme),
             color: _appsListGroupHeaderColor(theme.colorScheme),
             clipBehavior: Clip.antiAlias,
             child: Theme(
@@ -4141,6 +4257,8 @@ class AppsPageState extends State<AppsPage> {
                             title: widget.onDemandOnlyList
                                 ? tr('onDemandOnlyAppsTitle')
                                 : currentFolderName ?? tr('appsString'),
+                            matchGradientBackground:
+                                settingsProvider.useGradientBackground,
                             titleStyle: _searchExpanded
                                 ? Theme.of(context).textTheme.titleSmall
                                 : null,
