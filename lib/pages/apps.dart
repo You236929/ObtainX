@@ -20,6 +20,7 @@ import 'package:obtainium/pages/page_route_slide_up.dart';
 import 'package:obtainium/pages/app.dart';
 import 'package:obtainium/folders/app_folder.dart';
 import 'package:obtainium/providers/apps_provider.dart';
+import 'package:obtainium/providers/logs_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
 import 'package:obtainium/services/bulk_import_service.dart';
@@ -33,9 +34,9 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:markdown/markdown.dart' as md;
 
-const double _appsListGroupCardRadius = kM3eGroupCardRadius;
-
 enum CategoryFilterIntent { neutral, include, exclude }
+
+enum CategoryFilterMatchMode { any, all }
 
 CategoryFilterIntent nextCategoryFilterIntent(CategoryFilterIntent intent) =>
     switch (intent) {
@@ -48,14 +49,20 @@ bool appCategoriesMatchFilter(
   Iterable<String> appCategories, {
   Set<String> includedCategories = const {},
   Set<String> excludedCategories = const {},
+  CategoryFilterMatchMode matchMode = CategoryFilterMatchMode.any,
 }) {
   final categorySet = appCategories.toSet();
   if (excludedCategories.intersection(categorySet).isNotEmpty) {
     return false;
   }
-  if (includedCategories.isNotEmpty &&
-      includedCategories.intersection(categorySet).isEmpty) {
-    return false;
+  if (includedCategories.isNotEmpty) {
+    return switch (matchMode) {
+      CategoryFilterMatchMode.any =>
+        includedCategories.intersection(categorySet).isNotEmpty,
+      CategoryFilterMatchMode.all => categorySet.containsAll(
+        includedCategories,
+      ),
+    };
   }
   return true;
 }
@@ -82,24 +89,29 @@ Color _appsListGroupHeaderColor(ColorScheme scheme) {
 }
 
 /// Collapsed group card; expanded header row uses inner radius on bottom edge.
-const RoundedRectangleBorder _appsExpansionTileCollapsedShape =
-    RoundedRectangleBorder(
-      borderRadius: BorderRadius.all(Radius.circular(_appsListGroupCardRadius)),
-    );
-
-const RoundedRectangleBorder _appsExpansionTileExpandedShape =
-    RoundedRectangleBorder(
-      borderRadius: BorderRadius.only(
-        topLeft: Radius.circular(_appsListGroupCardRadius),
-        topRight: Radius.circular(_appsListGroupCardRadius),
-        bottomLeft: Radius.circular(kM3eInnerRadius),
-        bottomRight: Radius.circular(kM3eInnerRadius),
-      ),
-    );
-
-RoundedRectangleBorder _appsExpansionGroupMaterialShape(ColorScheme scheme) {
+RoundedRectangleBorder _appsExpansionTileCollapsedShape(double cardRadius) {
   return RoundedRectangleBorder(
-    borderRadius: BorderRadius.circular(_appsListGroupCardRadius),
+    borderRadius: BorderRadius.all(Radius.circular(cardRadius)),
+  );
+}
+
+RoundedRectangleBorder _appsExpansionTileExpandedShape(double cardRadius) {
+  return RoundedRectangleBorder(
+    borderRadius: BorderRadius.only(
+      topLeft: Radius.circular(cardRadius),
+      topRight: Radius.circular(cardRadius),
+      bottomLeft: const Radius.circular(kM3eInnerRadius),
+      bottomRight: const Radius.circular(kM3eInnerRadius),
+    ),
+  );
+}
+
+RoundedRectangleBorder _appsExpansionGroupMaterialShape(
+  ColorScheme scheme,
+  double cardRadius,
+) {
+  return RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(cardRadius),
     side: m3ePureBlackOutlineSide(scheme, alpha: 0.22),
   );
 }
@@ -525,6 +537,59 @@ class _AppListItem extends StatelessWidget {
       ],
     );
 
+    Widget buildDownloadProgressControl() {
+      final double activeDownloadProgress = downloadProgress ?? 0;
+      final bool isInstalling =
+          downloadProgress != null && activeDownloadProgress < 0;
+      final double? progressValue = isInstalling
+          ? null
+          : (activeDownloadProgress / 100).clamp(0.0, 1.0);
+      return Semantics(
+        label: isInstalling
+            ? tr('installing')
+            : tr(
+                'percentProgress',
+                args: [activeDownloadProgress.toInt().toString()],
+              ),
+        button: !isInstalling,
+        child: SizedBox.square(
+          dimension: 48,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox.square(
+                dimension: 48,
+                child: CircularProgressIndicatorM3E(
+                  value: progressValue,
+                  size: CircularProgressM3ESize.s,
+                  shape: ProgressM3EShape.wavy,
+                  activeColor: isInstalling
+                      ? colorScheme.secondary
+                      : colorScheme.primary,
+                  trackColor: colorScheme.surfaceContainerHighest,
+                ),
+              ),
+              if (!isInstalling)
+                IconButton.filledTonal(
+                  tooltip: tr('cancel'),
+                  style: IconButton.styleFrom(
+                    fixedSize: const Size.square(32),
+                    minimumSize: const Size.square(32),
+                    padding: EdgeInsets.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    backgroundColor: colorScheme.errorContainer,
+                    foregroundColor: colorScheme.onErrorContainer,
+                  ),
+                  icon: const Icon(Icons.stop_rounded, size: 19),
+                  onPressed: () =>
+                      context.read<AppsProvider>().cancelDownload(app.app.id),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+
     final int transparent = colorScheme.surface.withValues(alpha: 0).toARGB32();
     List<double> stops = [
       ...app.app.categories.asMap().entries.map(
@@ -670,64 +735,55 @@ class _AppListItem extends StatelessWidget {
           ],
         ),
       ),
-      child: ListTile(
-        tileColor: Colors.transparent,
-        // Selection no longer uses [selectedTileColor]; the visual
-        // treatment lives in the parent [Container] (outline + 1dp
-        // shadow) and on the leading icon (replaced with a checkmark
-        // when selected). Keeping the ListTile fill transparent on
-        // both states preserves the pinned-fill underneath.
-        selectedTileColor: Colors.transparent,
-        selected: isSelected,
-        onLongPress: onLongPress,
-        leading: leadingWidget,
-        title: Row(
-          children: [
-            if (pinned)
-              Padding(
-                padding: const EdgeInsetsDirectional.only(end: 6),
-                child: Icon(
-                  Icons.push_pin_rounded,
-                  size: 16,
-                  color: colorScheme.primary,
+      child: Material(
+        color: Colors.transparent,
+        child: ListTile(
+          tileColor: Colors.transparent,
+          // Selection no longer uses [selectedTileColor]; the visual
+          // treatment lives in the parent [Container] (outline + 1dp
+          // shadow) and on the leading icon (replaced with a checkmark
+          // when selected). Keeping the ListTile fill transparent on
+          // both states preserves the pinned-fill underneath.
+          selectedTileColor: Colors.transparent,
+          selected: isSelected,
+          onLongPress: onLongPress,
+          leading: leadingWidget,
+          title: Row(
+            children: [
+              if (pinned)
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(end: 6),
+                  child: Icon(
+                    Icons.push_pin_rounded,
+                    size: 16,
+                    color: colorScheme.primary,
+                  ),
                 ),
-              ),
-            Expanded(
-              child: Text(
-                app.name,
-                maxLines: 1,
-                style: TextStyle(
-                  overflow: TextOverflow.ellipsis,
-                  fontWeight: pinned ? FontWeight.w700 : FontWeight.normal,
-                ),
-              ),
-            ),
-          ],
-        ),
-        subtitle: Text(
-          tr('byX', args: [app.author]),
-          maxLines: 1,
-          style: TextStyle(
-            overflow: TextOverflow.ellipsis,
-            fontWeight: pinned ? FontWeight.w600 : FontWeight.normal,
-          ),
-        ),
-        trailing: downloadProgress != null
-            ? SizedBox(
+              Expanded(
                 child: Text(
-                  downloadProgress >= 0
-                      ? tr(
-                          'percentProgress',
-                          args: [downloadProgress.toInt().toString()],
-                        )
-                      : tr('installing'),
-                  textAlign: downloadProgress >= 0
-                      ? TextAlign.start
-                      : TextAlign.end,
+                  app.name,
+                  maxLines: 1,
+                  style: TextStyle(
+                    overflow: TextOverflow.ellipsis,
+                    fontWeight: pinned ? FontWeight.w700 : FontWeight.normal,
+                  ),
                 ),
-              )
-            : trailingRow,
-        onTap: onTap,
+              ),
+            ],
+          ),
+          subtitle: Text(
+            tr('byX', args: [app.author]),
+            maxLines: 1,
+            style: TextStyle(
+              overflow: TextOverflow.ellipsis,
+              fontWeight: pinned ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+          trailing: downloadProgress != null
+              ? buildDownloadProgressControl()
+              : trailingRow,
+          onTap: onTap,
+        ),
       ),
     );
 
@@ -859,14 +915,25 @@ class _SwipeableListItemState extends State<_SwipeableListItem>
               .downloadAndInstallLatestApps([
                 widget.appId,
               ], globalNavigatorKey.currentContext)
-              .catchError((e) {
-                showError(e, globalNavigatorKey.currentContext!);
+              .catchError((Object e, StackTrace stackTrace) {
+                unawaited(
+                  provider.logs.add(
+                    'Swipe update failed for ${widget.appId}: $e\n$stackTrace',
+                    level: LogLevels.error,
+                  ),
+                );
+                final errorContext = context.mounted
+                    ? context
+                    : globalNavigatorKey.currentContext;
+                if (errorContext != null && errorContext.mounted) {
+                  showError(e, errorContext);
+                }
                 return <String>[];
               });
         }
       case SwipeAction.pin:
         if (app != null) {
-          provider.saveApps([app..pinned = !widget.isPinned]);
+          provider.saveApps([app..pinned = !widget.isPinned], updateInstalledInfo: false);
         }
       case SwipeAction.appOptions:
         await _openAdditionalOptionsModal(widget.appId, context);
@@ -1017,6 +1084,61 @@ void showChangeLogDialog(
   AppSource appSource,
   String changeLog,
 ) {
+  String processedChangeLog = changeLog;
+  if (appSource.changeLogIfAnyIsMarkDown) {
+    final htmlImgRegex = RegExp(r'<img\s+([^>]+)\/?>', caseSensitive: false);
+    final srcRegex = RegExp("src=[\"']([^\"']+)[\"']", caseSensitive: false);
+    final altRegex = RegExp("alt=[\"']([^\"']+)[\"']", caseSensitive: false);
+
+    String resolveUrl(String src) {
+      if (src.startsWith('http://') || src.startsWith('https://')) {
+        return src;
+      }
+      try {
+        final uri = Uri.parse(app.url);
+        final segments = uri.pathSegments;
+        var cleanPath = src;
+        if (cleanPath.startsWith('./')) {
+          cleanPath = cleanPath.substring(2);
+        } else if (cleanPath.startsWith('/')) {
+          cleanPath = cleanPath.substring(1);
+        }
+
+        if (uri.host.contains('github.com') && segments.length >= 2) {
+          return 'https://raw.githubusercontent.com/${segments[0]}/${segments[1]}/HEAD/$cleanPath';
+        } else if (uri.host.contains('gitlab.com') && segments.length >= 2) {
+          return 'https://gitlab.com/${segments[0]}/${segments[1]}/-/raw/HEAD/$cleanPath';
+        } else if (uri.host.contains('codeberg.org') && segments.length >= 2) {
+          return 'https://codeberg.org/${segments[0]}/${segments[1]}/raw/branch/HEAD/$cleanPath';
+        } else {
+          return '${uri.origin}/$cleanPath';
+        }
+      } catch (_) {
+        return src;
+      }
+    }
+
+    processedChangeLog = processedChangeLog.replaceAllMapped(htmlImgRegex, (match) {
+      final attrs = match.group(1) ?? '';
+      final srcMatch = srcRegex.firstMatch(attrs);
+      final altMatch = altRegex.firstMatch(attrs);
+      if (srcMatch != null) {
+        final src = resolveUrl(srcMatch.group(1)!);
+        final alt = altMatch?.group(1) ?? '';
+        return '![$alt]($src)';
+      }
+      return match.group(0)!;
+    });
+
+    final mdImgRegex = RegExp(r'!\[([^\]]*)\]\(([^)]+)\)');
+    processedChangeLog = processedChangeLog.replaceAllMapped(mdImgRegex, (match) {
+      final alt = match.group(1) ?? '';
+      final src = match.group(2)!;
+      final absoluteSrc = resolveUrl(src);
+      return '![$alt]($absoluteSrc)';
+    });
+  }
+
   showDialog(
     context: context,
     builder: (BuildContext context) {
@@ -1050,12 +1172,18 @@ void showChangeLogDialog(
                   width: MediaQuery.of(context).size.width,
                   height: MediaQuery.of(context).size.height - 350,
                   child: Markdown(
+                    padding: const EdgeInsets.only(
+                      left: 16,
+                      right: 16,
+                      top: 16,
+                      bottom: 48,
+                    ),
                     styleSheet: MarkdownStyleSheet(
                       blockquoteDecoration: BoxDecoration(
                         color: Theme.of(context).cardColor,
                       ),
                     ),
-                    data: changeLog,
+                    data: processedChangeLog,
                     onTapLink: (text, href, title) {
                       if (href != null) {
                         launchUrlString(
@@ -1722,6 +1850,9 @@ class AppsPageState extends State<AppsPage> {
   List<AppInMemory> _listedAppsCache = const [];
   List<String> _existingUpdatesCache = const [];
   List<String> _newInstallsCache = const [];
+  List<String> _listedSourcesCache = const [];
+  List<String?> _listedCategoriesCache = const [];
+  List<AppTypeGroup> _listedAppTypesCache = const [];
 
   /// Maps category key (`__null__` for uncategorized) → indices into [_listedAppsCache].
   Map<String, List<int>> _categoryGroupListedIndices = const {};
@@ -1741,6 +1872,7 @@ class AppsPageState extends State<AppsPage> {
   // Groups start expanded. When the user collapses one its key goes here and
   // its child tiles are no longer built, saving widget-tree work on rebuilds.
   final Set<String> _collapsedGroups = {};
+  final Map<String, ExpansionTileController> _groupControllers = {};
 
   // ── Hero keep-alive ───────────────────────────────────────────────────────
   // Removed: previously held the appId of the row whose AppPage was open so
@@ -1869,6 +2001,7 @@ class AppsPageState extends State<AppsPage> {
     scrollController.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
+    _groupControllers.clear();
     super.dispose();
   }
 
@@ -2015,6 +2148,18 @@ class AppsPageState extends State<AppsPage> {
       );
     }
 
+    if (filter.includedCategoryFilter.length > 1 &&
+        filter.categoryMatchMode == CategoryFilterMatchMode.all) {
+      chips.add(
+        _filterChip(
+          tr('categoryMatchAllActive'),
+          () => setState(
+            () => filter.categoryMatchMode = CategoryFilterMatchMode.any,
+          ),
+        ),
+      );
+    }
+
     for (final cat in filter.excludedCategoryFilter) {
       chips.add(
         _filterChip(
@@ -2087,6 +2232,7 @@ class AppsPageState extends State<AppsPage> {
         s.progressiveBlurEnabled,
         s.reduceVisualEffects,
         s.useGradientBackground,
+        s.cardCornerScale,
         s.leftSwipeAction,
         s.rightSwipeAction,
         s.appFolders.length,
@@ -2106,6 +2252,12 @@ class AppsPageState extends State<AppsPage> {
       ),
     );
     final SettingsProvider settingsProvider = context.read<SettingsProvider>();
+    final double appsListGroupCardRadius = settingsProvider.cardCornerRadiusFor(
+      kM3eGroupCardRadius,
+    );
+    final double appsListItemOuterRadius = settingsProvider.cardCornerRadiusFor(
+      kM3eOuterRadius,
+    );
     if (!initialAppLoadCompleted && !appsProvider.loadingApps) {
       initialAppLoadCompleted = true;
     }
@@ -2271,6 +2423,7 @@ class AppsPageState extends State<AppsPage> {
       filter.includeNonInstalled,
       Object.hashAll(filter.includedCategoryFilter.toList()..sort()),
       Object.hashAll(filter.excludedCategoryFilter.toList()..sort()),
+      filter.categoryMatchMode.index,
       filter.sourceFilter,
       _effectiveSortColumn(settingsProvider).index,
       _effectiveSortOrder(settingsProvider).index,
@@ -2362,6 +2515,7 @@ class AppsPageState extends State<AppsPage> {
           app.app.categories,
           includedCategories: filter.includedCategoryFilter,
           excludedCategories: filter.excludedCategoryFilter,
+          matchMode: filter.categoryMatchMode,
         )) {
           return false;
         }
@@ -2597,133 +2751,152 @@ class AppsPageState extends State<AppsPage> {
     final showUpdatesGroupSection =
         separateUpdates && listedApps.any(isInUpdatesGroup);
 
-    List<String?> getListedCategories(List<AppInMemory> appsSource) {
-      var temp = appsSource.map(
-        (e) => e.app.categories.isNotEmpty ? e.app.categories : [null],
-      );
-      return temp.isNotEmpty
-          ? {
-              ...temp.reduce((v, e) => [...v, ...e]),
-            }.toList()
-          : [];
-    }
-
-    var listedCategories = getListedCategories(appsListedForCategoryKeys);
-    listedCategories.sort((a, b) {
-      return a != null && b != null
-          ? a.toLowerCase().compareTo(b.toLowerCase())
-          : a == null
-          ? 1
-          : -1;
-    });
-
-    List<String> getListedSourceKeys(List<AppInMemory> appsSource) {
-      if (appsSource.isEmpty) return [];
-      final keys = appsSource
-          .map(
-            (e) => sourceProvider
-                .getSource(e.app.url, overrideSource: e.app.overrideSource)
-                .runtimeType
-                .toString(),
-          )
-          .toSet()
-          .toList();
-      keys.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-      return keys;
-    }
-
-    var listedSources = getListedSourceKeys(appsListedForSourceKeys);
-
-    // App types that are present in the non-updates, non-uninstalled subset.
-    final listedAppTypes = AppTypeGroup.values
-        .where(
-          (t) => appsListedForAppTypeKeys.any((e) => classifyAppType(e) == t),
-        )
-        .toList();
-
     if (listBuildToken != _lastGroupIndexCacheToken) {
       _lastGroupIndexCacheToken = listBuildToken;
-      final nextCategoryMap = <String, List<int>>{};
-      for (
-        int categoryIndex = 0;
-        categoryIndex < listedCategories.length;
-        categoryIndex++
-      ) {
-        final String? categoryNullable = listedCategories[categoryIndex];
-        final String mapKey = categoryNullable ?? '__null__';
-        final indices = <int>[];
-        for (
-          int listingIndex = 0;
-          listingIndex < listedApps.length;
-          listingIndex++
-        ) {
-          final AppInMemory row = listedApps[listingIndex];
-          if (segregateNonInstalled && row.app.installedVersion == null) {
-            continue;
-          }
-          if (isInUpdatesGroup(row)) continue;
-          if (row.app.categories.contains(categoryNullable) ||
-              (row.app.categories.isEmpty && categoryNullable == null)) {
-            indices.add(listingIndex);
-          }
+      
+      // 1. Categories
+      if (effectiveGroupBy == AppsListGroupBy.category) {
+        List<String?> getListedCategories(List<AppInMemory> appsSource) {
+          var temp = appsSource.map(
+            (e) => e.app.categories.isNotEmpty ? e.app.categories : [null],
+          );
+          return temp.isNotEmpty
+              ? {
+                  ...temp.reduce((v, e) => [...v, ...e]),
+                }.toList()
+              : [];
         }
-        nextCategoryMap[mapKey] = indices;
-      }
-      _categoryGroupListedIndices = nextCategoryMap;
 
-      final nextSourceMap = <String, List<int>>{};
-      for (
-        int sourceIndex = 0;
-        sourceIndex < listedSources.length;
-        sourceIndex++
-      ) {
-        final String sourceKey = listedSources[sourceIndex];
-        final indices = <int>[];
-        for (
-          int listingIndex = 0;
-          listingIndex < listedApps.length;
-          listingIndex++
-        ) {
-          final AppInMemory row = listedApps[listingIndex];
-          if (segregateNonInstalled && row.app.installedVersion == null) {
-            continue;
-          }
-          if (isInUpdatesGroup(row)) continue;
-          if (sourceProvider
-                  .getSource(
-                    row.app.url,
-                    overrideSource: row.app.overrideSource,
-                  )
-                  .runtimeType
-                  .toString() ==
-              sourceKey) {
-            indices.add(listingIndex);
-          }
-        }
-        nextSourceMap[sourceKey] = indices;
-      }
-      _sourceGroupListedIndices = nextSourceMap;
+        final cats = getListedCategories(appsListedForCategoryKeys);
+        cats.sort((a, b) {
+          return a != null && b != null
+              ? a.toLowerCase().compareTo(b.toLowerCase())
+              : a == null
+              ? 1
+              : -1;
+        });
+        _listedCategoriesCache = cats;
 
-      final nextAppTypeMap = <AppTypeGroup, List<int>>{};
-      for (final type in AppTypeGroup.values) {
-        final indices = <int>[];
+        final nextCategoryMap = <String, List<int>>{};
         for (
-          int listingIndex = 0;
-          listingIndex < listedApps.length;
-          listingIndex++
+          int categoryIndex = 0;
+          categoryIndex < _listedCategoriesCache.length;
+          categoryIndex++
         ) {
-          final AppInMemory row = listedApps[listingIndex];
-          if (segregateNonInstalled && row.app.installedVersion == null) {
-            continue;
+          final String? categoryNullable = _listedCategoriesCache[categoryIndex];
+          final String mapKey = categoryNullable ?? '__null__';
+          final indices = <int>[];
+          for (
+            int listingIndex = 0;
+            listingIndex < listedApps.length;
+            listingIndex++
+          ) {
+            final AppInMemory row = listedApps[listingIndex];
+            if (segregateNonInstalled && row.app.installedVersion == null) {
+              continue;
+            }
+            if (isInUpdatesGroup(row)) continue;
+            if (row.app.categories.contains(categoryNullable) ||
+                (row.app.categories.isEmpty && categoryNullable == null)) {
+              indices.add(listingIndex);
+            }
           }
-          if (isInUpdatesGroup(row)) continue;
-          if (classifyAppType(row) == type) {
-            indices.add(listingIndex);
-          }
+          nextCategoryMap[mapKey] = indices;
         }
-        if (indices.isNotEmpty) nextAppTypeMap[type] = indices;
+        _categoryGroupListedIndices = nextCategoryMap;
+      } else {
+        _listedCategoriesCache = const [];
+        _categoryGroupListedIndices = const {};
       }
-      _appTypeGroupListedIndices = nextAppTypeMap;
+
+      // 2. Sources
+      if (effectiveGroupBy == AppsListGroupBy.source) {
+        List<String> getListedSourceKeys(List<AppInMemory> appsSource) {
+          if (appsSource.isEmpty) return [];
+          final keys = appsSource
+              .map(
+                (e) => sourceProvider
+                    .getSource(e.app.url, overrideSource: e.app.overrideSource)
+                    .runtimeType
+                    .toString(),
+              )
+              .toSet()
+              .toList();
+          keys.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+          return keys;
+        }
+
+        _listedSourcesCache = getListedSourceKeys(appsListedForSourceKeys);
+
+        final nextSourceMap = <String, List<int>>{};
+        for (
+          int sourceIndex = 0;
+          sourceIndex < _listedSourcesCache.length;
+          sourceIndex++
+        ) {
+          final String sourceKey = _listedSourcesCache[sourceIndex];
+          final indices = <int>[];
+          for (
+            int listingIndex = 0;
+            listingIndex < listedApps.length;
+            listingIndex++
+          ) {
+            final AppInMemory row = listedApps[listingIndex];
+            if (segregateNonInstalled && row.app.installedVersion == null) {
+              continue;
+            }
+            if (isInUpdatesGroup(row)) continue;
+            if (sourceProvider
+                    .getSource(
+                      row.app.url,
+                      overrideSource: row.app.overrideSource,
+                    )
+                    .runtimeType
+                    .toString() ==
+                sourceKey) {
+              indices.add(listingIndex);
+            }
+          }
+          nextSourceMap[sourceKey] = indices;
+        }
+        _sourceGroupListedIndices = nextSourceMap;
+      } else {
+        _listedSourcesCache = const [];
+        _sourceGroupListedIndices = const {};
+      }
+
+      // 3. App Types
+      if (effectiveGroupBy == AppsListGroupBy.appType) {
+        _listedAppTypesCache = AppTypeGroup.values
+            .where(
+              (t) => appsListedForAppTypeKeys.any((e) => classifyAppType(e) == t),
+            )
+            .toList();
+
+        final nextAppTypeMap = <AppTypeGroup, List<int>>{};
+        for (final type in _listedAppTypesCache) {
+          final indices = <int>[];
+          for (
+            int listingIndex = 0;
+            listingIndex < listedApps.length;
+            listingIndex++
+          ) {
+            final AppInMemory row = listedApps[listingIndex];
+            if (segregateNonInstalled && row.app.installedVersion == null) {
+              continue;
+            }
+            if (isInUpdatesGroup(row)) continue;
+            if (classifyAppType(row) == type) {
+              indices.add(listingIndex);
+            }
+          }
+          if (indices.isNotEmpty) nextAppTypeMap[type] = indices;
+        }
+        _appTypeGroupListedIndices = nextAppTypeMap;
+      } else {
+        _listedAppTypesCache = const [];
+        _appTypeGroupListedIndices = const {};
+      }
 
       final nonInstalled = <int>[];
       for (
@@ -2749,6 +2922,38 @@ class AppsPageState extends State<AppsPage> {
       }
       _updatesGroupListedIndices = updatesIndices;
     }
+
+    final listedCategories = _listedCategoriesCache;
+    final listedSources = _listedSourcesCache;
+    final listedAppTypes = _listedAppTypesCache;
+
+    List<String> getActiveGroupKeys() {
+      final List<String> keys = [];
+      if (effectiveGroupBy == AppsListGroupBy.category) {
+        for (final category in listedCategories) {
+          keys.add('cat:${category ?? '__null__'}');
+        }
+      } else if (effectiveGroupBy == AppsListGroupBy.source) {
+        for (final source in listedSources) {
+          keys.add('src:$source');
+        }
+      } else if (effectiveGroupBy == AppsListGroupBy.appType) {
+        for (final type in listedAppTypes) {
+          keys.add('appType:${type.name}');
+        }
+      }
+      if (showNonInstalledGroupSection) {
+        keys.add('__nonInstalled__');
+      }
+      if (showUpdatesGroupSection) {
+        keys.add('__updates__');
+      }
+      return keys;
+    }
+
+    final activeGroupKeys = getActiveGroupKeys();
+    final bool allGroupsExpanded = activeGroupKeys.isNotEmpty &&
+        activeGroupKeys.every((key) => !_collapsedGroups.contains(key));
 
     Set<App> selectedApps = listedApps
         .map((e) => e.app)
@@ -2881,7 +3086,11 @@ class AppsPageState extends State<AppsPage> {
       // view) still uses the standard Navigator.push - that's a secondary
       // path and doesn't benefit from container transform.
       final BorderRadius? itemRadius = groupPosition != null
-          ? m3eListGroupItemRadius(groupPosition, flatListBody: flatListBody)
+          ? m3eListGroupItemRadius(
+              groupPosition,
+              flatListBody: flatListBody,
+              outerRadius: appsListItemOuterRadius,
+            )
           : null;
 
       // Builds the row visual given the callback that should fire when the
@@ -2974,6 +3183,7 @@ class AppsPageState extends State<AppsPage> {
           borderRadius: m3eListGroupItemRadius(
             groupPosition,
             flatListBody: flatListBody,
+            outerRadius: appsListItemOuterRadius,
           ),
           child: swipeItem,
         );
@@ -3043,6 +3253,7 @@ class AppsPageState extends State<AppsPage> {
     getCategoryCollapsibleTile(int index) {
       final catKey = 'cat:${listedCategories[index] ?? '__null__'}';
       final isExpanded = !_collapsedGroups.contains(catKey);
+      final controller = _groupControllers.putIfAbsent(catKey, () => ExpansionTileController());
 
       final String categoryMapKey = listedCategories[index] ?? '__null__';
       final matchingIndices =
@@ -3060,15 +3271,21 @@ class AppsPageState extends State<AppsPage> {
             elevation: 3,
             shadowColor: theme.colorScheme.shadow.withAlpha(100),
             surfaceTintColor: theme.colorScheme.surfaceTint,
-            shape: _appsExpansionGroupMaterialShape(theme.colorScheme),
+            shape: _appsExpansionGroupMaterialShape(
+              theme.colorScheme,
+              appsListGroupCardRadius,
+            ),
             color: _appsListGroupHeaderColor(theme.colorScheme),
             clipBehavior: Clip.antiAlias,
             child: Theme(
               data: theme.copyWith(dividerColor: Colors.transparent),
               child: ExpansionTile(
+                controller: controller,
                 key: PageStorageKey(catKey),
-                shape: _appsExpansionTileExpandedShape,
-                collapsedShape: _appsExpansionTileCollapsedShape,
+                shape: _appsExpansionTileExpandedShape(appsListGroupCardRadius),
+                collapsedShape: _appsExpansionTileCollapsedShape(
+                  appsListGroupCardRadius,
+                ),
                 initiallyExpanded: isExpanded,
                 onExpansionChanged: (expanded) => setState(() {
                   if (expanded) {
@@ -3100,6 +3317,7 @@ class AppsPageState extends State<AppsPage> {
     getNonInstalledCollapsibleTile() {
       const nonInstalledKey = '__nonInstalled__';
       final isExpanded = !_collapsedGroups.contains(nonInstalledKey);
+      final controller = _groupControllers.putIfAbsent(nonInstalledKey, () => ExpansionTileController());
 
       final matchingIndices = _nonInstalledListedIndices;
       final tiles = isExpanded
@@ -3114,15 +3332,21 @@ class AppsPageState extends State<AppsPage> {
             elevation: 3,
             shadowColor: theme.colorScheme.shadow.withAlpha(100),
             surfaceTintColor: theme.colorScheme.surfaceTint,
-            shape: _appsExpansionGroupMaterialShape(theme.colorScheme),
+            shape: _appsExpansionGroupMaterialShape(
+              theme.colorScheme,
+              appsListGroupCardRadius,
+            ),
             color: _appsListGroupHeaderColor(theme.colorScheme),
             clipBehavior: Clip.antiAlias,
             child: Theme(
               data: theme.copyWith(dividerColor: Colors.transparent),
               child: ExpansionTile(
+                controller: controller,
                 key: const PageStorageKey(nonInstalledKey),
-                shape: _appsExpansionTileExpandedShape,
-                collapsedShape: _appsExpansionTileCollapsedShape,
+                shape: _appsExpansionTileExpandedShape(appsListGroupCardRadius),
+                collapsedShape: _appsExpansionTileCollapsedShape(
+                  appsListGroupCardRadius,
+                ),
                 initiallyExpanded: isExpanded,
                 onExpansionChanged: (expanded) => setState(() {
                   if (expanded) {
@@ -3155,6 +3379,7 @@ class AppsPageState extends State<AppsPage> {
       final sourceKey = listedSources[index];
       final groupKey = 'src:$sourceKey';
       final isExpanded = !_collapsedGroups.contains(groupKey);
+      final controller = _groupControllers.putIfAbsent(groupKey, () => ExpansionTileController());
 
       final matchingIndices =
           _sourceGroupListedIndices[sourceKey] ?? const <int>[];
@@ -3190,15 +3415,21 @@ class AppsPageState extends State<AppsPage> {
             elevation: 3,
             shadowColor: theme.colorScheme.shadow.withAlpha(100),
             surfaceTintColor: theme.colorScheme.surfaceTint,
-            shape: _appsExpansionGroupMaterialShape(theme.colorScheme),
+            shape: _appsExpansionGroupMaterialShape(
+              theme.colorScheme,
+              appsListGroupCardRadius,
+            ),
             color: _appsListGroupHeaderColor(theme.colorScheme),
             clipBehavior: Clip.antiAlias,
             child: Theme(
               data: theme.copyWith(dividerColor: Colors.transparent),
               child: ExpansionTile(
+                controller: controller,
                 key: PageStorageKey(groupKey),
-                shape: _appsExpansionTileExpandedShape,
-                collapsedShape: _appsExpansionTileCollapsedShape,
+                shape: _appsExpansionTileExpandedShape(appsListGroupCardRadius),
+                collapsedShape: _appsExpansionTileCollapsedShape(
+                  appsListGroupCardRadius,
+                ),
                 initiallyExpanded: isExpanded,
                 onExpansionChanged: (expanded) => setState(() {
                   if (expanded) {
@@ -3234,6 +3465,7 @@ class AppsPageState extends State<AppsPage> {
       required List<int> matchingIndices,
     }) {
       final isExpanded = !_collapsedGroups.contains(groupKey);
+      final controller = _groupControllers.putIfAbsent(groupKey, () => ExpansionTileController());
       final tiles = isExpanded
           ? buildGroupedChildren(matchingIndices)
           : const <Widget>[];
@@ -3245,15 +3477,21 @@ class AppsPageState extends State<AppsPage> {
             elevation: 3,
             shadowColor: theme.colorScheme.shadow.withAlpha(100),
             surfaceTintColor: theme.colorScheme.surfaceTint,
-            shape: _appsExpansionGroupMaterialShape(theme.colorScheme),
+            shape: _appsExpansionGroupMaterialShape(
+              theme.colorScheme,
+              appsListGroupCardRadius,
+            ),
             color: _appsListGroupHeaderColor(theme.colorScheme),
             clipBehavior: Clip.antiAlias,
             child: Theme(
               data: theme.copyWith(dividerColor: Colors.transparent),
               child: ExpansionTile(
+                controller: controller,
                 key: PageStorageKey(groupKey),
-                shape: _appsExpansionTileExpandedShape,
-                collapsedShape: _appsExpansionTileCollapsedShape,
+                shape: _appsExpansionTileExpandedShape(appsListGroupCardRadius),
+                collapsedShape: _appsExpansionTileCollapsedShape(
+                  appsListGroupCardRadius,
+                ),
                 initiallyExpanded: isExpanded,
                 onExpansionChanged: (expanded) => setState(() {
                   if (expanded) {
@@ -3454,6 +3692,7 @@ class AppsPageState extends State<AppsPage> {
                       app.categories = updatedCategoryLists[index++];
                       return app;
                     }).toList(),
+                    updateInstalledInfo: false,
                   );
                 },
               );
@@ -3504,6 +3743,8 @@ class AppsPageState extends State<AppsPage> {
                       }
                       return a;
                     }).toList(),
+                    attemptToCorrectInstallStatus: false,
+                    updateInstalledInfo: false,
                   );
 
                   Navigator.of(context).pop();
@@ -3526,6 +3767,7 @@ class AppsPageState extends State<AppsPage> {
           e.pinned = pinStatus;
           return e;
         }).toList(),
+        updateInstalledInfo: false,
       );
       Navigator.of(context).pop();
     }
@@ -3722,162 +3964,166 @@ class AppsPageState extends State<AppsPage> {
                 ),
               ];
 
-              return Padding(
-                padding: EdgeInsets.only(
-                  bottom: MediaQuery.viewInsetsOf(sheetCtx).bottom,
-                ),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // Drag handle
-                      Center(
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(vertical: 12),
-                          width: 40,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: colorScheme.outlineVariant,
-                            borderRadius: BorderRadius.circular(2),
+              return SafeArea(
+                top: false,
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    bottom: MediaQuery.viewInsetsOf(sheetCtx).bottom,
+                  ),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Drag handle
+                        Center(
+                          child: Container(
+                            margin: const EdgeInsets.symmetric(vertical: 12),
+                            width: 40,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: colorScheme.outlineVariant,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
                           ),
                         ),
-                      ),
-                      // Title row
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 0, 8, 12),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                tr('filterApps'),
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w600),
+                        // Title row
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 8, 12),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  tr('filterApps'),
+                                  style: Theme.of(context).textTheme.titleMedium
+                                      ?.copyWith(fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: () {
+                                  update(() {
+                                    filter = AppsFilter();
+                                    _searchField = 'appName';
+                                    _searchController.clear();
+                                  });
+                                  Navigator.of(sheetCtx).pop();
+                                },
+                                child: Text(tr('remove')),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // ── Search field selector ─────────────────────────────
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+                          child: Text(
+                            tr('search'),
+                            style: Theme.of(context).textTheme.labelMedium,
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+                          child: Wrap(
+                            spacing: 8,
+                            children: [
+                              fieldChip('appName', tr('appName')),
+                              fieldChip('author', tr('author')),
+                              fieldChip('appId', tr('appId')),
+                            ],
+                          ),
+                        ),
+
+                        const Divider(height: 1),
+                        const SizedBox(height: 8),
+
+                        // ── Visibility toggles ────────────────────────────────
+                        SwitchListTile(
+                          dense: true,
+                          title: Text(tr('upToDateApps')),
+                          value: filter.includeUptodate,
+                          onChanged: (v) =>
+                              update(() => filter.includeUptodate = v),
+                        ),
+                        SwitchListTile(
+                          dense: true,
+                          title: Text(tr('nonInstalledApps')),
+                          value: filter.includeNonInstalled,
+                          onChanged: (v) =>
+                              update(() => filter.includeNonInstalled = v),
+                        ),
+
+                        const SizedBox(height: 8),
+                        const Divider(height: 1),
+                        const SizedBox(height: 8),
+
+                        // ── Source dropdown ───────────────────────────────────
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+                          child: DropdownButtonFormField<String>(
+                            key: ValueKey(filter.sourceFilter),
+                            decoration: InputDecoration(
+                              labelText: tr('appSource'),
+                              isDense: true,
+                              border: const OutlineInputBorder(),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
                               ),
                             ),
-                            TextButton(
-                              onPressed: () {
-                                update(() {
-                                  filter = AppsFilter();
-                                  _searchField = 'appName';
-                                  _searchController.clear();
-                                });
-                                Navigator.of(sheetCtx).pop();
-                              },
-                              child: Text(tr('remove')),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      // ── Search field selector ─────────────────────────────
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
-                        child: Text(
-                          tr('search'),
-                          style: Theme.of(context).textTheme.labelMedium,
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
-                        child: Wrap(
-                          spacing: 8,
-                          children: [
-                            fieldChip('appName', tr('appName')),
-                            fieldChip('author', tr('author')),
-                            fieldChip('appId', tr('appId')),
-                          ],
-                        ),
-                      ),
-
-                      const Divider(height: 1),
-                      const SizedBox(height: 8),
-
-                      // ── Visibility toggles ────────────────────────────────
-                      SwitchListTile(
-                        dense: true,
-                        title: Text(tr('upToDateApps')),
-                        value: filter.includeUptodate,
-                        onChanged: (v) =>
-                            update(() => filter.includeUptodate = v),
-                      ),
-                      SwitchListTile(
-                        dense: true,
-                        title: Text(tr('nonInstalledApps')),
-                        value: filter.includeNonInstalled,
-                        onChanged: (v) =>
-                            update(() => filter.includeNonInstalled = v),
-                      ),
-
-                      const SizedBox(height: 8),
-                      const Divider(height: 1),
-                      const SizedBox(height: 8),
-
-                      // ── Source dropdown ───────────────────────────────────
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
-                        child: DropdownButtonFormField<String>(
-                          key: ValueKey(filter.sourceFilter),
-                          decoration: InputDecoration(
-                            labelText: tr('appSource'),
-                            isDense: true,
-                            border: const OutlineInputBorder(),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 10,
-                            ),
+                            initialValue: filter.sourceFilter,
+                            items: sourceItems
+                                .map(
+                                  (e) => DropdownMenuItem(
+                                    value: e.key,
+                                    child: Text(e.value),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (v) =>
+                                update(() => filter.sourceFilter = v ?? ''),
                           ),
-                          initialValue: filter.sourceFilter,
-                          items: sourceItems
-                              .map(
-                                (e) => DropdownMenuItem(
-                                  value: e.key,
-                                  child: Text(e.value),
-                                ),
-                              )
-                              .toList(),
-                          onChanged: (v) =>
-                              update(() => filter.sourceFilter = v ?? ''),
                         ),
-                      ),
 
-                      // ── Category selector ─────────────────────────────────
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                        child: _TriStateCategoryFilterSelector(
-                          categoryColors: settingsProvider.categories,
-                          includedCategories: filter.includedCategoryFilter,
-                          excludedCategories: filter.excludedCategoryFilter,
-                          onChanged: (included, excluded) {
-                            update(() {
-                              filter.includedCategoryFilter = included;
-                              filter.excludedCategoryFilter = excluded;
-                            });
-                          },
-                        ),
-                      ),
-
-                      // ── Save as Folder ────────────────────────────────────
-                      Padding(
-                        padding: EdgeInsets.fromLTRB(
-                          20,
-                          12,
-                          20,
-                          20 + MediaQuery.of(context).viewPadding.bottom,
-                        ),
-                        child: OutlinedButton.icon(
-                          icon: const Icon(
-                            Icons.create_new_folder_outlined,
-                            size: 18,
+                        // ── Category selector ─────────────────────────────────
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                          child: _TriStateCategoryFilterSelector(
+                            categoryColors: settingsProvider.categories,
+                            includedCategories: filter.includedCategoryFilter,
+                            excludedCategories: filter.excludedCategoryFilter,
+                            matchMode: filter.categoryMatchMode,
+                            onChanged: (included, excluded) {
+                              update(() {
+                                filter.includedCategoryFilter = included;
+                                filter.excludedCategoryFilter = excluded;
+                              });
+                            },
+                            onMatchModeChanged: (matchMode) {
+                              update(() {
+                                filter.categoryMatchMode = matchMode;
+                              });
+                            },
                           ),
-                          label: Text(tr('saveAsFolder')),
-                          onPressed: () {
-                            Navigator.of(sheetCtx).pop();
-                            _saveFilterAsFolder(context, filter);
-                          },
                         ),
-                      ),
-                    ],
+
+                        // ── Save as Folder ────────────────────────────────────
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+                          child: OutlinedButton.icon(
+                            icon: const Icon(
+                              Icons.create_new_folder_outlined,
+                              size: 18,
+                            ),
+                            label: Text(tr('saveAsFolder')),
+                            onPressed: () {
+                              Navigator.of(sheetCtx).pop();
+                              _saveFilterAsFolder(context, filter);
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               );
@@ -4320,6 +4566,34 @@ class AppsPageState extends State<AppsPage> {
                                     _searchFocusNode.unfocus();
                                   }),
                                 ),
+                              if (effectiveGroupBy != AppsListGroupBy.none ||
+                                  showUpdatesGroupSection) ...[
+                                IconButton(
+                                  icon: Icon(
+                                    allGroupsExpanded
+                                        ? Icons.unfold_less_rounded
+                                        : Icons.unfold_more_rounded,
+                                  ),
+                                  tooltip: allGroupsExpanded
+                                      ? tr('collapseAll')
+                                      : tr('expandAll'),
+                                  onPressed: () {
+                                    setState(() {
+                                      if (allGroupsExpanded) {
+                                        _collapsedGroups.addAll(activeGroupKeys);
+                                        for (final key in activeGroupKeys) {
+                                          _groupControllers[key]?.collapse();
+                                        }
+                                      } else {
+                                        _collapsedGroups.clear();
+                                        for (final key in activeGroupKeys) {
+                                          _groupControllers[key]?.expand();
+                                        }
+                                      }
+                                    });
+                                  },
+                                ),
+                              ],
                             ],
                             // Always use the compact layout so the action icon
                             // and "Apps" title are always on the same toolbar row.
@@ -4530,7 +4804,7 @@ class AppsPageState extends State<AppsPage> {
       }
     }
     if (changed.isNotEmpty) {
-      await appsProvider.saveApps(changed);
+      await appsProvider.saveApps(changed, updateInstalledInfo: false);
     }
   }
 
@@ -4549,7 +4823,7 @@ class AppsPageState extends State<AppsPage> {
       }
     }
     if (changed.isNotEmpty) {
-      await appsProvider.saveApps(changed);
+      await appsProvider.saveApps(changed, updateInstalledInfo: false);
     }
   }
 
@@ -4973,7 +5247,7 @@ class AppsPageState extends State<AppsPage> {
                       app.additionalSettings['onDemandOnly'] = false;
                     }
                   }
-                  await appsProvider.saveApps(apps.toList());
+                  await appsProvider.saveApps(apps.toList(), updateInstalledInfo: false);
                   if (!dCtx.mounted) return;
                   Navigator.of(dCtx).pop();
                 },
@@ -5125,13 +5399,17 @@ class _TriStateCategoryFilterSelector extends StatelessWidget {
     required this.categoryColors,
     required this.includedCategories,
     required this.excludedCategories,
+    required this.matchMode,
     required this.onChanged,
+    required this.onMatchModeChanged,
   });
 
   final Map<String, int> categoryColors;
   final Set<String> includedCategories;
   final Set<String> excludedCategories;
+  final CategoryFilterMatchMode matchMode;
   final void Function(Set<String> included, Set<String> excluded) onChanged;
+  final ValueChanged<CategoryFilterMatchMode> onMatchModeChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -5185,10 +5463,41 @@ class _TriStateCategoryFilterSelector extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(tr('categories')),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                tr('categories'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            SegmentedButton<CategoryFilterMatchMode>(
+              showSelectedIcon: false,
+              style: SegmentedButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+              ),
+              segments: [
+                ButtonSegment(
+                  value: CategoryFilterMatchMode.any,
+                  label: Text(tr('categoryMatchAny')),
+                ),
+                ButtonSegment(
+                  value: CategoryFilterMatchMode.all,
+                  label: Text(tr('categoryMatchAll')),
+                ),
+              ],
+              selected: {matchMode},
+              onSelectionChanged: (selection) {
+                onMatchModeChanged(selection.first);
+              },
+            ),
+          ],
+        ),
         const SizedBox(height: 2),
         Text(
-          'Tap to cycle: (+) Include, (x) Exclude, tap again to reset',
+          tr('categoryFilterCycleHint'),
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
@@ -5273,6 +5582,7 @@ class AppsFilter {
   bool includeNonInstalled;
   Set<String> includedCategoryFilter;
   Set<String> excludedCategoryFilter;
+  CategoryFilterMatchMode categoryMatchMode;
   String sourceFilter;
 
   AppsFilter({
@@ -5284,6 +5594,7 @@ class AppsFilter {
     Set<String> categoryFilter = const {},
     Set<String>? includedCategoryFilter,
     Set<String>? excludedCategoryFilter,
+    this.categoryMatchMode = CategoryFilterMatchMode.any,
     this.sourceFilter = '',
   }) : includedCategoryFilter = includedCategoryFilter ?? categoryFilter,
        excludedCategoryFilter = excludedCategoryFilter ?? const {};
@@ -5322,5 +5633,6 @@ class AppsFilter {
         excludedCategoryFilter,
         other.excludedCategoryFilter,
       ) &&
+      categoryMatchMode == other.categoryMatchMode &&
       sourceFilter.trim() == other.sourceFilter.trim();
 }

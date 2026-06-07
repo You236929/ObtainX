@@ -50,11 +50,29 @@ import 'package:shizuku_apk_installer/shizuku_apk_installer.dart';
 import 'package:obtainium/folders/app_folder.dart';
 
 final pm = AndroidPackageManager();
+// Full flags — includes signing certs needed for cert-hash display/verification.
 final packageInfoFlags = PackageInfoFlags({PMFlag.getSigningCertificates});
+// Light flags — omits signing certs; safe for foreground version-reconciliation
+// because getCorrectedInstallStatusAppIfPossible only reads versionName/versionCode.
+// Skipping getSigningCertificates makes getInstalledPackages ~10× faster and keeps
+// the Android platform thread free to dispatch touch events during the foreground load.
+final packageInfoFlagsLight = PackageInfoFlags({});
 
 final RegExp _androidApplicationIdPattern = RegExp(
   r'^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$',
 );
+
+String formatBytesForDisplay(int bytes) {
+  if (bytes >= 1024 * 1024 * 1024) {
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  } else if (bytes >= 1024 * 1024) {
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(0)} MB';
+  } else if (bytes >= 1024) {
+    return '${(bytes / 1024).toStringAsFixed(0)} KB';
+  } else {
+    return '$bytes B';
+  }
+}
 
 /// True if both versions are equal or one is a prefix of the other with a
 /// non-digit next (e.g. 50.5.19 and 50.5.19-31 [0] [PR] 879778031), or both
@@ -120,17 +138,15 @@ String? reconciledInstalledVersionForDisabledVersionDetection(
   String reportedInstalledVersion,
   String latestVersion,
 ) {
-  return reconciledInstalledVersionFromLatest(
-        realInstalledVersion,
-        latestVersion,
-      ) ??
-      (reconcileVersionDifferences(
-                realInstalledVersion,
-                reportedInstalledVersion,
-              )?.key ==
-              false
-          ? realInstalledVersion
-          : null);
+  final reconciledLatest = reconcileVersionDifferences(realInstalledVersion, latestVersion);
+  if (reconciledLatest?.key == true) {
+    return reconciledLatest!.value;
+  }
+  final reconciledInstalled = reconcileVersionDifferences(realInstalledVersion, reportedInstalledVersion);
+  if (reconciledInstalled?.key == true) {
+    return reconciledInstalled!.value;
+  }
+  return null;
 }
 
 bool _isDigit(int codeUnit) => codeUnit >= 0x30 && codeUnit <= 0x39; // '0'..'9'
@@ -816,12 +832,29 @@ Future<String> checkPartialDownloadHash(
   }
   req.headers[HttpHeaders.rangeHeader] = 'bytes=0-$bytesToGrab';
   var client = IOClient(createHttpClient(allowInsecure));
-  var response = await client.send(req);
-  if (response.statusCode < 200 || response.statusCode > 299) {
-    throw ObtainiumError(response.reasonPhrase ?? tr('unexpectedError'));
+  try {
+    var response = await client.send(req);
+    if (response.statusCode < 200 || response.statusCode > 299) {
+      throw ObtainiumError(response.reasonPhrase ?? tr('unexpectedError'));
+    }
+    final bytesBuilder = BytesBuilder(copy: false);
+    var remainingBytes = bytesToGrab + 1;
+    await for (final chunk in response.stream) {
+      if (remainingBytes <= 0) {
+        break;
+      }
+      if (chunk.length <= remainingBytes) {
+        bytesBuilder.add(chunk);
+        remainingBytes -= chunk.length;
+      } else {
+        bytesBuilder.add(chunk.sublist(0, remainingBytes));
+        remainingBytes = 0;
+      }
+    }
+    return hashListOfLists([bytesBuilder.takeBytes()]);
+  } finally {
+    client.close();
   }
-  List<List<int>> bytes = await response.stream.take(bytesToGrab).toList();
-  return hashListOfLists(bytes);
 }
 
 Future<String?> checkETagHeader(
@@ -885,6 +918,22 @@ String storeFacingDownloadDisplayNameForApp(App app) {
     key = 'download.apk';
   }
   return sanitizeApkSaveDisplayName(key);
+}
+
+String _downloadProgressNotificationMessage(
+  int progressPercent,
+  int? totalBytes,
+) {
+  final progressMessage = tr(
+    'percentProgress',
+    args: [progressPercent.toString()],
+  );
+  if (totalBytes == null) {
+    return progressMessage;
+  }
+  final downloadedBytes = (progressPercent.clamp(0, 100) / 100 * totalBytes)
+      .round();
+  return '$progressMessage - ${formatBytesForDisplay(downloadedBytes)} / ${formatBytesForDisplay(totalBytes)}';
 }
 
 Future<File> downloadFile(
@@ -1144,13 +1193,17 @@ Future<File> _downloadFile(
   return downloadedFile;
 }
 
-Future<List<PackageInfo>> getAllInstalledInfo() async {
-  return await pm.getInstalledPackages(flags: packageInfoFlags) ?? [];
+Future<List<PackageInfo>> getAllInstalledInfo({bool light = false}) async {
+  return await pm.getInstalledPackages(
+        flags: light ? packageInfoFlagsLight : packageInfoFlags,
+      ) ??
+      [];
 }
 
 Future<PackageInfo?> getInstalledInfo(
   String? packageName, {
   bool printErr = true,
+  bool light = true,
 }) async {
   if (packageName != null) {
     final List<String> packageNamesToTry = <String>[packageName];
@@ -1166,7 +1219,7 @@ Future<PackageInfo?> getInstalledInfo(
       try {
         return await pm.getPackageInfo(
           packageName: packageNameToTry,
-          flags: packageInfoFlags,
+          flags: light ? packageInfoFlagsLight : packageInfoFlags,
         );
       } catch (e) {
         if (printErr && packageNameToTry == packageNamesToTry.last) {
@@ -1224,10 +1277,32 @@ class AppsProvider with ChangeNotifier {
 
   // In memory App state (should always be kept in sync with local storage versions)
   Map<String, AppInMemory> apps = {};
+  final Map<String, String> appPageErrors = {};
   bool loadingApps = false;
   Completer<void>? _loadingCompleter;
   bool gettingUpdates = false;
   LogsProvider logs = LogsProvider();
+
+  // Cached result of findExistingUpdates() for the home-tab badge.
+  // Recomputed lazily: only when _pendingUpdateCountDirty is true, which is
+  // set at the data-change sites (loadApps, saveApps, removeApps, install
+  // events). Download-progress ticks and icon updates leave the flag false so
+  // the O(n) scan does not run 4×/sec during downloads.
+  int _cachedPendingUpdateCount = 0;
+  bool _pendingUpdateCountDirty = true;
+
+  int get pendingUpdateCount {
+    if (_pendingUpdateCountDirty) {
+      _cachedPendingUpdateCount = findExistingUpdates(
+        installedOnly: true,
+        excludeOnDemandOnly: true,
+        includeVersionOrderUncertain: true,
+      ).length;
+      _pendingUpdateCountDirty = false;
+    }
+    return _cachedPendingUpdateCount;
+  }
+
   final Set<String> _detailPageAutoChecksInFlight = <String>{};
   final Map<String, DateTime> _lastDetailPageAutoCheckStartedAt =
       <String, DateTime>{};
@@ -1256,6 +1331,12 @@ class AppsProvider with ChangeNotifier {
   bool isForeground = true;
   late Stream<FGBGType>? foregroundStream;
   late StreamSubscription<FGBGType>? foregroundSubscription;
+
+  // Throttle foreground-triggered loadApps: getInstalledPackages enumerates
+  // every package with signing certs, which is the most expensive single call
+  // in the app. Skip a foreground reload if one completed recently.
+  static const Duration _foregroundLoadCooldown = Duration(seconds: 5);
+  DateTime? _lastForegroundLoadAt;
   late Directory apkDir;
   late Directory iconsCacheDir;
 
@@ -1328,6 +1409,8 @@ class AppsProvider with ChangeNotifier {
   AppsProvider({bool isBg = false, SettingsProvider? sharedSettings}) {
     settingsProvider = sharedSettings ?? SettingsProvider();
     if (!isBg) {
+      NativeFeatures.registerDownloadCancelHandler(cancelDownload);
+      registerDownloadNotificationCancelHandler(cancelDownload);
       installer.registerThirdPartyInstallPackageChangedCallback(
         _handleThirdPartyInstallPackageChanged,
       );
@@ -1338,7 +1421,26 @@ class AppsProvider with ChangeNotifier {
     foregroundSubscription = foregroundStream?.listen((event) async {
       isForeground = event == FGBGType.foreground;
       if (isForeground) {
-        await loadApps();
+        final now = DateTime.now();
+        final last = _lastForegroundLoadAt;
+        if (last == null || now.difference(last) >= _foregroundLoadCooldown) {
+          // Stamp the cooldown immediately to prevent a second foreground event
+          // from queuing a concurrent load during the delay below.
+          _lastForegroundLoadAt = now;
+          // Yield for one event-loop turn so Flutter can paint the first
+          // post-resume frame and register the user's first touch gesture before
+          // the getInstalledPackages platform call occupies the Android platform
+          // thread. Without this delay the first swipe after returning to the app
+          // is reliably missed.
+          await Future.delayed(const Duration(milliseconds: 300));
+          if (!isForeground) {
+            // User switched away within the delay window; reset the stamp so
+            // the next real foreground return triggers a load.
+            _lastForegroundLoadAt = last;
+            return;
+          }
+          await loadApps(silent: true, lightInstalledInfoFetch: true);
+        }
       }
     });
     () async {
@@ -1348,39 +1450,37 @@ class AppsProvider with ChangeNotifier {
       var cacheDirs = await getExternalCacheDirectories();
       final Directory appStorageRoot = await getAppStorageDir();
       userAppIconsDir = Directory('${appStorageRoot.path}/user_icons');
-      if (!userAppIconsDir.existsSync()) {
-        userAppIconsDir.createSync(recursive: true);
+      if (!await userAppIconsDir.exists()) {
+        await userAppIconsDir.create(recursive: true);
       }
       if (cacheDirs?.isNotEmpty ?? false) {
         apkDir = cacheDirs!.first;
         iconsCacheDir = Directory('${cacheDirs.first.path}/icons');
-        if (!iconsCacheDir.existsSync()) {
-          iconsCacheDir.createSync();
+        if (!await iconsCacheDir.exists()) {
+          await iconsCacheDir.create();
         }
       } else {
         apkDir = Directory('${appStorageRoot.path}/apks');
-        if (!apkDir.existsSync()) {
-          apkDir.createSync();
+        if (!await apkDir.exists()) {
+          await apkDir.create();
         }
         iconsCacheDir = Directory('${appStorageRoot.path}/icons');
-        if (!iconsCacheDir.existsSync()) {
-          iconsCacheDir.createSync();
+        if (!await iconsCacheDir.exists()) {
+          await iconsCacheDir.create();
         }
       }
-      _migrateUserIconsFromLegacyCacheDir();
+      await _migrateUserIconsFromLegacyCacheDir();
       if (!isBg) {
         // Load Apps into memory (in background processes, this is done later instead of in the constructor)
         await loadApps();
         // Delete any partial APKs (if safe to do so)
         var cutoff = DateTime.now().subtract(const Duration(days: 7));
-        apkDir
-            .listSync()
-            .where((element) => element.statSync().modified.isBefore(cutoff))
-            .forEach((partialApk) {
-              if (!areDownloadsRunning()) {
-                partialApk.delete(recursive: true);
-              }
-            });
+        for (final element in await apkDir.list().toList()) {
+          final stat = await element.stat();
+          if (stat.modified.isBefore(cutoff) && !areDownloadsRunning()) {
+            await element.delete(recursive: true);
+          }
+        }
       }
     }();
   }
@@ -1405,6 +1505,7 @@ class AppsProvider with ChangeNotifier {
       installedInfo,
       appInMemory.icon,
     );
+    _pendingUpdateCountDirty = true;
     notifyListeners();
   }
 
@@ -1441,7 +1542,7 @@ class AppsProvider with ChangeNotifier {
   Future<void> updatePendingRepoRename(String appId, String? newUrl) async {
     if (apps.containsKey(appId)) {
       apps[appId]!.app.pendingRepoRenameUrl = newUrl;
-      await saveApps([apps[appId]!.app]);
+      await saveApps([apps[appId]!.app], updateInstalledInfo: false);
     }
   }
 
@@ -1449,7 +1550,7 @@ class AppsProvider with ChangeNotifier {
     if (apps.containsKey(appId)) {
       apps[appId]!.app.url = newUrl;
       apps[appId]!.app.pendingRepoRenameUrl = null;
-      await saveApps([apps[appId]!.app]);
+      await saveApps([apps[appId]!.app], updateInstalledInfo: false);
     }
   }
 
@@ -1464,7 +1565,22 @@ class AppsProvider with ChangeNotifier {
     /// it. Avoids a flash of the normal button between download and install.
     bool retainInstallPhaseProgressForHandoff = false,
   }) async {
-    var notifId = DownloadNotification(app.finalName, 0).id;
+    final initialDownloadNotification = DownloadNotification(
+      app.finalName,
+      0,
+      appId: app.id,
+    );
+    var notifId = initialDownloadNotification.id;
+    await NativeFeatures.startDownloadForegroundService(
+      id: initialDownloadNotification.id,
+      appId: app.id,
+      title: initialDownloadNotification.title,
+      message: initialDownloadNotification.message,
+      channelCode: initialDownloadNotification.channelCode,
+      channelName: initialDownloadNotification.channelName,
+      channelDescription: initialDownloadNotification.channelDescription,
+      cancelLabel: tr('cancel'),
+    );
     if (apps[app.id] != null) {
       apps[app.id]!.downloadProgress = 0;
       notifyListeners();
@@ -1518,6 +1634,10 @@ class AppsProvider with ChangeNotifier {
         },
         (double? progress) {
           int? prog = progress?.ceil();
+          final totalBytes = apps[app.id]?.downloadTotalBytes;
+          final notificationMessage = prog != null
+              ? _downloadProgressNotificationMessage(prog, totalBytes)
+              : null;
           if (apps[app.id] != null) {
             apps[app.id]!.downloadProgress = progress;
             // Throttle UI notifications to ~250 ms so AppPage's progress
@@ -1528,9 +1648,26 @@ class AppsProvider with ChangeNotifier {
               notifyListeners,
             );
           }
-          notif = DownloadNotification(app.finalName, prog ?? 100);
+          notif = DownloadNotification(
+            app.finalName,
+            prog ?? 100,
+            appId: app.id,
+            message: notificationMessage,
+          );
           if (prog != null && prevProg != prog) {
-            notificationsProvider?.notify(notif);
+            unawaited(
+              NativeFeatures.showDownloadProgressNotification(
+                id: notif.id,
+                appId: app.id,
+                title: notif.title,
+                message: notif.message,
+                channelCode: notif.channelCode,
+                progressPercent: prog,
+                indeterminate: false,
+                cancelLabel: tr('cancel'),
+                shortCriticalText: '$prog%',
+              ),
+            );
           }
           prevProg = prog;
         },
@@ -1544,8 +1681,19 @@ class AppsProvider with ChangeNotifier {
       if (apps[app.id] != null) {
         apps[app.id]!.downloadProgress = -1;
         notifyListeners();
-        notif = DownloadNotification(app.finalName, -1);
-        notificationsProvider?.notify(notif);
+        notif = DownloadNotification(app.finalName, -1, appId: app.id);
+        unawaited(
+          NativeFeatures.showDownloadProgressNotification(
+            id: notif.id,
+            appId: app.id,
+            title: notif.title,
+            message: notif.message,
+            channelCode: notif.channelCode,
+            progressPercent: -1,
+            indeterminate: true,
+            cancelLabel: tr('cancel'),
+          ),
+        );
       }
       PackageInfo? newInfo;
       var isAPK = isApk(downloadedFile.path);
@@ -1649,12 +1797,26 @@ class AppsProvider with ChangeNotifier {
         }
         notifyListeners();
       }
+      if (!areDownloadsRunning()) {
+        unawaited(NativeFeatures.stopDownloadForegroundService());
+      }
     }
   }
 
   bool areDownloadsRunning() => apps.values
       .where((element) => element.downloadProgress != null)
       .isNotEmpty;
+
+  void setAppPageError(String appId, Object error) {
+    appPageErrors[appId] = error.toString();
+    notifyListeners();
+  }
+
+  void clearAppPageError(String appId) {
+    if (appPageErrors.remove(appId) != null) {
+      notifyListeners();
+    }
+  }
 
   Future<bool> canInstallSilently(App app) async {
     if (!settingsProvider.enableBackgroundUpdates) {
@@ -1717,8 +1879,13 @@ class AppsProvider with ChangeNotifier {
   }
 
   Future<void> waitForUserToReturnToForeground(BuildContext context) async {
+    if (isForeground) {
+      return;
+    }
     NotificationsProvider notificationsProvider = context
         .read<NotificationsProvider>();
+    // Give the app a moment to return to foreground in case of fast transitions
+    await Future.delayed(const Duration(milliseconds: 1000));
     if (!isForeground) {
       await notificationsProvider.notify(
         completeInstallationNotification,
@@ -1996,6 +2163,7 @@ class AppsProvider with ChangeNotifier {
       );
       if (appInfo != null &&
           newInfo.versionCode! < appInfo.versionCode! &&
+          settingsProvider.installerMode == 'stock' &&
           !(await canDowngradeApps())) {
         throw DowngradeError(appInfo.versionCode!, newInfo.versionCode!);
       }
@@ -2170,7 +2338,6 @@ class AppsProvider with ChangeNotifier {
       action: 'android.intent.action.DELETE',
       data: 'package:$appId',
       flags: <int>[Flag.FLAG_ACTIVITY_NEW_TASK],
-      package: 'vnd.android.package-archive',
     );
     await intent.launch();
   }
@@ -2304,7 +2471,7 @@ class AppsProvider with ChangeNotifier {
             .indexOf(apkUrl.value);
         if (urlInd >= 0 && urlInd != apps[id]!.app.preferredApkIndex) {
           apps[id]!.app.preferredApkIndex = urlInd;
-          await saveApps([apps[id]!.app]);
+          await saveApps([apps[id]!.app], updateInstalledInfo: false);
         }
         if (context != null || await canInstallSilently(apps[id]!.app)) {
           appsToInstall.add(id);
@@ -2323,6 +2490,8 @@ class AppsProvider with ChangeNotifier {
         a.additionalSettings['trackOnlyTemporaryPackageId'] = false;
         return a;
       }).toList(),
+      attemptToCorrectInstallStatus: false,
+      updateInstalledInfo: false,
     );
 
     // Prepare to download+install Apps
@@ -2356,6 +2525,12 @@ class AppsProvider with ChangeNotifier {
             settingsProvider.shizukuPretendToBeGooglePlay ||
             apps[id]!.app.additionalSettings['shizukuPretendToBeGooglePlay'] ==
                 true;
+
+        if (!willBeSilent && context != null && !settingsProvider.useShizuku) {
+          // ignore: use_build_context_synchronously
+          await waitForUserToReturnToForeground(context);
+        }
+
         if (downloadedFile != null) {
           if (needBGWorkaround) {
             // ignore: use_build_context_synchronously
@@ -2413,13 +2588,13 @@ class AppsProvider with ChangeNotifier {
       } finally {
         apps[id]?.downloadProgress = null;
         notifyListeners();
+        if (!areDownloadsRunning()) {
+          unawaited(NativeFeatures.stopDownloadForegroundService());
+        }
       }
     }
 
-    Future<Map<Object?, Object?>> downloadFn(
-      String id, {
-      bool skipInstalls = false,
-    }) async {
+    Future<Map<Object?, Object?>> downloadFn(String id) async {
       bool willBeSilent = false;
       DownloadedApk? downloadedFile;
       DownloadedDir? downloadedDir;
@@ -2458,14 +2633,10 @@ class AppsProvider with ChangeNotifier {
               throw ObtainiumError(tr('cancelled'));
           }
         }
-        if (!willBeSilent && context != null && !settingsProvider.useShizuku) {
-          // ignore: use_build_context_synchronously
-          await waitForUserToReturnToForeground(context);
-        }
-      } catch (e) {
+      } catch (exception) {
         apps[id]?.downloadProgress = null;
         apps[id]?.downloadTotalBytes = null;
-        if (e is DownloadCancelledError) {
+        if (exception is DownloadCancelledError) {
           notifyListeners();
           return {
             'id': id,
@@ -2475,7 +2646,7 @@ class AppsProvider with ChangeNotifier {
             'downloadedDir': downloadedDir,
           };
         }
-        errors.add(id, e, appName: apps[id]?.name);
+        errors.add(id, exception, appName: apps[id]?.name);
         notifyListeners();
       }
       return {
@@ -2487,40 +2658,61 @@ class AppsProvider with ChangeNotifier {
       };
     }
 
-    List<Map<Object?, Object?>> downloadResults = [];
-    if (forceParallelDownloads || !settingsProvider.parallelDownloads) {
-      for (var id in appsToInstall) {
-        downloadResults.add(await downloadFn(id));
-      }
-    } else {
-      downloadResults = await Future.wait(
-        appsToInstall.map((id) => downloadFn(id, skipInstalls: true)),
-      );
-    }
     bool needsLegacyInterInstallDelay = false;
-    for (var res in downloadResults) {
-      if (res['cancelled'] == true) {
-        continue;
+    Future<void> installDownloadResult(Map<Object?, Object?> result) async {
+      if (result['cancelled'] == true) {
+        return;
       }
-      if (!errors.appIdNames.containsKey(res['id'])) {
+      if (result['downloadedFile'] == null && result['downloadedDir'] == null) {
+        return;
+      }
+      if (!errors.appIdNames.containsKey(result['id'])) {
         try {
           if (settingsProvider.installerMode == 'legacy' &&
               needsLegacyInterInstallDelay) {
             await Future.delayed(const Duration(milliseconds: 200));
           }
           await installFn(
-            res['id'] as String,
-            res['willBeSilent'] as bool,
-            res['downloadedFile'] as DownloadedApk?,
-            res['downloadedDir'] as DownloadedDir?,
+            result['id'] as String,
+            result['willBeSilent'] as bool,
+            result['downloadedFile'] as DownloadedApk?,
+            result['downloadedDir'] as DownloadedDir?,
           );
-        } catch (e) {
-          var id = res['id'] as String;
-          errors.add(id, e, appName: apps[id]?.name);
+        } catch (exception) {
+          var id = result['id'] as String;
+          errors.add(id, exception, appName: apps[id]?.name);
         }
         if (settingsProvider.installerMode == 'legacy') {
           needsLegacyInterInstallDelay = true;
         }
+      }
+    }
+
+    if (forceParallelDownloads || settingsProvider.parallelDownloads) {
+      Future<void> installChain = Future.value();
+      await Future.wait(
+        appsToInstall.map((appIdToProcess) async {
+          final downloadResult = await downloadFn(appIdToProcess);
+          final completer = Completer<void>();
+          installChain = installChain.then((_) async {
+            try {
+              await installDownloadResult(downloadResult);
+            } finally {
+              if (!completer.isCompleted) {
+                completer.complete();
+              }
+            }
+          }).catchError((exception) {
+            if (!completer.isCompleted) {
+              completer.complete();
+            }
+          });
+          await completer.future;
+        }),
+      );
+    } else {
+      for (final appIdToProcess in appsToInstall) {
+        await installDownloadResult(await downloadFn(appIdToProcess));
       }
     }
 
@@ -2683,10 +2875,9 @@ class AppsProvider with ChangeNotifier {
         !isHTMLWithNoVersionDetection &&
         !isDirectAPKLink &&
         realInstalledVersion != null &&
-        app.app.installedVersion != null &&
         (reconcileVersionDifferences(
                   realInstalledVersion,
-                  app.app.installedVersion!,
+                  app.app.latestVersion,
                 ) !=
                 null ||
             naiveStandardVersionDetection);
@@ -2724,11 +2915,24 @@ class AppsProvider with ChangeNotifier {
       modded = true;
     } else if (realInstalledVersion != null && app.installedVersion == null) {
       // App says it's not installed but really is - set to installed and use real package versionName (or versionCode if chosen)
-      app.installedVersion = realInstalledVersion;
+      app.installedVersion = versionDetectionIsStandard
+          ? realInstalledVersion
+          : app.latestVersion;
       if (trackOnly) {
         app.additionalSettings['trackOnlyUndeterminedInstalledVersion'] = false;
       }
       modded = true;
+    }
+    if (realInstalledVersion != null &&
+        app.installedVersion != null &&
+        !versionDetectionIsStandard) {
+      final reconciled = reconcileVersionDifferences(realInstalledVersion, app.latestVersion);
+      if (reconciled?.key != true) {
+        if (app.installedVersion == realInstalledVersion) {
+          app.installedVersion = app.latestVersion;
+          modded = true;
+        }
+      }
     }
     if (realInstalledVersion != null &&
         app.installedVersion != null &&
@@ -2808,19 +3012,31 @@ class AppsProvider with ChangeNotifier {
     return modded ? app : null;
   }
 
-  Future<void> loadApps({String? singleId}) async {
+  // When [silent] is true (foreground refreshes) we skip the loading-indicator
+  // notify at the start and suppress the end notify when the app list is
+  // unchanged — avoids two full rebuilds of every mounted page on every
+  // lock/unlock or app-switch when nothing actually changed.
+  Future<void> loadApps({
+    String? singleId,
+    bool silent = false,
+    bool lightInstalledInfoFetch = false,
+  }) async {
     await _loadingCompleter?.future;
-    loadingApps = true;
     _loadingCompleter = Completer<void>();
-    notifyListeners();
+    if (!silent) {
+      loadingApps = true;
+      notifyListeners();
+    }
     await _purgeStalePendingRemovalFilesWithoutLiveDeferral();
     var sp = SourceProvider();
     List<List<String>> errors = [];
-    var installedAppsData = await getAllInstalledInfo();
+    var installedAppsData = await getAllInstalledInfo(
+      light: lightInstalledInfoFetch,
+    );
     List<String> removedAppIds = [];
+    bool anyAppModded = false;
     await Future.wait(
-      (await getAppsDir()) // Parse Apps from JSON
-          .listSync()
+      (await (await getAppsDir()).list().toList()) // Parse Apps from JSON
           .map((item) async {
             App? app;
             if (item.path.toLowerCase().endsWith('.json') &&
@@ -2873,6 +3089,7 @@ class AppsProvider with ChangeNotifier {
                 );
                 if (moddedApp != null) {
                   app = moddedApp;
+                  anyAppModded = true;
                   // Note the app ID if it was uninstalled externally
                   if (moddedApp.installedVersion == null) {
                     removedAppIds.add(moddedApp.id);
@@ -2912,7 +3129,15 @@ class AppsProvider with ChangeNotifier {
     loadingApps = false;
     _loadingCompleter?.complete();
     _loadingCompleter = null;
-    notifyListeners();
+    // In silent mode only notify if something actually changed — prevents
+    // a redundant full rebuild on foreground events when the app list is
+    // identical to what was already displayed.
+    final bool dataChanged =
+        anyAppModded || errors.isNotEmpty || removedAppIds.isNotEmpty;
+    if (!silent || dataChanged) {
+      _pendingUpdateCountDirty = true;
+      notifyListeners();
+    }
   }
 
   bool _bytesLookLikeRasterImage(Uint8List bytes) {
@@ -2955,23 +3180,24 @@ class AppsProvider with ChangeNotifier {
         bytes[7] == 0x0A;
   }
 
-  void _migrateUserIconsFromLegacyCacheDir() {
+  Future<void> _migrateUserIconsFromLegacyCacheDir() async {
     try {
-      if (!iconsCacheDir.existsSync()) return;
-      for (final FileSystemEntity entity in iconsCacheDir.listSync()) {
+      if (!await iconsCacheDir.exists()) return;
+      for (final FileSystemEntity entity
+          in await iconsCacheDir.list().toList()) {
         if (entity is! File) continue;
         final String fileName = entity.uri.pathSegments.last;
         if (!fileName.endsWith('.user.png')) continue;
         final File destination = File('${userAppIconsDir.path}/$fileName');
-        if (destination.existsSync()) {
+        if (await destination.exists()) {
           try {
-            entity.deleteSync();
+            await entity.delete();
           } catch (_) {}
           continue;
         }
         try {
-          entity.copySync(destination.path);
-          entity.deleteSync();
+          await entity.copy(destination.path);
+          await entity.delete();
         } catch (e) {
           logs.add('User icon migrate $fileName: $e');
         }
@@ -2983,6 +3209,33 @@ class AppsProvider with ChangeNotifier {
 
   File _userAppIconPngFile(String appId) {
     return File('${userAppIconsDir.path}/$appId.user.png');
+  }
+
+  // Icons from getAppIcon() are often 192–432 px. We only display them at
+  // ~40 dp, so 128 px is more than enough at any device pixel ratio. Resize
+  // before writing to the disk cache so both the on-disk and in-memory
+  // representations stay small. Uses ui.instantiateImageCodec which decodes
+  // on a background thread — no main-isolate blocking.
+  static const int _iconMaxCachePx = 128;
+
+  Future<Uint8List> _resizeIconForCache(Uint8List bytes) async {
+    try {
+      final codec = await instantiateImageCodec(
+        bytes,
+        targetWidth: _iconMaxCachePx,
+        targetHeight: _iconMaxCachePx,
+      );
+      final frame = await codec.getNextFrame();
+      final byteData = await frame.image.toByteData(
+        format: ImageByteFormat.png,
+      );
+      frame.image.dispose();
+      codec.dispose();
+      if (byteData != null) return byteData.buffer.asUint8List();
+    } catch (e) {
+      logs.add('Icon resize failed, keeping original: $e');
+    }
+    return bytes;
   }
 
   Future<Uint8List?> _fetchIconFromUrl(String url) async {
@@ -3048,6 +3301,7 @@ class AppsProvider with ChangeNotifier {
       }
     }
     if (icon != null && !alreadyCached) {
+      icon = await _resizeIconForCache(icon);
       await cachedIcon.writeAsBytes(icon);
     }
     if (ignoreCache) {
@@ -3183,44 +3437,76 @@ class AppsProvider with ChangeNotifier {
     bool onlyIfExists = true,
     bool notifyListenersAfterSave = true,
     bool autoExportAfterSave = true,
+    bool updateInstalledInfo = true,
   }) async {
     attemptToCorrectInstallStatus = attemptToCorrectInstallStatus;
+    if (!updateInstalledInfo) {
+      bool didAnyInMemoryUpdate = false;
+      for (final appToSave in apps) {
+        final AppInMemory? cachedInMemory = this.apps[appToSave.id];
+        if (cachedInMemory != null || !onlyIfExists) {
+          var appCopy = appToSave.deepCopy();
+          clearStaleSkippedLatestVersionInPlace(appCopy);
+          final installedInfo = cachedInMemory?.installedInfo;
+          final iconBytes = cachedInMemory?.icon;
+          appCopy.name = cachedInMemory?.app.name ?? appCopy.name;
+          this.apps[appCopy.id] = AppInMemory(
+            appCopy,
+            cachedInMemory?.downloadProgress,
+            installedInfo,
+            iconBytes,
+          );
+          didAnyInMemoryUpdate = true;
+        }
+      }
+      if (didAnyInMemoryUpdate && notifyListenersAfterSave) {
+        _pendingUpdateCountDirty = true;
+        notifyListeners();
+      }
+    }
     await Future.wait(
       apps.map((appToSave) async {
         var app = appToSave.deepCopy();
         clearStaleSkippedLatestVersionInPlace(app);
-        PackageInfo? info = await getInstalledInfo(app.id);
-        // Reuse the cached icon whenever the installed package
-        // hasn't changed since the last save. [getAppIcon] returns large PNG
-        // bytes via a JNI hop. We still call [getInstalledInfo]
-        // unconditionally because it is cheap and we need the current
-        // versionName to detect external uninstalls / updates.
-        final AppInMemory? cachedInMemory = this.apps[app.id];
-        final bool installedUnchanged =
-            cachedInMemory != null &&
-            cachedInMemory.installedInfo?.packageName == info?.packageName &&
-            cachedInMemory.installedInfo?.versionName == info?.versionName &&
-            cachedInMemory.installedInfo?.versionCode == info?.versionCode;
+        PackageInfo? info;
         Uint8List? icon;
-        if (installedUnchanged) {
+        final AppInMemory? cachedInMemory = this.apps[app.id];
+        if (!updateInstalledInfo && cachedInMemory != null) {
+          info = cachedInMemory.installedInfo;
           icon = cachedInMemory.icon;
           app.name = cachedInMemory.app.name;
         } else {
-          icon = await info?.applicationInfo?.getAppIcon();
-          String? localizedLabel;
-          if (Platform.isAndroid && info != null) {
-            final labelsByPackageName =
-                await BulkImportService.getApplicationLabels([app.id]);
-            localizedLabel = labelsByPackageName[app.id]?.trim();
-            if (localizedLabel?.isNotEmpty != true) {
-              info = await getInstalledInfo(app.id);
+          info = await getInstalledInfo(app.id);
+          // Reuse the cached icon whenever the installed package
+          // hasn't changed since the last save. [getAppIcon] returns large PNG
+          // bytes via a JNI hop. We still call [getInstalledInfo]
+          // unconditionally because it is cheap and we need the current
+          // versionName to detect external uninstalls / updates.
+          final bool installedUnchanged =
+              cachedInMemory != null &&
+              cachedInMemory.installedInfo?.packageName == info?.packageName &&
+              cachedInMemory.installedInfo?.versionName == info?.versionName &&
+              cachedInMemory.installedInfo?.versionCode == info?.versionCode;
+          if (installedUnchanged) {
+            icon = cachedInMemory.icon;
+            app.name = cachedInMemory.app.name;
+          } else {
+            icon = await info?.applicationInfo?.getAppIcon();
+            String? localizedLabel;
+            if (Platform.isAndroid && info != null) {
+              final labelsByPackageName =
+                  await BulkImportService.getApplicationLabels([app.id]);
+              localizedLabel = labelsByPackageName[app.id]?.trim();
+              if (localizedLabel?.isNotEmpty != true) {
+                info = await getInstalledInfo(app.id);
+              }
             }
-          }
-          final String? appLabel = localizedLabel?.isNotEmpty == true
-              ? localizedLabel
-              : info?.applicationInfo?.nonLocalizedLabel?.toString().trim();
-          if (appLabel?.isNotEmpty == true) {
-            app.name = appLabel!;
+            final String? appLabel = localizedLabel?.isNotEmpty == true
+                ? localizedLabel
+                : info?.applicationInfo?.nonLocalizedLabel?.toString().trim();
+            if (appLabel?.isNotEmpty == true) {
+              app.name = appLabel!;
+            }
           }
         }
         if (attemptToCorrectInstallStatus) {
@@ -3249,6 +3535,7 @@ class AppsProvider with ChangeNotifier {
       }),
     );
     if (notifyListenersAfterSave) {
+      _pendingUpdateCountDirty = true;
       notifyListeners();
     }
     if (autoExportAfterSave) {
@@ -3307,6 +3594,7 @@ class AppsProvider with ChangeNotifier {
       apps.remove(appId);
     }
     if (appIds.isNotEmpty) {
+      _pendingUpdateCountDirty = true;
       notifyListeners();
       export(isAuto: true);
     }
@@ -3382,6 +3670,7 @@ class AppsProvider with ChangeNotifier {
         _finalizeDeferredObtainiumRemoval(appId);
       });
     }
+    _pendingUpdateCountDirty = true;
     notifyListeners();
     export(isAuto: true);
   }
@@ -3395,10 +3684,11 @@ class AppsProvider with ChangeNotifier {
       await _restoreAppJsonFromPendingRemoval(appId);
       final File mainJson = File('${(await getAppsDir()).path}/$appId.json');
       if (!mainJson.existsSync()) {
-        await saveApps([snapshot.app], onlyIfExists: false);
+        await saveApps([snapshot.app], onlyIfExists: false, updateInstalledInfo: false);
       }
       apps[appId] = snapshot.deepCopy();
     }
+    _pendingUpdateCountDirty = true;
     notifyListeners();
     export(isAuto: true);
   }
@@ -3425,6 +3715,7 @@ class AppsProvider with ChangeNotifier {
     }
     await deleteObtainiumAppDiskData([appId], deleteMainJson: false);
     export(isAuto: true);
+    _pendingUpdateCountDirty = true;
     notifyListeners();
   }
 
@@ -3889,61 +4180,87 @@ class AppsProvider with ChangeNotifier {
     required bool isAuto,
     SettingsProvider? sp,
   }) async {
-    SettingsProvider settingsProvider = sp ?? this.settingsProvider;
-    var exportDir = await settingsProvider.getExportDir(
-      warnIfInaccessible: true,
-    );
-    if (isAuto) {
-      if (settingsProvider.autoExportOnChanges != true) {
-        return null;
+    try {
+      SettingsProvider settingsProvider = sp ?? this.settingsProvider;
+      var exportDir = await settingsProvider.getExportDir(
+        warnIfInaccessible: true,
+      );
+      if (isAuto) {
+        if (settingsProvider.autoExportOnChanges != true) {
+          return null;
+        }
+        if (exportDir == null) {
+          return null;
+        }
+        List<dynamic> files = [];
+        try {
+          files = await saf
+              .listFiles(exportDir, columns: [saf.DocumentFileColumn.id])
+              .where((f) => f.uri.pathSegments.last.endsWith('-auto.json'))
+              .toList();
+        } catch (e) {
+          await LogsProvider(runDefaultClear: false).add(
+            'Failed to list files in auto-export directory: $e',
+            level: LogLevels.error,
+          );
+        }
+        if (files.isNotEmpty) {
+          for (var f in files) {
+            try {
+              await saf.delete(f.uri);
+            } catch (e) {
+              await LogsProvider(runDefaultClear: false).add(
+                'Failed to delete old auto-export file: $e',
+                level: LogLevels.error,
+              );
+            }
+          }
+        }
+      }
+      if (exportDir == null || pickOnly) {
+        await settingsProvider.pickExportDir();
+        exportDir = await settingsProvider.getExportDir(warnIfInaccessible: true);
       }
       if (exportDir == null) {
         return null;
       }
-      var files = await saf
-          .listFiles(exportDir, columns: [saf.DocumentFileColumn.id])
-          .where((f) => f.uri.pathSegments.last.endsWith('-auto.json'))
-          .toList();
-      if (files.isNotEmpty) {
-        for (var f in files) {
-          saf.delete(f.uri);
+      String? returnPath;
+      if (!pickOnly) {
+        Map<String, dynamic> finalExport = generateExportJSON(
+          sp: settingsProvider,
+        );
+        // Heavy work - JsonEncoder.withIndent over the whole apps+settings
+        // payload plus utf8 encoding - is run on a background isolate so the
+        // UI thread stays responsive even when the export is large.
+        final Uint8List bytes = await Isolate.run<Uint8List>(() {
+          const JsonEncoder encoder = JsonEncoder.withIndent('    ');
+          return Uint8List.fromList(utf8.encode(encoder.convert(finalExport)));
+        }, debugName: 'export-json-encode');
+        var result = await saf.createFile(
+          exportDir,
+          displayName:
+              '${tr('obtainiumExportHyphenatedLowercase')}-${DateTime.now().toIso8601String().replaceAll(':', '-')}${isAuto ? '-auto' : ''}.json',
+          mimeType: 'application/json',
+          bytes: bytes,
+        );
+        if (result == null) {
+          throw ObtainiumError(tr('unexpectedError'));
         }
+        returnPath = exportDir.pathSegments
+            .join('/')
+            .replaceFirst('tree/primary:', '/');
       }
-    }
-    if (exportDir == null || pickOnly) {
-      await settingsProvider.pickExportDir();
-      exportDir = await settingsProvider.getExportDir(warnIfInaccessible: true);
-    }
-    if (exportDir == null) {
+      return returnPath;
+    } catch (e, stack) {
+      debugPrint('Export failed: $e\n$stack');
+      try {
+        await LogsProvider(runDefaultClear: false).add(
+          'Export failed: $e',
+          level: LogLevels.error,
+        );
+      } catch (_) {}
       return null;
     }
-    String? returnPath;
-    if (!pickOnly) {
-      Map<String, dynamic> finalExport = generateExportJSON(
-        sp: settingsProvider,
-      );
-      // Heavy work - JsonEncoder.withIndent over the whole apps+settings
-      // payload plus utf8 encoding - is run on a background isolate so the
-      // UI thread stays responsive even when the export is large.
-      final Uint8List bytes = await Isolate.run<Uint8List>(() {
-        const JsonEncoder encoder = JsonEncoder.withIndent('    ');
-        return Uint8List.fromList(utf8.encode(encoder.convert(finalExport)));
-      }, debugName: 'export-json-encode');
-      var result = await saf.createFile(
-        exportDir,
-        displayName:
-            '${tr('obtainiumExportHyphenatedLowercase')}-${DateTime.now().toIso8601String().replaceAll(':', '-')}${isAuto ? '-auto' : ''}.json',
-        mimeType: 'application/json',
-        bytes: bytes,
-      );
-      if (result == null) {
-        throw ObtainiumError(tr('unexpectedError'));
-      }
-      returnPath = exportDir.pathSegments
-          .join('/')
-          .replaceFirst('tree/primary:', '/');
-    }
-    return returnPath;
   }
 
   Future<MapEntry<List<App>, bool>> import(String appsJSON) async {
@@ -4031,7 +4348,7 @@ class AppsProvider with ChangeNotifier {
       }
     }
     if (changed) {
-      await saveApps([app]);
+      await saveApps([app], updateInstalledInfo: false);
     }
   }
 

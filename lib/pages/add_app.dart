@@ -24,7 +24,12 @@ import 'package:obtainium/theme/app_theme_accent.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
+const double _appVaultFabBottomGap = 8.0;
+const double _fabHorizontalMargin = 16.0;
+
 enum _AddMode { byUrl, search, fromDevice }
+
+enum _PackageIdDetectionChoice { download, trackOnly }
 
 class AddAppPage extends StatefulWidget {
   const AddAppPage({super.key});
@@ -228,6 +233,7 @@ class AddAppPageState extends State<AddAppPage> {
         s.hideTrackOnlyWarning,
         s.useGradientBackground,
         s.progressiveBlurEnabled,
+        s.cardCornerScale,
       ),
     );
     SettingsProvider settingsProvider = context.read<SettingsProvider>();
@@ -235,11 +241,22 @@ class AddAppPageState extends State<AddAppPage> {
         .read<NotificationsProvider>();
 
     bool doingSomething = gettingAppInfo || searching;
-    final double bottomNavigationClearance =
-        settingsProvider.progressiveBlurEnabled ? 88 : 0;
+    // The nested Scaffold inherits bottom padding from the home Scaffold when
+    // the blurred bottom nav extends underneath it. Place this FAB from the
+    // actual screen bottom chrome instead of letting the default endFloat
+    // location stack its own 16 dp margin on top of that inherited padding.
+    final double coveredBottomInset = MediaQuery.paddingOf(context).bottom;
+    final double bottomChromeClearance = settingsProvider.progressiveBlurEnabled
+        ? coveredBottomInset
+        : 0.0;
+    final double appVaultFabBottomPadding =
+        bottomChromeClearance + _appVaultFabBottomGap;
+    final bool urlHasInput =
+        _mode == _AddMode.byUrl && userInput.trim().isNotEmpty;
     final bool showAppVaultFab =
         (_mode == _AddMode.byUrl && userInput.trim().isEmpty) ||
         (_mode == _AddMode.search && !_searchHasSearched && !searching);
+    final bool showBottomActionFab = showAppVaultFab || urlHasInput;
 
     // ── Track-only / release-date confirmations (URL mode) ─────────────
 
@@ -298,6 +315,38 @@ class AddAppPageState extends State<AddAppPage> {
               null));
     }
 
+    Future<_PackageIdDetectionChoice?>
+    getPackageIdDetectionConfirmation() async {
+      if (!context.mounted) return null;
+      return showDialog<_PackageIdDetectionChoice>(
+        context: context,
+        builder: (BuildContext dialogContext) {
+          return AlertDialog(
+            title: Text(tr('downloadAPKToIdentifyAppQuestion')),
+            content: Text(tr('downloadAPKToIdentifyAppExplanation')),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: Text(tr('cancel')),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(
+                  dialogContext,
+                ).pop(_PackageIdDetectionChoice.trackOnly),
+                child: Text(tr('trackOnly')),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(
+                  dialogContext,
+                ).pop(_PackageIdDetectionChoice.download),
+                child: Text(tr('downloadX', args: [tr('app')])),
+              ),
+            ],
+          );
+        },
+      );
+    }
+
     // ── Add app (URL mode) ─────────────────────────────────────────────
 
     addApp({bool resetUserInputAfter = false}) async {
@@ -322,33 +371,43 @@ class AddAppPageState extends State<AddAppPage> {
           );
           // Only download the APK here if you need to for the package ID
           if (isTempId(app) && app.additionalSettings['trackOnly'] != true) {
-            if (!context.mounted) return;
-            var apkUrl = await appsProvider.confirmAppFileUrl(
-              app,
-              context,
-              false,
-            );
-            if (apkUrl == null) {
+            var packageIdDetectionChoice =
+                await getPackageIdDetectionConfirmation();
+            if (packageIdDetectionChoice == null) {
               throw ObtainiumError(tr('cancelled'));
             }
-            app.preferredApkIndex = app.apkUrls
-                .map((e) => e.value)
-                .toList()
-                .indexOf(apkUrl.value);
-            // ignore: use_build_context_synchronously
-            var downloadedArtifact = await appsProvider.downloadApp(
-              app,
-              globalNavigatorKey.currentContext,
-              notificationsProvider: notificationsProvider,
-            );
-            DownloadedApk? downloadedFile;
-            DownloadedDir? downloadedDir;
-            if (downloadedArtifact is DownloadedApk) {
-              downloadedFile = downloadedArtifact;
+            if (packageIdDetectionChoice ==
+                _PackageIdDetectionChoice.trackOnly) {
+              app.additionalSettings['trackOnly'] = true;
             } else {
-              downloadedDir = downloadedArtifact as DownloadedDir;
+              if (!context.mounted) return;
+              var apkUrl = await appsProvider.confirmAppFileUrl(
+                app,
+                context,
+                false,
+              );
+              if (apkUrl == null) {
+                throw ObtainiumError(tr('cancelled'));
+              }
+              app.preferredApkIndex = app.apkUrls
+                  .map((e) => e.value)
+                  .toList()
+                  .indexOf(apkUrl.value);
+              // ignore: use_build_context_synchronously
+              var downloadedArtifact = await appsProvider.downloadApp(
+                app,
+                globalNavigatorKey.currentContext,
+                notificationsProvider: notificationsProvider,
+              );
+              DownloadedApk? downloadedFile;
+              DownloadedDir? downloadedDir;
+              if (downloadedArtifact is DownloadedApk) {
+                downloadedFile = downloadedArtifact;
+              } else {
+                downloadedDir = downloadedArtifact as DownloadedDir;
+              }
+              app.id = downloadedFile?.appId ?? downloadedDir!.appId;
             }
-            app.id = downloadedFile?.appId ?? downloadedDir!.appId;
           }
           if (appsProvider.apps.containsKey(app.id)) {
             throw ObtainiumError(tr('appAlreadyAdded'));
@@ -406,6 +465,52 @@ class AddAppPageState extends State<AddAppPage> {
       }
     }
 
+    bool urlAddDisabled() =>
+        doingSomething ||
+        pickedSource == null ||
+        (pickedSource!.combinedAppSpecificSettingFormItems.isNotEmpty &&
+            !additionalSettingsValid);
+
+    VoidCallback? urlAddAction() {
+      if (urlAddDisabled()) return null;
+      return () {
+        HapticFeedback.selectionClick();
+        addApp();
+      };
+    }
+
+    Widget buildBottomActionFab() {
+      if (urlHasInput) {
+        return FloatingActionButton.extended(
+          key: const ValueKey<String>('add-app-save-fab'),
+          heroTag: 'add-app-save-fab',
+          onPressed: urlAddAction(),
+          icon: gettingAppInfo
+              ? ExpressiveLoadingIndicator(
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 24,
+                    height: 24,
+                  ),
+                )
+              : const Icon(Icons.save_rounded),
+          label: Text(tr('save')),
+        );
+      }
+      return FloatingActionButton.extended(
+        key: const ValueKey<String>('add-app-app-vault-fab'),
+        heroTag: 'add-app-app-vault-fab',
+        onPressed: () {
+          launchUrlString(
+            'https://apps.obtainium.imranr.dev/',
+            mode: LaunchMode.externalApplication,
+          );
+        },
+        icon: const Icon(Icons.apps_rounded),
+        label: Text(tr('aboutAppVault')),
+      );
+    }
+
     // ── URL mode widgets ───────────────────────────────────────────────
 
     void showSupportedSourcesDialog() {
@@ -417,7 +522,9 @@ class AddAppPageState extends State<AddAppPage> {
             title: tr('supportedSources'),
             items: const [],
             additionalWidgets: [
-              ...sourceProvider.sources.map(
+              ...sourceProvider.sources
+                  .where((e) => e.name != 'RockMods')
+                  .map(
                 (e) => Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   child: InkWell(
@@ -454,50 +561,8 @@ class AddAppPageState extends State<AddAppPage> {
     }
 
     Widget getUrlInputRow() {
-      final ColorScheme colorScheme = Theme.of(context).colorScheme;
       final bool showSupportedSourcesButton = userInput.trim().isEmpty;
-      final bool addDisabled =
-          doingSomething ||
-          pickedSource == null ||
-          (pickedSource!.combinedAppSpecificSettingFormItems.isNotEmpty &&
-              !additionalSettingsValid);
-      final Widget trailingControl = gettingAppInfo
-          ? SizedBox(
-              width: 48,
-              height: 48,
-              child: Center(
-                child: ExpressiveLoadingIndicator(
-                  color: colorScheme.primary,
-                  constraints: const BoxConstraints.tightFor(
-                    width: 24,
-                    height: 24,
-                  ),
-                ),
-              ),
-            )
-          : Material(
-              color: addDisabled
-                  ? colorScheme.primary.withValues(alpha: 0.38)
-                  : colorScheme.primary,
-              borderRadius: BorderRadius.circular(12),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: addDisabled
-                    ? null
-                    : () {
-                        HapticFeedback.selectionClick();
-                        addApp();
-                      },
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Icon(
-                    Icons.add,
-                    color: colorScheme.onPrimary,
-                    size: 22,
-                  ),
-                ),
-              ),
-            );
+      final bool addDisabled = urlAddDisabled();
       return Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -552,8 +617,6 @@ class AddAppPageState extends State<AddAppPage> {
                   ),
             ),
           ),
-          const SizedBox(width: 10),
-          trailingControl,
         ],
       );
     }
@@ -1201,91 +1264,86 @@ class AddAppPageState extends State<AddAppPage> {
 
     // ── Layout ─────────────────────────────────────────────────────────
 
+    final ColorScheme addScheme = Theme.of(context).colorScheme;
+
+    BoxDecoration buildAddAppGradientDecoration() {
+      return BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          stops: const [0, 0.38, 0.72, 1],
+          colors: [
+            addScheme.schemePageGradientTopColor,
+            addScheme.schemePageGradientMidColor,
+            addScheme.surface,
+            addScheme.surface,
+          ],
+        ),
+      );
+    }
+
+    Widget buildGradientBackground() {
+      return Positioned.fill(
+        child: DecoratedBox(decoration: buildAddAppGradientDecoration()),
+      );
+    }
+
     // Device mode uses a plain Column so the BulkAddWidget always gets a clean
     // bounded height via Expanded, with no outer CustomScrollView that could
     // steal scroll gestures or push content off-screen.
     if (_mode == _AddMode.fromDevice) {
-      final ColorScheme deviceScheme = Theme.of(context).colorScheme;
       return Scaffold(
-        backgroundColor: deviceScheme.surface,
-        appBar: AppBar(
-          title: Text(tr('addApp')),
-          automaticallyImplyLeading: false,
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          surfaceTintColor: Colors.transparent,
-          backgroundColor: deviceScheme.surface,
-        ),
-        body: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        backgroundColor: addScheme.surface,
+        body: Stack(
+          fit: StackFit.expand,
           children: [
-            buildModeSelector(),
-            Expanded(
-              child: BulkAddWidget(
-                key: _bulkWidgetKey,
-                onComplete: () => setState(() {
-                  _byUrlOpenedFromSearchPick = false;
-                  _mode = _AddMode.byUrl;
-                }),
-              ),
+            if (settingsProvider.useGradientBackground)
+              buildGradientBackground(),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(
+                  height: MediaQuery.paddingOf(context).top + kToolbarHeight,
+                  child: Padding(
+                    padding: EdgeInsetsDirectional.only(
+                      start: 20,
+                      top: MediaQuery.paddingOf(context).top,
+                      end: 20,
+                    ),
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        tr('addApp'),
+                        style: Theme.of(context).textTheme.titleLarge!.copyWith(
+                          color: addScheme.onSurface,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                buildModeSelector(),
+                Expanded(
+                  child: BulkAddWidget(
+                    key: _bulkWidgetKey,
+                    onComplete: () => setState(() {
+                      _byUrlOpenedFromSearchPick = false;
+                      _mode = _AddMode.byUrl;
+                    }),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
       );
     }
 
-    final ColorScheme addScheme = Theme.of(context).colorScheme;
     return Scaffold(
       backgroundColor: addScheme.surface,
-      floatingActionButtonAnimator: FloatingActionButtonAnimator.noAnimation,
-      floatingActionButton: TweenAnimationBuilder<double>(
-        tween: Tween<double>(end: showAppVaultFab ? 1 : 0),
-        duration: const Duration(milliseconds: 320),
-        curve: Curves.easeInOutCubicEmphasized,
-        builder: (context, animationValue, child) {
-          return IgnorePointer(
-            ignoring: !showAppVaultFab,
-            child: Opacity(opacity: animationValue, child: child),
-          );
-        },
-        child: Padding(
-          padding: EdgeInsets.only(
-            bottom: _mode == _AddMode.search ? bottomNavigationClearance : 0,
-          ),
-          child: FloatingActionButton.extended(
-            heroTag: 'add-app-app-vault-fab',
-            onPressed: () {
-              launchUrlString(
-                'https://apps.obtainium.imranr.dev/',
-                mode: LaunchMode.externalApplication,
-              );
-            },
-            icon: const Icon(Icons.apps_rounded),
-            label: Text(tr('aboutAppVault')),
-          ),
-        ),
-      ),
       body: Stack(
         fit: StackFit.expand,
         children: [
-          if (settingsProvider.useGradientBackground)
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    stops: const [0, 0.38, 0.72, 1],
-                    colors: [
-                      addScheme.schemePageGradientTopColor,
-                      addScheme.schemePageGradientMidColor,
-                      addScheme.surface,
-                      addScheme.surface,
-                    ],
-                  ),
-                ),
-              ),
-            ),
+          if (settingsProvider.useGradientBackground) buildGradientBackground(),
           CustomScrollView(
             key: const PageStorageKey<String>('add-app-tab-scroll'),
             cacheExtent: 1600,
@@ -1310,6 +1368,12 @@ class AddAppPageState extends State<AddAppPage> {
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
                   child: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 180),
+                    layoutBuilder: (currentChild, previousChildren) {
+                      return Stack(
+                        alignment: Alignment.topCenter,
+                        children: <Widget>[...previousChildren, ?currentChild],
+                      );
+                    },
                     child: KeyedSubtree(
                       key: ValueKey(_mode),
                       child: Column(
@@ -1366,13 +1430,40 @@ class AddAppPageState extends State<AddAppPage> {
               ),
               if (settingsProvider.progressiveBlurEnabled)
                 SliverToBoxAdapter(
-                  child: SizedBox(
-                    height:
-                        MediaQuery.paddingOf(context).bottom +
-                        bottomNavigationClearance,
-                  ),
+                  child: SizedBox(height: bottomChromeClearance),
                 ),
             ],
+          ),
+          Align(
+            alignment: Alignment.bottomRight,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                _fabHorizontalMargin,
+                0,
+                _fabHorizontalMargin,
+                appVaultFabBottomPadding,
+              ),
+              child: TweenAnimationBuilder<double>(
+                tween: Tween<double>(end: showBottomActionFab ? 1 : 0),
+                duration: const Duration(milliseconds: 320),
+                curve: Curves.easeInOutCubicEmphasized,
+                builder: (context, animationValue, child) {
+                  return IgnorePointer(
+                    ignoring: !showBottomActionFab,
+                    child: Opacity(opacity: animationValue, child: child),
+                  );
+                },
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 180),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) {
+                    return FadeTransition(opacity: animation, child: child);
+                  },
+                  child: buildBottomActionFab(),
+                ),
+              ),
+            ),
           ),
         ],
       ),

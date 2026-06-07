@@ -33,18 +33,6 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:markdown/markdown.dart' as md;
 
-String _formatBytes(int bytes) {
-  if (bytes >= 1024 * 1024 * 1024) {
-    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
-  } else if (bytes >= 1024 * 1024) {
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(0)} MB';
-  } else if (bytes >= 1024) {
-    return '${(bytes / 1024).toStringAsFixed(0)} KB';
-  } else {
-    return '$bytes B';
-  }
-}
-
 bool _isInstalledVersionPseudo(AppInMemory appInMemory) {
   final App appModel = appInMemory.app;
   final String? displayedInstalledVersion = appModel.installedVersion;
@@ -274,6 +262,7 @@ int appPageSettingsRebuildToken(SettingsProvider settings) {
     settings.showAppWebpage,
     settings.checkUpdateOnDetailPage,
     settings.highlightTouchTargets,
+    settings.cardCornerScale,
     settings.categories.hashCode,
   );
 }
@@ -733,7 +722,7 @@ class _AppPageState extends State<AppPage> {
       }
     }
 
-    await appsProvider.saveApps([updatedApp], onlyIfExists: true);
+    await appsProvider.saveApps([updatedApp], onlyIfExists: true, updateInstalledInfo: false);
     await appsProvider.updateAppIcon(updatedApp.id);
     if (mounted) {
       _clearEditIconStaging();
@@ -813,12 +802,91 @@ class _AppPageState extends State<AppPage> {
 
   void _showPageError(dynamic error, BuildContext hostContext) {
     if (!hostContext.mounted) return;
-    showError(error, hostContext, theme: _cachedPageTheme);
+    Provider.of<LogsProvider>(
+      hostContext,
+      listen: false,
+    ).add(error.toString(), level: LogLevels.error);
+    Provider.of<AppsProvider>(
+      hostContext,
+      listen: false,
+    ).setAppPageError(widget.appId, error);
   }
 
   void _showPageMessage(dynamic message, BuildContext hostContext) {
     if (!hostContext.mounted) return;
     showMessage(message, hostContext, theme: _cachedPageTheme);
+  }
+
+  Widget _buildPersistentPageError(
+    BuildContext ctx,
+    ThemeData pageTheme,
+    String? error,
+  ) {
+    if (error == null || error.isEmpty) return const SizedBox.shrink();
+
+    final BoxDecoration baseDecoration = appPageSectionCardDecoration(ctx);
+    final ColorScheme colorScheme = pageTheme.colorScheme;
+    final TextTheme textTheme = pageTheme.textTheme;
+    final Color errorFill = Color.alphaBlend(
+      colorScheme.error.withValues(alpha: 0.08),
+      baseDecoration.color ?? colorScheme.surfaceContainer,
+    );
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      decoration: baseDecoration.copyWith(
+        color: errorFill,
+        border: Border.all(
+          color: colorScheme.error.withValues(alpha: 0.42),
+          width: 1,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          spacing: 12,
+          children: [
+            Container(
+              height: 32,
+              width: 32,
+              decoration: BoxDecoration(
+                color: colorScheme.error.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.error_outline_rounded,
+                color: colorScheme.error,
+                size: 20,
+              ),
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    tr('errorCheckingUpdates'),
+                    style: textTheme.labelLarge?.copyWith(
+                      color: colorScheme.onSurface,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  SelectableText(
+                    error,
+                    style: textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<T?> _showPageDialog<T>({
@@ -1508,6 +1576,7 @@ class _AppPageState extends State<AppPage> {
         [updated],
         // No need to re-export to disk just because we filled in a size.
         autoExportAfterSave: false,
+        updateInstalledInfo: false,
       );
       _logApkMirrorSizeDebugFromAppPage(
         'lazy resolve persisted id=${widget.appId} size=$resolvedSize',
@@ -1530,6 +1599,7 @@ class _AppPageState extends State<AppPage> {
         updating = true;
       });
       await appsProvider.checkUpdate(id);
+      appsProvider.clearAppPageError(id);
       if (!mounted || widget.appId != id) return;
       // saveApps (called inside checkUpdate) replaces the in-memory icon with
       // null for non-installed apps.  Reset the one-shot flag so the rebuild
@@ -1665,6 +1735,9 @@ class _AppPageState extends State<AppPage> {
       (AppsProvider provider) =>
           appPageAppsRebuildToken(provider, widget.appId),
     );
+    final String? persistentPageError = context.select<AppsProvider, String?>(
+      (AppsProvider provider) => provider.appPageErrors[widget.appId],
+    );
 
     final AppsProvider appsProvider = Provider.of<AppsProvider>(
       context,
@@ -1723,7 +1796,14 @@ class _AppPageState extends State<AppPage> {
     if (useIconPageColors && iconBytes != null) {
       final String iconSchemeCacheKey =
           '${identityHashCode(iconBytes)}_${themeBrightness.name}';
-      if (_iconSchemeCacheKey != iconSchemeCacheKey &&
+      final ColorScheme? cachedScheme = getCachedColorScheme(
+        iconBytes,
+        themeBrightness,
+      );
+      if (cachedScheme != null) {
+        _iconDerivedColorScheme = cachedScheme;
+        _iconSchemeCacheKey = iconSchemeCacheKey;
+      } else if (_iconSchemeCacheKey != iconSchemeCacheKey &&
           _iconSchemeLoadingForKey != iconSchemeCacheKey &&
           _iconSchemeFailedCacheKey != iconSchemeCacheKey) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1796,7 +1876,7 @@ class _AppPageState extends State<AppPage> {
         }
         // Let the push transition start before network + notifyListeners churn.
         _detailPageAutoCheckDelayTimer = Timer(
-          const Duration(milliseconds: 320),
+          const Duration(milliseconds: 750),
           () => _startScheduledDetailPageAutoCheck(refreshAppId, appsProvider),
         );
       });
@@ -2138,7 +2218,7 @@ class _AppPageState extends State<AppPage> {
           appToSave
                   .additionalSettings['trackOnlyUndeterminedInstalledVersion'] =
               false;
-          await appsProvider.saveApps([appToSave]);
+          await appsProvider.saveApps([appToSave], updateInstalledInfo: false);
         } catch (err) {
           if (context.mounted) {
             _showPageError(err, context);
@@ -2235,6 +2315,8 @@ class _AppPageState extends State<AppPage> {
       // #1 — verdict stripe (A: trailing icon, B: card watermark).
       Widget? verdictStripe;
       Widget? verdictWatermark;
+      final double verdictStripeTopRadius = settingsProvider
+          .cardCornerRadiusFor(28);
       if (!undeterminedTrackOnlyInstalled) {
         Color? stripeColor;
         Color? stripeTextColor;
@@ -2278,15 +2360,13 @@ class _AppPageState extends State<AppPage> {
         }
         if (stripeLabel != null && verdictIcon != null) {
           // A — trailing icon in the stripe.
-          // Fix flush: use BoxDecoration with top-only borderRadius matching the
-          // card's 28px corners so the stripe fills the curved corner areas and
-          // no card-fill bleeds through at the top edges.
+          // Match the parent card's top corners so no card fill bleeds through.
           verdictStripe = Container(
             width: double.infinity,
             decoration: BoxDecoration(
               color: stripeColor,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(28),
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(verdictStripeTopRadius),
               ),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
@@ -3026,7 +3106,11 @@ class _AppPageState extends State<AppPage> {
                     updatedApp.additionalSettings.remove(
                       'skippedLatestVersion',
                     );
-                    appsProvider.saveApps([updatedApp]);
+                    appsProvider.saveApps(
+                      [updatedApp],
+                      attemptToCorrectInstallStatus: false,
+                      updateInstalledInfo: false,
+                    );
                   }
                   Navigator.of(context).pop();
                 },
@@ -3079,7 +3163,7 @@ class _AppPageState extends State<AppPage> {
         if (knownApkSizeBytes == null) {
           return base;
         }
-        return '$base · ${_formatBytes(knownApkSizeBytes)}';
+        return '$base · ${formatBytesForDisplay(knownApkSizeBytes)}';
       }
 
       final String updateLabel = sizeAnnotated(tr('update'));
@@ -3093,7 +3177,7 @@ class _AppPageState extends State<AppPage> {
         final bool isInstalling = dp < 0;
         final int? totalBytes = app.downloadTotalBytes;
         final String bytesLabel = !isInstalling && totalBytes != null
-            ? ' · ${_formatBytes((dp / 100 * totalBytes).round())} / ${_formatBytes(totalBytes)}'
+            ? ' · ${formatBytesForDisplay((dp / 100 * totalBytes).round())} / ${formatBytesForDisplay(totalBytes)}'
             : '';
         final String label = isInstalling
             ? '${tr('installing')}…'
@@ -3205,7 +3289,7 @@ class _AppPageState extends State<AppPage> {
             copy.additionalSettings['skippedLatestVersion'] =
                 copy.latestVersion;
           }
-          await appsProvider.saveApps([copy]);
+          await appsProvider.saveApps([copy], updateInstalledInfo: false);
           if (mounted) {
             setState(() {});
           }
@@ -3468,25 +3552,21 @@ class _AppPageState extends State<AppPage> {
                       onPressed: app?.downloadProgress != null || updating
                           ? null
                           : () async {
-                              await Navigator.push<void>(
-                                context,
-                                slideUpPageRoute(
-                                  (_) => AdditionalOptionsPage(
-                                    appId: widget.appId,
-                                    onAfterSave:
-                                        (
-                                          String savedAppId,
-                                          bool versionDetectionJustEnabled,
-                                        ) async {
-                                          await _runCheckUpdate(
-                                            savedAppId,
-                                            resetVersion:
-                                                versionDetectionJustEnabled,
-                                          );
-                                        },
-                                  ),
-                                ),
-                              );
+                              final bool? versionDetectionJustEnabled =
+                                  await Navigator.push<bool>(
+                                    context,
+                                    slideUpPageRoute(
+                                      (_) => AdditionalOptionsPage(
+                                        appId: widget.appId,
+                                      ),
+                                    ),
+                                  );
+                              if (versionDetectionJustEnabled != null) {
+                                await _runCheckUpdate(
+                                  widget.appId,
+                                  resetVersion: versionDetectionJustEnabled,
+                                );
+                              }
                             },
                       tooltip: tr('appOptions'),
                       icon: const Icon(Icons.tune),
@@ -3747,7 +3827,21 @@ class _AppPageState extends State<AppPage> {
               body: RefreshIndicator(
                 displacement: 20,
                 child: showAppWebpageFinal
-                    ? getAppWebView(themedPageContext)
+                    ? Stack(
+                        children: [
+                          Positioned.fill(
+                            child: getAppWebView(themedPageContext),
+                          ),
+                          SafeArea(
+                            bottom: false,
+                            child: _buildPersistentPageError(
+                              themedPageContext,
+                              pageThemeForPage,
+                              persistentPageError,
+                            ),
+                          ),
+                        ],
+                      )
                     : CustomScrollView(
                         controller: _appPageScrollController,
                         cacheExtent: 1600,
@@ -3810,11 +3904,17 @@ class _AppPageState extends State<AppPage> {
                                         appsProvider,
                                         settingsProvider,
                                       )
-                                    else
+                                    else ...[
+                                      _buildPersistentPageError(
+                                        themedPageContext,
+                                        pageThemeForPage,
+                                        persistentPageError,
+                                      ),
                                       getInfoColumn(
                                         themedPageContext,
                                         small: false,
                                       ),
+                                    ],
                                     Padding(
                                       padding: const EdgeInsets.fromLTRB(
                                         16,

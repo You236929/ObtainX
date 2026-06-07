@@ -51,9 +51,17 @@ Future<bool> persistAdditionalOptionsForm({
     }
   }
 
+  final bool versionDetectionPreviouslyActive =
+      originalSettings['versionDetection'] == true ||
+      !originalSettings.containsKey('versionDetection');
+  final bool versionDetectionCurrentlyActive =
+      app.additionalSettings['versionDetection'] == true;
+
   final bool versionDetectionEnabled =
-      app.additionalSettings['versionDetection'] == true &&
-      originalSettings['versionDetection'] != true;
+      versionDetectionCurrentlyActive && !versionDetectionPreviouslyActive;
+  final bool versionDetectionDisabled =
+      !versionDetectionCurrentlyActive && versionDetectionPreviouslyActive;
+
   final bool releaseDateVersionEnabled =
       app.additionalSettings['releaseDateAsVersion'] == true &&
       originalSettings['releaseDateAsVersion'] != true;
@@ -80,25 +88,27 @@ Future<bool> persistAdditionalOptionsForm({
           versionStringSourceDefault;
       syncVersionStringSourceSettings(app.additionalSettings);
     }
+  } else if (versionDetectionDisabled && app.installedVersion != null) {
+    final String? realInstalledVersion =
+        app.additionalSettings['useVersionCodeAsOSVersion'] == true
+            ? appInMem.installedInfo?.versionCode.toString()
+            : appInMem.installedInfo?.versionName;
+    if (realInstalledVersion != null) {
+      if (reconcileVersionDifferences(realInstalledVersion, app.latestVersion)?.key != true) {
+        app.installedVersion = app.latestVersion;
+      }
+    }
   }
 
-  await appsProvider.saveApps([app]);
+  await appsProvider.saveApps([app], updateInstalledInfo: false);
   return versionDetectionEnabled;
 }
 
 /// Full-screen editor for per-app additional options (keyboard-friendly).
 class AdditionalOptionsPage extends StatefulWidget {
-  const AdditionalOptionsPage({
-    super.key,
-    required this.appId,
-    this.onAfterSave,
-  });
+  const AdditionalOptionsPage({super.key, required this.appId});
 
   final String appId;
-
-  /// Optional follow-up after a successful save (e.g. metadata refresh on [AppPage]).
-  final Future<void> Function(String appId, bool versionDetectionJustEnabled)?
-  onAfterSave;
 
   @override
   State<AdditionalOptionsPage> createState() => _AdditionalOptionsPageState();
@@ -230,7 +240,7 @@ class _AdditionalOptionsPageState extends State<AdditionalOptionsPage> {
   }
 
   Future<void> _onSave() async {
-    if (!_valid || _saving) return;
+    if (!_valid || _saving || !_isDirty()) return;
     setState(() {
       _saving = true;
     });
@@ -243,10 +253,7 @@ class _AdditionalOptionsPageState extends State<AdditionalOptionsPage> {
         formValues: _values,
       );
       if (!mounted) return;
-      if (widget.onAfterSave != null) {
-        await widget.onAfterSave!(widget.appId, versionDetectionEnabled);
-      }
-      if (mounted) Navigator.of(context).pop();
+      Navigator.of(context).pop(versionDetectionEnabled);
     } catch (err) {
       if (mounted) showError(err, context);
     } finally {
@@ -266,11 +273,35 @@ class _AdditionalOptionsPageState extends State<AdditionalOptionsPage> {
       return false;
     }
     for (final MapEntry<String, dynamic> entry in current.entries) {
-      if (baseline[entry.key] != entry.value) {
+      if (!_formValueEquals(baseline[entry.key], entry.value)) {
         return false;
       }
     }
     return true;
+  }
+
+  bool _formValueEquals(dynamic left, dynamic right) {
+    if (identical(left, right)) return true;
+    if (left is MapEntry && right is MapEntry) {
+      return _formValueEquals(left.key, right.key) &&
+          _formValueEquals(left.value, right.value);
+    }
+    if (left is Map && right is Map) {
+      if (left.length != right.length) return false;
+      for (final dynamic key in left.keys) {
+        if (!right.containsKey(key)) return false;
+        if (!_formValueEquals(left[key], right[key])) return false;
+      }
+      return true;
+    }
+    if (left is List && right is List) {
+      if (left.length != right.length) return false;
+      for (int index = 0; index < left.length; index++) {
+        if (!_formValueEquals(left[index], right[index])) return false;
+      }
+      return true;
+    }
+    return left == right;
   }
 
   bool _isDirty() {
@@ -387,7 +418,14 @@ class _AdditionalOptionsPageState extends State<AdditionalOptionsPage> {
     if (useIconPageColors && iconBytes != null) {
       final String iconSchemeCacheKey =
           '${identityHashCode(iconBytes)}_${themeBrightness.name}';
-      if (_iconSchemeCacheKey != iconSchemeCacheKey &&
+      final ColorScheme? cachedScheme = getCachedColorScheme(
+        iconBytes,
+        themeBrightness,
+      );
+      if (cachedScheme != null) {
+        _iconDerivedColorScheme = cachedScheme;
+        _iconSchemeCacheKey = iconSchemeCacheKey;
+      } else if (_iconSchemeCacheKey != iconSchemeCacheKey &&
           _iconSchemeLoadingForKey != iconSchemeCacheKey &&
           _iconSchemeFailedCacheKey != iconSchemeCacheKey) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -451,6 +489,15 @@ class _AdditionalOptionsPageState extends State<AdditionalOptionsPage> {
     }
 
     final double fabBottomPadding = MediaQuery.of(context).padding.bottom + 16;
+    final bool canSave = _valid && !_saving && _isDirty();
+    final ColorScheme colorScheme = pageThemeForPage.colorScheme;
+    final Color disabledSaveFabColor =
+        Color.lerp(
+          colorScheme.surfaceContainerHighest,
+          colorScheme.onSurface,
+          Theme.of(context).brightness == Brightness.dark ? 0.18 : 0.08,
+        ) ??
+        colorScheme.surfaceContainerHighest;
 
     return Theme(
       data: pageThemeForPage,
@@ -486,14 +533,23 @@ class _AdditionalOptionsPageState extends State<AdditionalOptionsPage> {
                 FloatingActionButton(
                   heroTag: 'additional_options_save',
                   tooltip: tr('continue'),
-                  onPressed: (!_valid || _saving) ? null : _onSave,
+                  backgroundColor: canSave ? null : disabledSaveFabColor,
+                  foregroundColor: canSave
+                      ? null
+                      : colorScheme.onSurface.withValues(alpha: 0.48),
+                  elevation: canSave ? null : 0,
+                  onPressed: canSave ? _onSave : null,
                   child: _saving
-                      ? ExpressiveLoadingIndicator(
-                          color: pageThemeForPage.colorScheme.onPrimary,
-                          constraints: const BoxConstraints.tightFor(
-                            width: 26,
-                            height: 26,
-                          ),
+                      ? Builder(
+                          builder: (indicatorContext) {
+                            return ExpressiveLoadingIndicator(
+                              color: IconTheme.of(indicatorContext).color,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 26,
+                                height: 26,
+                              ),
+                            );
+                          },
                         )
                       : const Icon(Icons.check),
                 ),
