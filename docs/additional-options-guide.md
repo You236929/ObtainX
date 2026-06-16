@@ -107,6 +107,7 @@ The following appear **only** (or mainly) for apps using that kind of source. Wo
 | **Filter release titles by regular expression** | Only releases whose **title** matches are considered. Tap the helper button — it lists actual release titles from this repo and generates the regex from whichever you pick. | Titles include `v2.0 (stable)` and `v2.1-beta`; tap helper → select the stable title → Apply. |
 | **Filter release notes by regular expression** | Same, but scans **release notes / body**. | Notes must contain **`[playstore]`** to count as a consumer build. |
 | **Verify the ‘latest’ tag** | Uses GitHub’s **`/latest`** API so the “latest” release is not missed when list order is odd. | Repo maintains **`latest`** correctly but API list order is not chronological. |
+| **GitHub Build Verification** | Checks GitHub release asset attestations for the selected APK. **Off** makes no checks, **Audit Only** shows version result, and **Enforce** blocks installs of unverified apps. See [Build verification in ObtainX](build-verification-guide.md). | You want GitHub APK updates to show whether the exact file has GitHub build proof before you install it. |
 | **Sort method** | How releases are **ordered** before ObtainX walks them (date, smart name parsing, raw name, API order, or hybrid). | Many assets share similar names; **Release date** picks strictly by publish time. |
 | **Use latest asset upload as release date** | Uses **newest file upload time** on the release as the date (not only publish time). | Maintainer **re-uploads** a fixed asset; upload time reflects the real change. |
 | **Use release title as version string** | The **release title** becomes the version string ObtainX shows and compares. | Tag is `build-4902` but title is **`2.4.0 – hotfix`**; you want `2.4.0` visible. |
@@ -148,6 +149,7 @@ The following appear **only** (or mainly) for apps using that kind of source. Wo
 | **Filter versions by regular expression** | Only **indexed versions** matching the pattern are considered. | Repo lists **`1.0`, `1.1-beta`, `1.2`**; regex `^\d+\.\d+$` skips the beta label if you write the pattern that way. |
 | **Try selecting suggested versionCode APK** | Prefer the APK F-Droid **marks** as suggested for common devices when metadata exists. | F-Droid shows a **recommended** variant for your ABI. |
 | **Auto-select highest versionCode APK** | Among candidates, pick the **highest versionCode**. | Same version label but **split APKs** with different codes; highest wins. |
+| **Enforce build verification** | Blocks installs unless ObtainX can verify the build using F-Droid reproducible build data. See [Build verification in ObtainX](build-verification-guide.md). | You only want updates that F-Droid marks as a verified reproducible build. |
 
 ### F-Droid third-party repo
 
@@ -156,6 +158,7 @@ The following appear **only** (or mainly) for apps using that kind of source. Wo
 | **App ID or name** | Tells ObtainX **which app** in a multi-app repo you mean when the URL alone is ambiguous. | Repo URL is `https://fdroid.example.org/repo` and hosts **50 apps**; you enter **`org.myapp`**. |
 | **Auto-select highest versionCode APK** | Same as official F-Droid when several APKs exist. | *(See F-Droid example above.)* |
 | **Try selecting suggested versionCode APK** | Same as official F-Droid. | *(See F-Droid example above.)* |
+| **Enforce build verification** | Blocks installs unless ObtainX can verify the build using reproducible build metadata from the repo or source-specific verification data. See [Build verification in ObtainX](build-verification-guide.md). | You track an IzzyOnDroid or third-party F-Droid app and want ObtainX to reject updates without verified build proof. |
 
 ### APKMirror
 

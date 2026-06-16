@@ -9,6 +9,73 @@ import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/providers/source_provider.dart';
 import 'package:obtainium/services/html_parse_isolate.dart';
 
+String? _yamlScalarValue(Iterable<String> lines, String key) {
+  final String prefix = '$key:';
+  for (final String line in lines) {
+    final String trimmed = line.trim();
+    if (!trimmed.startsWith(prefix)) {
+      continue;
+    }
+    return _stripYamlScalarQuotes(trimmed.substring(prefix.length).trim());
+  }
+  return null;
+}
+
+String _stripYamlScalarQuotes(String value) {
+  if (value.length >= 2 &&
+      ((value.startsWith('"') && value.endsWith('"')) ||
+          (value.startsWith("'") && value.endsWith("'")))) {
+    return value.substring(1, value.length - 1);
+  }
+  return value;
+}
+
+String? _fdroidDisplayString(Object? rawValue) {
+  if (rawValue is String) {
+    final String trimmed = rawValue.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+  if (rawValue is Map) {
+    for (final String localeKey in const <String>['en-US', 'en']) {
+      final String? localized = _fdroidDisplayString(rawValue[localeKey]);
+      if (localized != null) {
+        return localized;
+      }
+    }
+    for (final Object? value in rawValue.values) {
+      final String? localized = _fdroidDisplayString(value);
+      if (localized != null) {
+        return localized;
+      }
+    }
+  }
+  return null;
+}
+
+String? _fdroidDisplayNameFromHtml(String html) {
+  for (final RegExp pattern in <RegExp>[
+    RegExp(
+      r'''<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']''',
+      caseSensitive: false,
+    ),
+    RegExp(
+      r'<title[^>]*>([^<]+)</title>',
+      caseSensitive: false,
+      multiLine: true,
+    ),
+  ]) {
+    final RegExpMatch? match = pattern.firstMatch(html);
+    final String? title = match?.group(1)?.trim();
+    if (title?.isNotEmpty == true) {
+      final String displayName = title!.split('|').first.trim();
+      if (displayName.isNotEmpty) {
+        return displayName;
+      }
+    }
+  }
+  return null;
+}
+
 class FDroid extends AppSource {
   FDroid() {
     hosts = ['f-droid.org'];
@@ -39,6 +106,14 @@ class FDroid extends AppSource {
         GeneratedFormSwitch(
           'autoSelectHighestVersionCode',
           label: tr('autoSelectHighestVersionCode'),
+        ),
+      ],
+      [
+        GeneratedFormSwitch(
+          'enforceReproducibleBuilds',
+          label: tr('enforceReproducibleBuilds'),
+          labelTooltip: tr('reproducibleBuildsTooltip'),
+          defaultValue: false,
         ),
       ],
     ];
@@ -91,53 +166,80 @@ class FDroid extends AppSource {
       name,
       additionalSettings: additionalSettings,
     );
-    if (!hostChanged) {
+    final bool canUseOfficialMetadata =
+        !hostChanged ||
+        hostIdenticalDespiteAnyChange ||
+        host == 'f-droid.org' ||
+        host == 'www.f-droid.org';
+    if (canUseOfficialMetadata) {
       try {
         var res = await sourceRequest(
           'https://gitlab.com/fdroid/fdroiddata/-/raw/master/metadata/$appId.yml',
           additionalSettings,
         );
-        var lines = res.body.split('\n');
-        var authorLines = lines.where((l) => l.startsWith('AuthorName: '));
-        if (authorLines.isNotEmpty) {
-          details.names.author = authorLines.first
-              .split(': ')
-              .sublist(1)
-              .join(': ');
+        if (res.statusCode != 200 &&
+            details.reproducibleStatus != reproducibleBuildStatusVerified) {
+          details.reproducibleStatus = reproducibleBuildStatusError;
+          details.isReproducible = null;
         }
-        var changelogUrls = lines
-            .where((l) => l.startsWith('Changelog: '))
-            .map((e) => e.split(' ').sublist(1).join(' '));
-        if (changelogUrls.isNotEmpty) {
-          details.changeLog = changelogUrls.first;
-          bool isGitHub = false;
-          bool isGitLab = false;
-          try {
-            GitHub(
-              hostChanged: true,
-            ).sourceSpecificStandardizeURL(details.changeLog!);
-            isGitHub = true;
-          } catch (e) {
-            //
+        if (res.statusCode == 200) {
+          var lines = res.body.split('\n');
+          final String? authorName = _yamlScalarValue(lines, 'AuthorName');
+          if (authorName?.isNotEmpty == true) {
+            details.names.author = authorName!;
           }
-          try {
-            GitLab(
-              hostChanged: true,
-            ).sourceSpecificStandardizeURL(details.changeLog!);
-            isGitLab = true;
-          } catch (e) {
-            //
+
+          final String? displayName =
+              _yamlScalarValue(lines, 'Name') ??
+              _yamlScalarValue(lines, 'AutoName');
+          if (displayName?.isNotEmpty == true) {
+            details.names.name = displayName!;
           }
-          if ((isGitHub || isGitLab) &&
-              (details.changeLog?.indexOf('/blob/') ?? -1) >= 0) {
-            details.changeLog = (await sourceRequest(
-              details.changeLog!.replaceFirst('/blob/', '/raw/'),
-              additionalSettings,
-            )).body;
+
+          final bool hasBinaries =
+              _yamlScalarValue(lines, 'Binaries')?.isNotEmpty == true;
+          details.reproducibleStatus = hasBinaries
+              ? reproducibleBuildStatusVerified
+              : reproducibleBuildStatusNoData;
+          details.isReproducible = reproducibleBuildBoolFromStatus(
+            details.reproducibleStatus,
+          );
+
+          final String? changelogUrl = _yamlScalarValue(lines, 'Changelog');
+          if (changelogUrl?.isNotEmpty == true) {
+            details.changeLog = changelogUrl!;
+            bool isGitHub = false;
+            bool isGitLab = false;
+            try {
+              GitHub(
+                hostChanged: true,
+              ).sourceSpecificStandardizeURL(details.changeLog!);
+              isGitHub = true;
+            } catch (e) {
+              //
+            }
+            try {
+              GitLab(
+                hostChanged: true,
+              ).sourceSpecificStandardizeURL(details.changeLog!);
+              isGitLab = true;
+            } catch (e) {
+              //
+            }
+            if ((isGitHub || isGitLab) &&
+                (details.changeLog?.indexOf('/blob/') ?? -1) >= 0) {
+              details.changeLog = (await sourceRequest(
+                details.changeLog!.replaceFirst('/blob/', '/raw/'),
+                additionalSettings,
+              )).body;
+            }
           }
         }
       } catch (e) {
-        // Fail silently
+        if (details.reproducibleStatus != reproducibleBuildStatusVerified) {
+          details.reproducibleStatus = reproducibleBuildStatusError;
+          details.isReproducible = null;
+        }
       }
       if ((details.changeLog?.length ?? 0) > 2048) {
         details.changeLog = '${details.changeLog!.substring(0, 2048)}...';
@@ -324,51 +426,94 @@ class FDroid extends AppSource {
         }
       }
       String? iconUrl;
-      final String packageLabel = () {
-        final Object? rawPackageName = response['packageName'];
-        if (rawPackageName is String) {
-          final String trimmedPackageName = rawPackageName.trim();
-          if (trimmedPackageName.isNotEmpty) {
-            return trimmedPackageName;
-          }
-        }
+      final String packageLabel;
+      final Object? rawPackageName = response['packageName'];
+      if (rawPackageName is String && rawPackageName.trim().isNotEmpty) {
+        packageLabel = rawPackageName.trim();
+      } else {
         final String? queryAppId = Uri.parse(
           standardUrl,
         ).queryParameters['appId']?.trim();
         if (queryAppId != null && queryAppId.isNotEmpty) {
-          return queryAppId;
+          packageLabel = queryAppId;
+        } else {
+          packageLabel = Uri.parse(standardUrl).pathSegments.last;
         }
-        return Uri.parse(standardUrl).pathSegments.last;
-      }();
-      if (!hostChanged) {
+      }
+      String appName = _fdroidDisplayString(response['name']) ?? packageLabel;
+      final String pageHost = Uri.parse(standardUrl).host;
+      final bool canUseOfficialPackagePage =
+          !hostChanged ||
+          hostIdenticalDespiteAnyChange ||
+          pageHost == 'f-droid.org' ||
+          pageHost == 'www.f-droid.org';
+      if (canUseOfficialPackagePage) {
         try {
           final pkgName = packageLabel;
-          final pageHost = Uri.parse(standardUrl).host;
           if (pageHost == 'f-droid.org' || pageHost == 'www.f-droid.org') {
             final pageRes = await sourceRequest(
               'https://$pageHost/packages/$pkgName/',
               additionalSettings,
             );
             if (pageRes.statusCode == 200) {
+              final String? htmlTitleName = _fdroidDisplayNameFromHtml(
+                pageRes.body,
+              );
+              if (htmlTitleName?.isNotEmpty == true) {
+                appName = htmlTitleName!;
+              }
               final doc = await parseHtmlOffIsolate(pageRes.body);
               iconUrl =
                   doc
                       .querySelector('meta[property="og:image"]')
                       ?.attributes['content'] ??
                   doc.querySelector('img.package-icon')?.attributes['src'];
+              final String? parsedName =
+                  doc.querySelector('h1.package-name')?.text.trim() ??
+                  doc.querySelector('h3.package-name')?.text.trim() ??
+                  doc.querySelector('.package-title h1')?.text.trim() ??
+                  doc.querySelector('.package-title h3')?.text.trim();
+              if (parsedName != null && parsedName.isNotEmpty) {
+                appName = parsedName;
+              } else if (htmlTitleName?.isNotEmpty != true) {
+                final String? titleText =
+                    doc
+                        .querySelector('meta[property="og:title"]')
+                        ?.attributes['content']
+                        ?.trim() ??
+                    doc.querySelector('title')?.text.trim();
+                if (titleText != null && titleText.isNotEmpty) {
+                  final parts = titleText.split('|');
+                  if (parts.isNotEmpty) {
+                    final String nameFromTitle = parts.first.trim();
+                    if (nameFromTitle.isNotEmpty) {
+                      appName = nameFromTitle;
+                    }
+                  }
+                }
+              }
             }
           }
         } catch (e) {
           // Icon is optional
         }
       }
+      final bool hasBinaries =
+          response['binaries'] != null ||
+          (releaseChoices.isNotEmpty &&
+              releaseChoices.first['binaries'] != null);
+      final String reproducibleStatus = hasBinaries
+          ? reproducibleBuildStatusVerified
+          : reproducibleBuildStatusNoData;
       return APKDetails(
         version,
         getApkUrlsFromUrls(uniqueApkUrls),
-        AppNames(sourceName, packageLabel),
+        AppNames(sourceName, appName),
         iconUrl: iconUrl,
         rawReleaseTitleCandidates: rawVersionNameCandidates,
         apkSizeBytes: apkSizeBytes,
+        isReproducible: reproducibleBuildBoolFromStatus(reproducibleStatus),
+        reproducibleStatus: reproducibleStatus,
       );
     } else {
       throw getObtainiumHttpError(res);

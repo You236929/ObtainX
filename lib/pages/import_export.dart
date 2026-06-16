@@ -1,11 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:easy_localization/easy_localization.dart';
+import 'package:easy_localization/easy_localization.dart' hide TextDirection;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:progress_indicator_m3e/progress_indicator_m3e.dart';
 import 'package:obtainium/app_sources/fdroidrepo.dart';
+import 'package:obtainium/components/app_dropdown_field.dart';
 import 'package:obtainium/components/custom_app_bar.dart';
 import 'package:obtainium/components/generated_form.dart';
 import 'package:obtainium/components/generated_form_modal.dart';
@@ -900,58 +901,65 @@ class _ImportExportPageState extends State<ImportExportPage> {
                             ),
                             Padding(
                               padding: importPageCardRowPadding,
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Padding(
-                                    padding: const EdgeInsets.only(
-                                      right: importPageCardRowItemGap,
-                                    ),
-                                    child: Text(
-                                      tr('importExportIncludeInBackup'),
-                                    ),
+                              child: (() {
+                                final List<String> labels = [
+                                  tr('importExportBackupScopeOnlyApps'),
+                                  tr(
+                                    'importExportBackupScopeAppsSettingsNoSecrets',
                                   ),
-                                  Expanded(
-                                    child: m3eCompactDropdownScope(
-                                      context: context,
-                                      child: DropdownMenu<int>(
-                                        key: ValueKey(
-                                          settingsProvider.exportSettings,
-                                        ),
-                                        initialSelection:
-                                            settingsProvider.exportSettings,
-                                        expandedInsets: EdgeInsets.zero,
-                                        onSelected: (int? selected) {
-                                          if (selected != null) {
-                                            settingsProvider.exportSettings =
-                                                selected;
-                                          }
-                                        },
-                                        dropdownMenuEntries: [
-                                          DropdownMenuEntry<int>(
-                                            value: 0,
-                                            label: tr(
-                                              'importExportBackupScopeOnlyApps',
-                                            ),
-                                          ),
-                                          DropdownMenuEntry<int>(
-                                            value: 1,
-                                            label: tr(
-                                              'importExportBackupScopeAppsSettingsNoSecrets',
-                                            ),
-                                          ),
-                                          DropdownMenuEntry<int>(
-                                            value: 2,
-                                            label: tr(
-                                              'importExportBackupScopeAllAppsAndSettings',
-                                            ),
-                                          ),
-                                        ],
+                                  tr(
+                                    'importExportBackupScopeAllAppsAndSettings',
+                                  ),
+                                ];
+                                return appDropdownField<int>(
+                                  key: ValueKey(
+                                    settingsProvider.exportSettings,
+                                  ),
+                                  context: context,
+                                  value: settingsProvider.exportSettings,
+                                  labelText: tr('importExportIncludeInBackup'),
+                                  menuWidth: appDropdownMenuWidth(
+                                    context,
+                                    labels,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyLarge,
+                                    horizontalPadding: 96,
+                                    minWidth: 150,
+                                    maxWidthInset: 120,
+                                  ),
+                                  items: [
+                                    DropdownMenuItem<int>(
+                                      value: 0,
+                                      child: Text(
+                                        tr('importExportBackupScopeOnlyApps'),
                                       ),
                                     ),
-                                  ),
-                                ],
-                              ),
+                                    DropdownMenuItem<int>(
+                                      value: 1,
+                                      child: Text(
+                                        tr(
+                                          'importExportBackupScopeAppsSettingsNoSecrets',
+                                        ),
+                                      ),
+                                    ),
+                                    DropdownMenuItem<int>(
+                                      value: 2,
+                                      child: Text(
+                                        tr(
+                                          'importExportBackupScopeAllAppsAndSettings',
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  onChanged: (int? selected) {
+                                    if (selected != null) {
+                                      settingsProvider.exportSettings =
+                                          selected;
+                                    }
+                                  },
+                                );
+                              })(),
                             ),
                             SwitchListTile(
                               visualDensity: VisualDensity.compact,

@@ -194,6 +194,13 @@ class BulkImportService {
       }
       // Fallback: caller skipped getInstalledApps (e.g. icon refresh after
       // an external uninstall/reinstall). Pay the round-trip once.
+      final List<PackageInfo> installed = await _pm.getInstalledPackages(
+        flags: PackageInfoFlags({}),
+      ) ?? [];
+      final bool isInstalled = installed.any((p) => p.packageName == packageName);
+      if (!isInstalled) {
+        return null;
+      }
       final info = await _pm.getPackageInfo(
         packageName: packageName,
         flags: PackageInfoFlags({}),

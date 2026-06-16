@@ -2,7 +2,7 @@ import 'dart:async' show Timer, unawaited;
 import 'dart:convert';
 
 import 'package:animations/animations.dart';
-import 'package:easy_localization/easy_localization.dart';
+import 'package:easy_localization/easy_localization.dart' hide TextDirection;
 import 'package:expressive_refresh/expressive_refresh.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -4060,29 +4060,63 @@ class AppsPageState extends State<AppsPage> {
                         // ── Source dropdown ───────────────────────────────────
                         Padding(
                           padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
-                          child: DropdownButtonFormField<String>(
-                            key: ValueKey(filter.sourceFilter),
-                            decoration: InputDecoration(
-                              labelText: tr('appSource'),
-                              isDense: true,
-                              border: const OutlineInputBorder(),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 10,
-                              ),
-                            ),
-                            initialValue: filter.sourceFilter,
-                            items: sourceItems
-                                .map(
-                                  (e) => DropdownMenuItem(
-                                    value: e.key,
-                                    child: Text(e.value),
+                          child: (() {
+                            double maxW = 0.0;
+                            final TextStyle? style = Theme.of(context).textTheme.bodyLarge;
+                            for (final sourceItem in sourceItems) {
+                              final String text = sourceItem.value;
+                              final textPainter = TextPainter(
+                                text: TextSpan(text: text, style: style),
+                                textDirection: TextDirection.ltr,
+                              )..layout();
+                              if (textPainter.width > maxW) {
+                                maxW = textPainter.width;
+                              }
+                            }
+                            final double calculatedMenuWidth = (maxW + 64.0).clamp(120.0, MediaQuery.of(context).size.width - 88.0);
+                            return FormField<String>(
+                              key: ValueKey(filter.sourceFilter),
+                              initialValue: filter.sourceFilter,
+                              builder: (FormFieldState<String> fieldState) {
+                                final InputDecoration decoration = InputDecoration(
+                                  labelText: tr('appSource'),
+                                  isDense: true,
+                                  border: const OutlineInputBorder(),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 10,
                                   ),
-                                )
-                                .toList(),
-                            onChanged: (v) =>
-                                update(() => filter.sourceFilter = v ?? ''),
-                          ),
+                                ).copyWith(errorText: fieldState.errorText);
+                                return ButtonTheme(
+                                  alignedDropdown: true,
+                                  child: InputDecorator(
+                                    decoration: decoration,
+                                    isEmpty: fieldState.value == null,
+                                    child: DropdownButtonHideUnderline(
+                                      child: DropdownButton<String>(
+                                        value: fieldState.value,
+                                        isExpanded: true,
+                                        isDense: true,
+                                        menuWidth: calculatedMenuWidth,
+                                        items: sourceItems
+                                            .map(
+                                              (sourceItem) => DropdownMenuItem(
+                                                value: sourceItem.key,
+                                                child: Text(sourceItem.value),
+                                              ),
+                                            )
+                                            .toList(),
+                                        onChanged: (newValue) {
+                                          fieldState.didChange(newValue);
+                                          update(() => filter.sourceFilter = newValue ?? '');
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            );
+                          })(),
                         ),
 
                         // ── Category selector ─────────────────────────────────

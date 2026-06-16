@@ -19,6 +19,17 @@ String stripLetterOnlySegmentsFromVersionRaw(String raw) {
   return kept.join('.');
 }
 
+/// Escapes [s] for regex, then wildcards digit runs that are NOT directly
+/// adjacent to an ASCII letter — so version numbers like `19.35.34` become
+/// `[0-9]+\.[0-9]+\.[0-9]+`, but identifier-embedded digits like the `64` in
+/// `arm64` or the `8` in `v8a` stay literal.
+String _regexEscapeWithVersionWildcards(String s) {
+  return RegExp.escape(s).replaceAllMapped(
+    RegExp(r'(?<![a-zA-Z])[0-9]+(?![a-zA-Z])'),
+    (_) => '[0-9]+',
+  );
+}
+
 /// One dot-separated segment: ASCII digit runs separated by hyphens (e.g. `12`, `8-27`).
 bool _segmentIsDigitsAndHyphensOnly(String segment) {
   if (segment.isEmpty) {
@@ -180,7 +191,7 @@ Map<String, String>? tryBuildRegexForExtractedVersion({
     }
   }
 
-  final String escaped = RegExp.escape(trimmedDesired);
+  final String escaped = _regexEscapeWithVersionWildcards(trimmedDesired);
   final List<String> patterns = <String>['($escaped)', '.*($escaped)'];
   for (final String pattern in patterns) {
     try {
@@ -231,7 +242,7 @@ String? tryBuildFilterRegExFromSelection({
     }
   }
 
-  final String escaped = RegExp.escape(trimmedDesired);
+  final String escaped = _regexEscapeWithVersionWildcards(trimmedDesired);
   for (final String pattern in <String>[
     escaped,
     '.*$escaped',

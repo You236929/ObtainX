@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io' show HttpHeaders;
 
 import 'package:easy_localization/easy_localization.dart';
@@ -6,11 +7,14 @@ import 'package:obtainium/app_sources/fdroid.dart';
 import 'package:obtainium/app_sources/fdroidrepo.dart';
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/providers/source_provider.dart';
+import 'package:obtainium/services/html_parse_isolate.dart';
 
 class IzzyOnDroid extends AppSource {
   late FDroid fd;
 
   static const String _officialRepoUrl = 'https://apt.izzysoft.de/fdroid/repo';
+  static const String _rbtLogUrl =
+      'https://apt.izzysoft.de/fdroid/rbtlogs/izzy.json';
 
   /// Canonical user-facing URL for one app (matches Izzy web index APK pages).
   static const String _izzyIndexApkBase =
@@ -24,6 +28,137 @@ class IzzyOnDroid extends AppSource {
     additionalSourceAppSpecificSettingFormItems =
         fd.additionalSourceAppSpecificSettingFormItems;
     allowSubDomains = true;
+  }
+
+  static Map<String, dynamic>? _rbtLogByApkHash;
+
+  Future<Map<String, dynamic>> _loadRbtLog(
+    Map<String, dynamic> additionalSettings,
+  ) async {
+    final Map<String, dynamic>? cached = _rbtLogByApkHash;
+    if (cached != null) {
+      return cached;
+    }
+    final Response response = await sourceRequest(
+      _rbtLogUrl,
+      additionalSettings,
+    );
+    if (response.statusCode != 200) {
+      throw getObtainiumHttpError(response);
+    }
+    final Object decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      return <String, dynamic>{};
+    }
+    _rbtLogByApkHash = decoded;
+    return decoded;
+  }
+
+  bool _rbtLogEntryMatchesRelease(
+    Object? rawEntry,
+    String appId,
+    int versionCode,
+  ) {
+    if (rawEntry is! Map) {
+      return false;
+    }
+    final Map<String, dynamic> entry = Map<String, dynamic>.from(rawEntry);
+    return entry['appid'] == appId &&
+        entry['version_code']?.toString() == versionCode.toString();
+  }
+
+  String _rbtLogEntryReproducibleStatus(Object? rawEntry) {
+    if (rawEntry is! Map) {
+      return reproducibleBuildStatusNoData;
+    }
+    final Object? reproducible = Map<String, dynamic>.from(
+      rawEntry,
+    )['reproducible'];
+    if (reproducible == true) {
+      return reproducibleBuildStatusVerified;
+    }
+    if (reproducible == false) {
+      return reproducibleBuildStatusNotReproducible;
+    }
+    return reproducibleBuildStatusNoData;
+  }
+
+  String? _absoluteIzzyAppPageUrl(String appPageUrl, String? maybeRelativeUrl) {
+    final String? trimmed = maybeRelativeUrl?.trim();
+    if (trimmed == null || trimmed.isEmpty) {
+      return null;
+    }
+    return Uri.parse(appPageUrl).resolve(trimmed).toString();
+  }
+
+  Future<String?> _iconUrlFromIzzyAppPage(
+    String appId,
+    Map<String, dynamic> additionalSettings,
+  ) async {
+    final String appPageUrl = '$_izzyIndexApkBase$appId';
+    try {
+      final Response pageResponse = await sourceRequest(
+        appPageUrl,
+        additionalSettings,
+      );
+      if (pageResponse.statusCode != 200) {
+        return null;
+      }
+      final doc = await parseHtmlOffIsolate(pageResponse.body);
+      return _absoluteIzzyAppPageUrl(
+            appPageUrl,
+            doc
+                .querySelector('meta[property="og:image"]')
+                ?.attributes['content'],
+          ) ??
+          _absoluteIzzyAppPageUrl(
+            appPageUrl,
+            doc.querySelector('img.appicon')?.attributes['src'],
+          );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<String> _rbtLogReleaseReproducibleStatus(
+    String appId,
+    int versionCode,
+    String? apkSha256,
+    Map<String, dynamic> additionalSettings,
+  ) async {
+    final Map<String, dynamic> rbtLogByApkHash = await _loadRbtLog(
+      additionalSettings,
+    );
+    if (apkSha256 != null && apkSha256.isNotEmpty) {
+      final Object? rawEntries = rbtLogByApkHash[apkSha256];
+      for (final Object? rawEntry
+          in rawEntries is List ? rawEntries : <Object?>[]) {
+        if (_rbtLogEntryMatchesRelease(rawEntry, appId, versionCode)) {
+          return _rbtLogEntryReproducibleStatus(rawEntry);
+        }
+      }
+    }
+
+    Object? newestMatchingEntry;
+    int newestTimestamp = -1;
+    for (final Object? rawEntries in rbtLogByApkHash.values) {
+      for (final Object? rawEntry
+          in rawEntries is List ? rawEntries : <Object?>[]) {
+        if (!_rbtLogEntryMatchesRelease(rawEntry, appId, versionCode)) {
+          continue;
+        }
+        final Map<String, dynamic> entry = Map<String, dynamic>.from(
+          rawEntry as Map,
+        );
+        final int timestamp =
+            int.tryParse(entry['timestamp']?.toString() ?? '') ?? 0;
+        if (timestamp > newestTimestamp) {
+          newestTimestamp = timestamp;
+          newestMatchingEntry = rawEntry;
+        }
+      }
+    }
+    return _rbtLogEntryReproducibleStatus(newestMatchingEntry);
   }
 
   /// Izzy mirrors expect a normal F-Droid client user agent; bare Dart clients
@@ -206,12 +341,28 @@ class IzzyOnDroid extends AppSource {
     if (indexResponse.statusCode != 200) {
       throw getObtainiumHttpError(indexResponse);
     }
-    return await FDroidRepo.apkDetailsFromIndexXmlResponse(
+    final APKDetails details = await FDroidRepo.apkDetailsFromIndexXmlResponse(
       indexResponse,
       appIdOrName,
       additionalSettings,
       name,
+      requireReproducible:
+          additionalSettings['enforceReproducibleBuilds'] == true,
+      reproducibleReleaseStatus:
+          (String appId, int versionCode, String? apkSha256) {
+            return _rbtLogReleaseReproducibleStatus(
+              appId,
+              versionCode,
+              apkSha256,
+              additionalSettings,
+            );
+          },
     );
+    details.iconUrl ??= await _iconUrlFromIzzyAppPage(
+      appIdOrName,
+      additionalSettings,
+    );
+    return details;
   }
 
   @override

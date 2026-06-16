@@ -10,6 +10,10 @@ import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:obtainium/app_sources/apkmirror.dart';
+import 'package:obtainium/app_sources/fdroid.dart';
+import 'package:obtainium/app_sources/fdroidrepo.dart';
+import 'package:obtainium/app_sources/github.dart';
+import 'package:obtainium/app_sources/izzyondroid.dart';
 import 'package:obtainium/components/app_page_section_title.dart';
 import 'package:obtainium/components/category_action_chip.dart';
 import 'package:obtainium/pages/additional_options_page.dart';
@@ -241,6 +245,9 @@ int appPageAppsRebuildToken(AppsProvider provider, String appId) {
     model.releaseDate,
     model.changeLog?.hashCode,
     model.preferredApkIndex,
+    model.latestIsReproducible,
+    model.latestReproducibleStatus,
+    model.latestAttestationStatus,
     model.overrideSource,
     _apkUrlEntriesRebuildToken(model.apkUrls),
     _apkUrlEntriesRebuildToken(model.otherAssetUrls),
@@ -722,7 +729,11 @@ class _AppPageState extends State<AppPage> {
       }
     }
 
-    await appsProvider.saveApps([updatedApp], onlyIfExists: true, updateInstalledInfo: false);
+    await appsProvider.saveApps(
+      [updatedApp],
+      onlyIfExists: true,
+      updateInstalledInfo: false,
+    );
     await appsProvider.updateAppIcon(updatedApp.id);
     if (mounted) {
       _clearEditIconStaging();
@@ -1623,13 +1634,11 @@ class _AppPageState extends State<AppPage> {
       _attemptedApkMirrorSizeResolution = false;
       unawaited(_maybeLazyResolveApkMirrorSize());
       if (resetVersion) {
-        appsProvider.apps[id]?.app.additionalSettings['versionDetection'] =
-            true;
-        if (appsProvider.apps[id]?.app.installedVersion != null) {
-          appsProvider.apps[id]?.app.installedVersion =
-              appsProvider.apps[id]?.app.latestVersion;
+        final app = appsProvider.apps[id]?.app;
+        if (app != null) {
+          app.installedVersion = null;
+          appsProvider.saveApps([app]);
         }
-        appsProvider.saveApps([appsProvider.apps[id]!.app]);
       }
     } catch (err) {
       if (!mounted || widget.appId != id) return;
@@ -1884,7 +1893,10 @@ class _AppPageState extends State<AppPage> {
     var trackOnly = app?.app.additionalSettings['trackOnly'] == true;
 
     bool isVersionDetectionStandard =
-        app?.app.additionalSettings['versionDetection'] == true;
+        app?.app.additionalSettings['versionDetection'] == 'auto' ||
+        app?.app.additionalSettings['versionDetection'] == 'standard' ||
+        app?.app.additionalSettings['versionDetection'] == true ||
+        app?.app.additionalSettings['versionDetection'] == null;
 
     if (showAppWebpageFinal && app != null && !_webViewUrlLoaded) {
       _webViewUrlLoaded = true;
@@ -2533,6 +2545,324 @@ class _AppPageState extends State<AppPage> {
             ),
           );
         }
+      }
+
+      final bool reproducibleBuildEnforced =
+          app?.app.additionalSettings['enforceReproducibleBuilds'] == true &&
+          (source is FDroid || source is FDroidRepo || source is IzzyOnDroid);
+      final String? reproducibleBuildStatus =
+          app?.app.latestReproducibleStatus ??
+          (app?.app.latestIsReproducible != null
+              ? reproducibleBuildStatusFromBool(app!.app.latestIsReproducible)
+              : null);
+      final bool reproducibleBuildVerified =
+          reproducibleBuildStatus == reproducibleBuildStatusVerified;
+      final bool reproducibleBuildFailed =
+          reproducibleBuildEnforced &&
+          reproducibleBuildStatus == reproducibleBuildStatusNotReproducible;
+      final bool reproducibleBuildNoData =
+          reproducibleBuildEnforced &&
+          reproducibleBuildStatus == reproducibleBuildStatusNoData;
+      final bool reproducibleBuildUnknown =
+          reproducibleBuildEnforced &&
+          (reproducibleBuildStatus == reproducibleBuildStatusError ||
+              reproducibleBuildStatus == null);
+      final bool reproducibleBuildBlocked =
+          reproducibleBuildFailed ||
+          reproducibleBuildNoData ||
+          reproducibleBuildUnknown;
+      final bool githubAttestationExpected =
+          source is GitHub &&
+          source.shouldVerifyAttestations(
+            app?.app.additionalSettings ?? <String, dynamic>{},
+            settingsProvider,
+          );
+      final bool githubAttestationEnforced =
+          source is GitHub &&
+          source.shouldEnforceAttestations(
+            app?.app.additionalSettings ?? <String, dynamic>{},
+            settingsProvider,
+          );
+      final String? githubAttestationStatus = app?.app.latestAttestationStatus;
+      final bool githubAttestationBlocked =
+          githubAttestationEnforced &&
+          githubAttestationStatus != null &&
+          githubAttestationStatus != githubAttestationStatusVerified;
+      final bool githubAttestationVerified =
+          githubAttestationExpected &&
+          githubAttestationStatus == githubAttestationStatusVerified;
+      final bool githubAttestationUnsupported =
+          githubAttestationExpected &&
+          githubAttestationStatus == githubAttestationStatusUnsupported;
+      final bool githubAttestationError =
+          githubAttestationExpected &&
+          githubAttestationStatus == githubAttestationStatusError;
+      final bool githubAttestationHasStatus =
+          githubAttestationVerified ||
+          githubAttestationUnsupported ||
+          githubAttestationError;
+      if (app != null &&
+          (reproducibleBuildVerified ||
+              githubAttestationHasStatus ||
+              reproducibleBuildBlocked ||
+              githubAttestationBlocked)) {
+        versionCardChildren.add(
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: _versionRowLabelWidth,
+                  child: Text(
+                    tr('security'),
+                    style: Theme.of(pageThemeContext).textTheme.bodySmall
+                        ?.copyWith(
+                          color: Theme.of(
+                            pageThemeContext,
+                          ).colorScheme.onSurfaceVariant,
+                          fontSize: 12,
+                        ),
+                    softWrap: false,
+                    overflow: TextOverflow.visible,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      if (reproducibleBuildVerified)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Colors.green.withValues(alpha: 0.5),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.verified_outlined,
+                                size: 12,
+                                color: Colors.green,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                tr('reproducibleBuild'),
+                                style: Theme.of(pageThemeContext)
+                                    .textTheme
+                                    .labelSmall
+                                    ?.copyWith(
+                                      color: Colors.green,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      if (githubAttestationVerified)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Colors.blue.withValues(alpha: 0.5),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.shield_outlined,
+                                size: 12,
+                                color: Colors.blue,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                tr('verifiedBuild'),
+                                style: Theme.of(pageThemeContext)
+                                    .textTheme
+                                    .labelSmall
+                                    ?.copyWith(
+                                      color: Colors.blue,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      if (reproducibleBuildBlocked)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: reproducibleBuildUnknown
+                                ? Colors.orange.withValues(alpha: 0.16)
+                                : reproducibleBuildNoData
+                                ? Theme.of(pageThemeContext)
+                                      .colorScheme
+                                      .surfaceContainerHighest
+                                      .withValues(alpha: 0.75)
+                                : Theme.of(pageThemeContext)
+                                      .colorScheme
+                                      .errorContainer
+                                      .withValues(alpha: 0.55),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: reproducibleBuildUnknown
+                                  ? Colors.orange.withValues(alpha: 0.55)
+                                  : reproducibleBuildNoData
+                                  ? Theme.of(pageThemeContext)
+                                        .colorScheme
+                                        .outline
+                                        .withValues(alpha: 0.45)
+                                  : Theme.of(
+                                      pageThemeContext,
+                                    ).colorScheme.error.withValues(alpha: 0.55),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                reproducibleBuildUnknown
+                                    ? Icons.warning_amber_rounded
+                                    : reproducibleBuildNoData
+                                    ? Icons.shield_outlined
+                                    : Icons.gpp_bad_outlined,
+                                size: 12,
+                                color: reproducibleBuildUnknown
+                                    ? Colors.orange.shade800
+                                    : reproducibleBuildNoData
+                                    ? Theme.of(
+                                        pageThemeContext,
+                                      ).colorScheme.onSurfaceVariant
+                                    : Theme.of(
+                                        pageThemeContext,
+                                      ).colorScheme.onErrorContainer,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                tr(
+                                  reproducibleBuildUnknown
+                                      ? 'verificationCantCheck'
+                                      : reproducibleBuildNoData
+                                      ? 'verificationNoData'
+                                      : 'notReproducibleBuild',
+                                ),
+                                style: Theme.of(pageThemeContext)
+                                    .textTheme
+                                    .labelSmall
+                                    ?.copyWith(
+                                      color: reproducibleBuildUnknown
+                                          ? Colors.orange.shade800
+                                          : reproducibleBuildNoData
+                                          ? Theme.of(
+                                              pageThemeContext,
+                                            ).colorScheme.onSurfaceVariant
+                                          : Theme.of(
+                                              pageThemeContext,
+                                            ).colorScheme.onErrorContainer,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      if (githubAttestationUnsupported ||
+                          githubAttestationError)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: githubAttestationError
+                                ? Colors.orange.withValues(alpha: 0.16)
+                                : githubAttestationUnsupported
+                                ? Theme.of(pageThemeContext)
+                                      .colorScheme
+                                      .surfaceContainerHighest
+                                      .withValues(alpha: 0.75)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: githubAttestationError
+                                  ? Colors.orange.withValues(alpha: 0.55)
+                                  : githubAttestationUnsupported
+                                  ? Theme.of(pageThemeContext)
+                                        .colorScheme
+                                        .outline
+                                        .withValues(alpha: 0.45)
+                                  : Colors.transparent,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                githubAttestationError
+                                    ? Icons.warning_amber_rounded
+                                    : Icons.shield_outlined,
+                                size: 12,
+                                color: githubAttestationError
+                                    ? Colors.orange.shade800
+                                    : githubAttestationUnsupported
+                                    ? Theme.of(
+                                        pageThemeContext,
+                                      ).colorScheme.onSurfaceVariant
+                                    : Theme.of(
+                                        pageThemeContext,
+                                      ).colorScheme.onSurfaceVariant,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                tr(
+                                  githubAttestationError
+                                      ? 'verificationCantCheck'
+                                      : 'unverifiedBuild',
+                                ),
+                                style: Theme.of(pageThemeContext)
+                                    .textTheme
+                                    .labelSmall
+                                    ?.copyWith(
+                                      color: githubAttestationError
+                                          ? Colors.orange.shade800
+                                          : githubAttestationUnsupported
+                                          ? Theme.of(
+                                              pageThemeContext,
+                                            ).colorScheme.onSurfaceVariant
+                                          : Theme.of(
+                                              pageThemeContext,
+                                            ).colorScheme.onSurfaceVariant,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
       }
 
       // #4 — last-checked caption at the bottom.

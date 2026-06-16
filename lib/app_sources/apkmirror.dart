@@ -449,9 +449,13 @@ class APKMirror extends AppSource {
     String url, {
     bool forAPKDownload = false,
   }) async {
+    final packageInfo = await getInstalledInfo(
+      obtainiumId,
+      includeOwnDebugBuild: true,
+    );
     return {
       'User-Agent':
-          'Mozilla/5.0 (Linux; Android 15; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36 ObtainX/${(await getInstalledInfo(obtainiumId))?.versionName ?? '1.0.0'}',
+          'Mozilla/5.0 (Linux; Android 15; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36 ObtainX/${packageInfo?.versionName ?? '1.0.0'}',
       'Accept':
           'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       'Accept-Language': 'en-US,en;q=0.9',

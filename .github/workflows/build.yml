@@ -11,6 +11,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
 
     steps:
       - uses: actions/checkout@v4
@@ -104,3 +108,8 @@ jobs:
           tag_name: ${{ github.ref == 'refs/heads/main' && format('v{0}', steps.extract_version.outputs.version) || github.ref_name }}
           files: build/app/outputs/flutter-apk/ObtainX-*.apk
           generate_release_notes: true
+
+      - name: Generate Generic Attestations
+        uses: actions/attest@v4.1.0
+        with:
+          subject-path: 'build/app/outputs/flutter-apk/ObtainX-*.apk'

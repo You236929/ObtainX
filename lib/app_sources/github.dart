@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:crypto/crypto.dart';
 import 'package:obtainium/app_sources/app_package_formats.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
@@ -11,6 +12,7 @@ import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/providers/logs_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 Map<String, dynamic>? _jsonObjectFromResponseBody(String responseBody) {
@@ -26,6 +28,15 @@ Map<String, dynamic>? _jsonObjectFromResponseBody(String responseBody) {
 }
 
 class GitHub extends AppSource {
+  static const String githubCredsKey = 'github-creds';
+  static const String enforceAttestationsKey = 'enforceGitHubAttestations';
+  static const String buildVerificationModeKey = 'githubBuildVerificationMode';
+  static const String buildVerificationOff = 'off';
+  static const String buildVerificationAudit = 'audit';
+  static const String buildVerificationEnforce = 'enforce';
+  static const String validatedPATFingerprintKey =
+      'githubValidatedPATFingerprint';
+
   GitHub({bool hostChanged = false}) {
     hosts = ['github.com'];
     appIdInferIsOptional = true;
@@ -38,19 +49,13 @@ class GitHub extends AppSource {
 
     sourceConfigSettingFormItems = [
       GeneratedFormTextField(
-        'github-creds',
+        githubCredsKey,
         label: tr('githubPATLabel'),
         password: true,
         required: false,
-        suffixIcon: IconButton(
-          visualDensity: VisualDensity.compact,
-          icon: const Icon(Icons.open_in_new_rounded, size: 18),
-          onPressed: () => launchUrlString(
-            'https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token',
-            mode: LaunchMode.externalApplication,
-          ),
-          tooltip: tr('about'),
-        ),
+        assistIcon: Icons.verified_user_outlined,
+        assistTooltip: tr('validateGitHubPAT'),
+        assistAction: _validatePATFromSettingsForm,
       ),
       GeneratedFormTextField(
         'GHReqPrefix',
@@ -97,6 +102,7 @@ class GitHub extends AppSource {
           defaultValue: false,
         ),
       ],
+      [GeneratedFormSwitch('verifyLatestTag', label: tr('verifyLatestTag'))],
       [
         GeneratedFormSwitch(
           'fallbackToOlderReleases',
@@ -128,7 +134,25 @@ class GitHub extends AppSource {
           ],
         ),
       ],
-      [GeneratedFormSwitch('verifyLatestTag', label: tr('verifyLatestTag'))],
+      [
+        GeneratedFormDropdown(
+          buildVerificationModeKey,
+          [
+            MapEntry(buildVerificationOff, tr('githubBuildVerificationOff')),
+            MapEntry(
+              buildVerificationAudit,
+              tr('githubBuildVerificationAudit'),
+            ),
+            MapEntry(
+              buildVerificationEnforce,
+              tr('githubBuildVerificationEnforce'),
+            ),
+          ],
+          label: tr('githubBuildVerificationMode'),
+          defaultValue: buildVerificationOff,
+          labelTooltip: tr('githubBuildVerificationTooltip'),
+        ),
+      ],
       [
         GeneratedFormDropdown(
           'sortMethodChoice',
@@ -173,6 +197,151 @@ class GitHub extends AppSource {
         ],
       ),
     ];
+  }
+
+  static String? tokenFromCreds(String? creds) {
+    String? token = creds?.trim();
+    if (token == null || token.isEmpty) {
+      return null;
+    }
+    final int userNameEndIndex = token.indexOf(':');
+    if (userNameEndIndex > 0) {
+      token = token.substring(userNameEndIndex + 1);
+    }
+    return token.trim().isEmpty ? null : token.trim();
+  }
+
+  static String? patFingerprint(String? creds) {
+    final String? token = tokenFromCreds(creds);
+    if (token == null) {
+      return null;
+    }
+    return sha256.convert(utf8.encode(token)).toString();
+  }
+
+  static bool hasValidatedPAT(
+    String? creds,
+    SettingsProvider settingsProvider,
+  ) {
+    final String? fingerprint = patFingerprint(creds);
+    if (fingerprint == null) {
+      return false;
+    }
+    return settingsProvider.getSettingString(validatedPATFingerprintKey) ==
+        fingerprint;
+  }
+
+  static void clearPATValidation(SettingsProvider settingsProvider) {
+    settingsProvider.setSettingString(validatedPATFingerprintKey, '');
+  }
+
+  static void storePATValidation(
+    String creds,
+    SettingsProvider settingsProvider,
+  ) {
+    final String? fingerprint = patFingerprint(creds);
+    if (fingerprint == null) {
+      clearPATValidation(settingsProvider);
+      return;
+    }
+    settingsProvider.setSettingString(validatedPATFingerprintKey, fingerprint);
+  }
+
+  static Future<String?> validatePAT(String creds) async {
+    final String? token = tokenFromCreds(creds);
+    if (token == null) {
+      return tr('githubPATRequiredForDefaultVerification');
+    }
+    try {
+      final Response response = await get(
+        Uri.parse('https://api.github.com/user'),
+        headers: <String, String>{
+          HttpHeaders.authorizationHeader: 'Bearer $token',
+          HttpHeaders.acceptHeader: 'application/vnd.github+json',
+          HttpHeaders.userAgentHeader: 'Obtainium',
+        },
+      );
+      if (response.statusCode == 200) {
+        return null;
+      }
+      if (response.statusCode == 401) {
+        return tr('githubPATInvalid');
+      }
+      if (response.statusCode == 403 || response.statusCode == 429) {
+        return tr('githubPATValidationRateLimited');
+      }
+      return tr('githubPATValidationFailed');
+    } catch (_) {
+      return tr('githubPATValidationFailed');
+    }
+  }
+
+  static Future<void> _validatePATFromSettingsForm(
+    BuildContext context,
+    FormValuesTextPatch patch,
+    Map<String, dynamic> values,
+  ) async {
+    final String creds = values[githubCredsKey]?.toString() ?? '';
+    final SettingsProvider settingsProvider = context.read<SettingsProvider>();
+    final String? error = await validatePAT(creds);
+    if (!context.mounted) {
+      return;
+    }
+    if (error == null) {
+      storePATValidation(creds, settingsProvider);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(tr('githubPATValidated'))));
+    } else {
+      clearPATValidation(settingsProvider);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error)));
+    }
+  }
+
+  bool canVerifyAttestations(
+    Map<String, dynamic> additionalSettings,
+    SettingsProvider settingsProvider,
+  ) {
+    final String? creds =
+        additionalSettings[githubCredsKey]?.toString() ??
+        settingsProvider.getSettingString(githubCredsKey);
+    return hasValidatedPAT(creds, settingsProvider);
+  }
+
+  String buildVerificationMode(
+    Map<String, dynamic> additionalSettings,
+    SettingsProvider settingsProvider,
+  ) {
+    final String mode =
+        additionalSettings[buildVerificationModeKey]?.toString() ??
+        (additionalSettings[enforceAttestationsKey] == true
+            ? buildVerificationEnforce
+            : buildVerificationOff);
+    if (mode != buildVerificationAudit && mode != buildVerificationEnforce) {
+      return buildVerificationOff;
+    }
+    if (!canVerifyAttestations(additionalSettings, settingsProvider)) {
+      return buildVerificationOff;
+    }
+    return mode;
+  }
+
+  bool shouldVerifyAttestations(
+    Map<String, dynamic> additionalSettings,
+    SettingsProvider settingsProvider,
+  ) {
+    return buildVerificationMode(additionalSettings, settingsProvider) !=
+        buildVerificationOff;
+  }
+
+  bool shouldEnforceAttestations(
+    Map<String, dynamic> additionalSettings,
+    SettingsProvider settingsProvider,
+  ) {
+    return buildVerificationMode(additionalSettings, settingsProvider) ==
+        buildVerificationEnforce;
   }
 
   @override
@@ -288,17 +457,7 @@ class GitHub extends AppSource {
     if ((additionalSettings['GHReqPrefix'] as String? ?? '').isNotEmpty) {
       creds = null;
     }
-    if (creds != null) {
-      var userNameEndIndex = creds.indexOf(':');
-      if (userNameEndIndex > 0) {
-        creds = creds.substring(
-          userNameEndIndex + 1,
-        ); // For old username-included token inputs
-      }
-      return creds;
-    } else {
-      return null;
-    }
+    return tokenFromCreds(creds);
   }
 
   @override
@@ -329,6 +488,60 @@ class GitHub extends AppSource {
     Map<String, dynamic> additionalSettings,
   ) async =>
       '${await getAPIHost(additionalSettings)}/repos${standardUrl.substring('https://${hosts[0]}'.length)}';
+
+  Future<String> getAttestationStatusForSha256Digest(
+    String standardUrl,
+    String sha256Digest,
+    Map<String, dynamic> additionalSettings,
+  ) async {
+    final String digest = sha256Digest.startsWith('sha256:')
+        ? sha256Digest.substring('sha256:'.length)
+        : sha256Digest;
+    if (digest.isEmpty) {
+      return githubAttestationStatusError;
+    }
+    try {
+      final Response response = await sourceRequest(
+        '${await convertStandardUrlToAPIUrl(standardUrl, additionalSettings)}/attestations/sha256:$digest',
+        additionalSettings,
+      );
+      if (response.statusCode == 404) {
+        return githubAttestationStatusUnsupported;
+      }
+      if (response.statusCode != 200) {
+        return githubAttestationStatusError;
+      }
+      final Map<String, dynamic>? body = _jsonObjectFromResponseBody(
+        response.body,
+      );
+      final Object? attestations = body?['attestations'];
+      if (attestations is List && attestations.isNotEmpty) {
+        return githubAttestationStatusVerified;
+      }
+      return githubAttestationStatusUnsupported;
+    } catch (_) {
+      return githubAttestationStatusError;
+    }
+  }
+
+  Future<bool?> hasAttestationForSha256Digest(
+    String standardUrl,
+    String sha256Digest,
+    Map<String, dynamic> additionalSettings,
+  ) async {
+    final String status = await getAttestationStatusForSha256Digest(
+      standardUrl,
+      sha256Digest,
+      additionalSettings,
+    );
+    if (status == githubAttestationStatusVerified) {
+      return true;
+    }
+    if (status == githubAttestationStatusUnsupported) {
+      return false;
+    }
+    return null;
+  }
 
   /// Checks if the repository has been renamed or transferred.
   ///
@@ -478,6 +691,10 @@ class GitHub extends AppSource {
     bool verifyLatestTag = additionalSettings['verifyLatestTag'] == true;
     bool useLatestAssetDateAsReleaseDate =
         additionalSettings['useLatestAssetDateAsReleaseDate'] == true;
+    final bool shouldCheckAttestation = shouldVerifyAttestations(
+      additionalSettings,
+      settingsProvider,
+    );
     String sortMethod =
         additionalSettings['sortMethodChoice'] ?? 'smartname-datefallback';
     bool includeZips = additionalSettings['includeZips'] == true;
@@ -800,6 +1017,25 @@ class GitHub extends AppSource {
       final int? apkSizeBytes = apkUrls.isNotEmpty
           ? sizeByName[apkUrls.last.key]
           : null;
+      Map<String, dynamic>? preferredAsset;
+      if (apkUrls.isNotEmpty) {
+        for (final asset in filteredAssets.whereType<Map<String, dynamic>>()) {
+          if (asset['name'] != null && asset['name'] == apkUrls.last.key) {
+            preferredAsset = asset;
+            break;
+          }
+        }
+      }
+      final String? preferredAssetDigest = preferredAsset?['digest'] as String?;
+      final String? attestationStatus = shouldCheckAttestation
+          ? preferredAssetDigest != null
+                ? await getAttestationStatusForSha256Digest(
+                    standardUrl,
+                    preferredAssetDigest,
+                    additionalSettings,
+                  )
+                : githubAttestationStatusError
+          : null;
       return APKDetails(
         version,
         apkUrls,
@@ -810,6 +1046,7 @@ class GitHub extends AppSource {
             targetRelease['allAssetUrls'] as List<MapEntry<String, String>>,
         rawReleaseTitleCandidates: rawReleaseTitleCandidates,
         apkSizeBytes: apkSizeBytes,
+        attestationStatus: attestationStatus,
       );
     } else {
       if (onHttpErrorCode != null) {

@@ -25,6 +25,10 @@ import 'package:flutter/services.dart';
 import 'package:http/io_client.dart';
 import 'package:obtainium/app_sources/apkmirror.dart' show apkMirrorSizeDebug;
 import 'package:obtainium/app_sources/direct_apk_link.dart';
+import 'package:obtainium/app_sources/github.dart';
+import 'package:obtainium/app_sources/fdroid.dart';
+import 'package:obtainium/app_sources/fdroidrepo.dart';
+import 'package:obtainium/app_sources/izzyondroid.dart';
 import 'package:obtainium/app_sources/html.dart';
 import 'package:obtainium/components/generated_form.dart';
 import 'package:obtainium/components/generated_form_modal.dart';
@@ -57,6 +61,24 @@ final packageInfoFlags = PackageInfoFlags({PMFlag.getSigningCertificates});
 // Skipping getSigningCertificates makes getInstalledPackages ~10× faster and keeps
 // the Android platform thread free to dispatch touch events during the foreground load.
 final packageInfoFlagsLight = PackageInfoFlags({});
+
+List<String> packageNamesToTryForInstalledInfo(
+  String packageName, {
+  bool includeOwnDebugBuild = false,
+}) {
+  final List<String> packageNamesToTry = <String>[packageName];
+  if (kDebugMode && includeOwnDebugBuild && packageName == obtainiumId) {
+    packageNamesToTry.insert(
+      0,
+      fdroid ? '$obtainiumId.fdroid.debug' : '$obtainiumId.debug',
+    );
+  } else if (kDebugMode &&
+      includeOwnDebugBuild &&
+      packageName == '$obtainiumId.fdroid') {
+    packageNamesToTry.insert(0, '$obtainiumId.fdroid.debug');
+  }
+  return packageNamesToTry;
+}
 
 final RegExp _androidApplicationIdPattern = RegExp(
   r'^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$',
@@ -138,13 +160,39 @@ String? reconciledInstalledVersionForDisabledVersionDetection(
   String reportedInstalledVersion,
   String latestVersion,
 ) {
-  final reconciledLatest = reconcileVersionDifferences(realInstalledVersion, latestVersion);
+  final reconciledLatest = reconcileVersionDifferences(
+    realInstalledVersion,
+    latestVersion,
+  );
   if (reconciledLatest?.key == true) {
     return reconciledLatest!.value;
   }
-  final reconciledInstalled = reconcileVersionDifferences(realInstalledVersion, reportedInstalledVersion);
+  final reconciledInstalled = reconcileVersionDifferences(
+    realInstalledVersion,
+    reportedInstalledVersion,
+  );
   if (reconciledInstalled?.key == true) {
     return reconciledInstalled!.value;
+  }
+  // Detect external upgrade/downgrade when both versions strictly share a standard format.
+  // The guard prevents false positives where non-strict substring matching makes an
+  // incompatible pair (e.g. "4.15.0" vs "26.06.01-de-vanced") appear reconcilable.
+  final realFormats = findStandardFormatsForVersion(realInstalledVersion, true);
+  if (realFormats.isNotEmpty) {
+    if (reconciledLatest?.key == false &&
+        realFormats
+            .intersection(findStandardFormatsForVersion(latestVersion, true))
+            .isNotEmpty) {
+      return realInstalledVersion;
+    }
+    if (reconciledInstalled?.key == false &&
+        realFormats
+            .intersection(
+              findStandardFormatsForVersion(reportedInstalledVersion, true),
+            )
+            .isNotEmpty) {
+      return realInstalledVersion;
+    }
   }
   return null;
 }
@@ -399,7 +447,22 @@ bool appHasActionableUpdate(App app) {
   if (isSkipActiveForCurrentLatest(app)) return false;
   if (installed == latest) return false;
   if (versionsEffectivelyEqual(installed, latest)) return false;
-  if (versionOrderIsUnclear(installed, latest)) return false;
+
+  if (versionOrderIsUnclear(installed, latest)) {
+    final dynamic lastInstalledTimeRaw =
+        app.additionalSettings['lastInstalledTime'];
+    if (lastInstalledTimeRaw is int && app.releaseDate != null) {
+      final DateTime installedTime = DateTime.fromMillisecondsSinceEpoch(
+        lastInstalledTimeRaw,
+      );
+      return app.releaseDate!.isAfter(installedTime);
+    }
+    // Pseudo-mode apps can't reliably compare versions; any difference is a potential
+    // update regardless of ordering ambiguity.
+    return app.additionalSettings['versionDetection'] == 'pseudo' ||
+        app.additionalSettings['versionDetection'] == false;
+  }
+
   final int? cmp = compareVersionsByNumericSegments(installed, latest);
   if (cmp == 1) return false;
   if (cmp == 0) return true;
@@ -415,7 +478,23 @@ bool versionOrderUncertainUpdate(App app) {
   if (isSkipActiveForCurrentLatest(app)) return false;
   if (installed == latest) return false;
   if (versionsEffectivelyEqual(installed, latest)) return false;
-  return versionOrderIsUnclear(installed, latest);
+
+  if (versionOrderIsUnclear(installed, latest)) {
+    final dynamic lastInstalledTimeRaw =
+        app.additionalSettings['lastInstalledTime'];
+    if (lastInstalledTimeRaw is int && app.releaseDate != null) {
+      final DateTime installedTime = DateTime.fromMillisecondsSinceEpoch(
+        lastInstalledTimeRaw,
+      );
+      // Suppress uncertain indicator only when timestamps confirm the release IS newer
+      // than the last install (appHasActionableUpdate already covers that case).
+      // When release is not after install, the order is still ambiguous — the user
+      // should be able to decide.
+      return !app.releaseDate!.isAfter(installedTime);
+    }
+    return true;
+  }
+  return false;
 }
 
 /// Compare version strings by numeric segments (e.g. 2.0.0 vs 1.9.9).
@@ -1204,18 +1283,33 @@ Future<PackageInfo?> getInstalledInfo(
   String? packageName, {
   bool printErr = true,
   bool light = true,
+  bool includeOwnDebugBuild = false,
 }) async {
   if (packageName != null) {
-    final List<String> packageNamesToTry = <String>[packageName];
-    if (kDebugMode && packageName == obtainiumId) {
-      packageNamesToTry.insert(
-        0,
-        fdroid ? '$obtainiumId.fdroid.debug' : '$obtainiumId.debug',
-      );
-    } else if (kDebugMode && packageName == '$obtainiumId.fdroid') {
-      packageNamesToTry.insert(0, '$obtainiumId.fdroid.debug');
+    final List<String> packageNamesToTry = packageNamesToTryForInstalledInfo(
+      packageName,
+      includeOwnDebugBuild: includeOwnDebugBuild,
+    );
+
+    Set<String>? installedPackageNames;
+    try {
+      final List<PackageInfo> installed =
+          await pm.getInstalledPackages(flags: packageInfoFlagsLight) ?? [];
+      installedPackageNames = installed
+          .map((p) => p.packageName)
+          .whereType<String>()
+          .toSet();
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('Failed to list installed packages: $e');
+      }
     }
+
     for (final String packageNameToTry in packageNamesToTry) {
+      if (installedPackageNames != null &&
+          !installedPackageNames.contains(packageNameToTry)) {
+        continue;
+      }
       try {
         return await pm.getPackageInfo(
           packageName: packageNameToTry,
@@ -1347,6 +1441,29 @@ class AppsProvider with ChangeNotifier {
   bool _receivesThirdPartyInstallEvents = false;
 
   Iterable<AppInMemory> getAppValues() => apps.values.map((a) => a.deepCopy());
+
+  Future<String?> verifyGitHubAttestation(App app, File file) async {
+    final AppSource source = SourceProvider().getSource(
+      app.url,
+      overrideSource: app.overrideSource,
+    );
+    if (source is! GitHub) {
+      return null;
+    }
+    try {
+      final String standardizedUrl = source.standardizeUrl(app.url);
+      final hash = await sha256.bind(file.openRead()).first;
+      final String sha256Digest = hash.toString();
+      return await source.getAttestationStatusForSha256Digest(
+        standardizedUrl,
+        sha256Digest,
+        app.additionalSettings,
+      );
+    } catch (e) {
+      logs.add('Error verifying GitHub attestation: ${e.toString()}');
+    }
+    return githubAttestationStatusError;
+  }
 
   void _pruneStaleDetailPageAutoCheckStarts(DateTime now, Duration cooldown) {
     _lastDetailPageAutoCheckStartedAt.removeWhere(
@@ -1797,7 +1914,7 @@ class AppsProvider with ChangeNotifier {
         }
         notifyListeners();
       }
-      if (!areDownloadsRunning()) {
+      if (!downloadSucceeded || !retainInstallPhaseProgressForHandoff) {
         unawaited(NativeFeatures.stopDownloadForegroundService());
       }
     }
@@ -1980,6 +2097,86 @@ class AppsProvider with ChangeNotifier {
     // Obviously this approach is naive and is undesirable in many cases, needs to be improved
     var somethingInstalled = false;
     try {
+      final AppInMemory? appInMemory = apps[dir.appId];
+      if (appInMemory != null) {
+        final App app = appInMemory.app;
+        final AppSource source = SourceProvider().getSource(
+          app.url,
+          overrideSource: app.overrideSource,
+        );
+        if (app.additionalSettings['enforceReproducibleBuilds'] == true) {
+          if (source is FDroid ||
+              source is FDroidRepo ||
+              source is IzzyOnDroid) {
+            final String reproducibleStatus =
+                app.latestReproducibleStatus ??
+                reproducibleBuildStatusFromBool(app.latestIsReproducible);
+            if (reproducibleStatus != reproducibleBuildStatusVerified) {
+              try {
+                if (dir.file.existsSync()) {
+                  dir.file.deleteSync();
+                }
+                if (dir.extracted.existsSync()) {
+                  dir.extracted.deleteSync(recursive: true);
+                }
+              } catch (_) {}
+              throw ObtainiumError(
+                tr(
+                  reproducibleStatus == reproducibleBuildStatusNotReproducible
+                      ? 'reproducibleBuildEnforcedButFailed'
+                      : reproducibleStatus == reproducibleBuildStatusNoData
+                      ? 'reproducibleBuildEnforcedButNoData'
+                      : 'reproducibleBuildEnforcedButUnknown',
+                ),
+              );
+            }
+          }
+        }
+        final bool githubAttestationEngineRunning =
+            source is GitHub &&
+            source.shouldVerifyAttestations(
+              app.additionalSettings,
+              settingsProvider,
+            );
+        final bool enforceAttest =
+            source is GitHub &&
+            source.shouldEnforceAttestations(
+              app.additionalSettings,
+              settingsProvider,
+            );
+        final bool verifyAttest = githubAttestationEngineRunning;
+        if (source is GitHub && verifyAttest) {
+          final String? attestationStatus = await verifyGitHubAttestation(
+            app,
+            dir.file,
+          );
+          app.latestAttestationStatus = attestationStatus;
+          apps[dir.appId] = AppInMemory(
+            app,
+            appInMemory.downloadProgress,
+            appInMemory.installedInfo,
+            appInMemory.icon,
+          );
+          if (enforceAttest &&
+              attestationStatus != githubAttestationStatusVerified) {
+            try {
+              if (dir.file.existsSync()) {
+                dir.file.deleteSync();
+              }
+              if (dir.extracted.existsSync()) {
+                dir.extracted.deleteSync(recursive: true);
+              }
+            } catch (_) {}
+            throw ObtainiumError(
+              tr(
+                attestationStatus == githubAttestationStatusUnsupported
+                    ? 'githubAttestationEnforcedButUnsupported'
+                    : 'githubAttestationEnforcedButFailed',
+              ),
+            );
+          }
+        }
+      }
       MultiAppMultiError errors = MultiAppMultiError();
       List<File> apkFiles = [];
       for (var file
@@ -2129,6 +2326,90 @@ class AppsProvider with ChangeNotifier {
         : null;
     var installReportedOk = false;
     try {
+      final AppInMemory? appInMemory = apps[file.appId];
+      if (appInMemory != null) {
+        final App app = appInMemory.app;
+        final AppSource source = SourceProvider().getSource(
+          app.url,
+          overrideSource: app.overrideSource,
+        );
+        if (app.additionalSettings['enforceReproducibleBuilds'] == true) {
+          if (source is FDroid ||
+              source is FDroidRepo ||
+              source is IzzyOnDroid) {
+            final String reproducibleStatus =
+                app.latestReproducibleStatus ??
+                reproducibleBuildStatusFromBool(app.latestIsReproducible);
+            if (reproducibleStatus != reproducibleBuildStatusVerified) {
+              try {
+                if (file.file.existsSync()) {
+                  file.file.deleteSync();
+                }
+                for (var a in additionalAPKs) {
+                  if (a.file.existsSync()) {
+                    a.file.deleteSync();
+                  }
+                }
+              } catch (_) {}
+              throw ObtainiumError(
+                tr(
+                  reproducibleStatus == reproducibleBuildStatusNotReproducible
+                      ? 'reproducibleBuildEnforcedButFailed'
+                      : reproducibleStatus == reproducibleBuildStatusNoData
+                      ? 'reproducibleBuildEnforcedButNoData'
+                      : 'reproducibleBuildEnforcedButUnknown',
+                ),
+              );
+            }
+          }
+        }
+        final bool githubAttestationEngineRunning =
+            source is GitHub &&
+            source.shouldVerifyAttestations(
+              app.additionalSettings,
+              settingsProvider,
+            );
+        final bool enforceAttest =
+            source is GitHub &&
+            source.shouldEnforceAttestations(
+              app.additionalSettings,
+              settingsProvider,
+            );
+        final bool verifyAttest = githubAttestationEngineRunning;
+        if (source is GitHub && verifyAttest) {
+          final String? attestationStatus = await verifyGitHubAttestation(
+            app,
+            file.file,
+          );
+          app.latestAttestationStatus = attestationStatus;
+          apps[file.appId] = AppInMemory(
+            app,
+            appInMemory.downloadProgress,
+            appInMemory.installedInfo,
+            appInMemory.icon,
+          );
+          if (enforceAttest &&
+              attestationStatus != githubAttestationStatusVerified) {
+            try {
+              if (file.file.existsSync()) {
+                file.file.deleteSync();
+              }
+              for (var a in additionalAPKs) {
+                if (a.file.existsSync()) {
+                  a.file.deleteSync();
+                }
+              }
+            } catch (_) {}
+            throw ObtainiumError(
+              tr(
+                attestationStatus == githubAttestationStatusUnsupported
+                    ? 'githubAttestationEnforcedButUnsupported'
+                    : 'githubAttestationEnforcedButFailed',
+              ),
+            );
+          }
+        }
+      }
       if (firstTimeWithContext != null &&
           settingsProvider.beforeNewInstallsShareToAppVerifier &&
           (await getInstalledInfo('dev.soupslurpr.appverifier')) != null) {
@@ -2588,9 +2869,7 @@ class AppsProvider with ChangeNotifier {
       } finally {
         apps[id]?.downloadProgress = null;
         notifyListeners();
-        if (!areDownloadsRunning()) {
-          unawaited(NativeFeatures.stopDownloadForegroundService());
-        }
+        unawaited(NativeFeatures.stopDownloadForegroundService());
       }
     }
 
@@ -2598,6 +2877,7 @@ class AppsProvider with ChangeNotifier {
       bool willBeSilent = false;
       DownloadedApk? downloadedFile;
       DownloadedDir? downloadedDir;
+      bool installPhaseServiceRetained = false;
       try {
         var downloadedArtifact =
             // ignore: use_build_context_synchronously
@@ -2608,6 +2888,7 @@ class AppsProvider with ChangeNotifier {
               useExisting: useExisting,
               retainInstallPhaseProgressForHandoff: true,
             );
+        installPhaseServiceRetained = true;
         if (downloadedArtifact is DownloadedApk) {
           downloadedFile = downloadedArtifact;
         } else {
@@ -2636,6 +2917,9 @@ class AppsProvider with ChangeNotifier {
       } catch (exception) {
         apps[id]?.downloadProgress = null;
         apps[id]?.downloadTotalBytes = null;
+        if (installPhaseServiceRetained) {
+          unawaited(NativeFeatures.stopDownloadForegroundService());
+        }
         if (exception is DownloadCancelledError) {
           notifyListeners();
           return {
@@ -2694,19 +2978,21 @@ class AppsProvider with ChangeNotifier {
         appsToInstall.map((appIdToProcess) async {
           final downloadResult = await downloadFn(appIdToProcess);
           final completer = Completer<void>();
-          installChain = installChain.then((_) async {
-            try {
-              await installDownloadResult(downloadResult);
-            } finally {
-              if (!completer.isCompleted) {
-                completer.complete();
-              }
-            }
-          }).catchError((exception) {
-            if (!completer.isCompleted) {
-              completer.complete();
-            }
-          });
+          installChain = installChain
+              .then((_) async {
+                try {
+                  await installDownloadResult(downloadResult);
+                } finally {
+                  if (!completer.isCompleted) {
+                    completer.complete();
+                  }
+                }
+              })
+              .catchError((exception) {
+                if (!completer.isCompleted) {
+                  completer.complete();
+                }
+              });
           await completer.future;
         }),
       );
@@ -2870,6 +3156,12 @@ class AppsProvider with ChangeNotifier {
                 ?.isNotEmpty !=
             true);
     bool isDirectAPKLink = source.runtimeType == DirectAPKLink().runtimeType;
+    final bool hasCommitSha =
+        realInstalledVersion != null &&
+        (_commitHashLikeTokensFromVersion(realInstalledVersion).isNotEmpty ||
+            _commitHashLikeTokensFromVersion(app.app.latestVersion).isNotEmpty);
+    final bool releaseCommitShaAsVersion =
+        app.app.additionalSettings['releaseCommitShaAsVersion'] == true;
     return app.app.additionalSettings['trackOnly'] != true &&
         app.app.additionalSettings['releaseDateAsVersion'] != true &&
         !isHTMLWithNoVersionDetection &&
@@ -2880,7 +3172,9 @@ class AppsProvider with ChangeNotifier {
                   app.app.latestVersion,
                 ) !=
                 null ||
-            naiveStandardVersionDetection);
+            naiveStandardVersionDetection ||
+            hasCommitSha ||
+            releaseCommitShaAsVersion);
   }
 
   // Given an App and it's on-device info...
@@ -2897,8 +3191,24 @@ class AppsProvider with ChangeNotifier {
       app.additionalSettings['trackOnlyTemporaryPackageId'] = false;
       modded = true;
     }
+    if (installedInfo?.lastUpdateTime != null) {
+      if (app.additionalSettings['lastInstalledTime'] !=
+          installedInfo!.lastUpdateTime) {
+        app.additionalSettings['lastInstalledTime'] =
+            installedInfo.lastUpdateTime;
+        modded = true;
+      }
+    } else {
+      if (app.additionalSettings.containsKey('lastInstalledTime')) {
+        app.additionalSettings.remove('lastInstalledTime');
+        modded = true;
+      }
+    }
     var versionDetectionIsStandard =
-        app.additionalSettings['versionDetection'] == true;
+        app.additionalSettings['versionDetection'] == 'auto' ||
+        app.additionalSettings['versionDetection'] == 'standard' ||
+        app.additionalSettings['versionDetection'] == true ||
+        app.additionalSettings['versionDetection'] == null;
     var naiveStandardVersionDetection =
         app.additionalSettings['naiveStandardVersionDetection'] == true ||
         SourceProvider()
@@ -2925,17 +3235,6 @@ class AppsProvider with ChangeNotifier {
     }
     if (realInstalledVersion != null &&
         app.installedVersion != null &&
-        !versionDetectionIsStandard) {
-      final reconciled = reconcileVersionDifferences(realInstalledVersion, app.latestVersion);
-      if (reconciled?.key != true) {
-        if (app.installedVersion == realInstalledVersion) {
-          app.installedVersion = app.latestVersion;
-          modded = true;
-        }
-      }
-    }
-    if (realInstalledVersion != null &&
-        app.installedVersion != null &&
         realInstalledVersion != app.installedVersion &&
         !versionDetectionIsStandard) {
       // Version detection can be disabled because the APK manifest version is
@@ -2954,6 +3253,33 @@ class AppsProvider with ChangeNotifier {
         modded = true;
       }
     }
+
+    // Auto-heal format mismatch between stored installedVersion and the active useVersionCodeAsOSVersion setting
+    if (realInstalledVersion != null &&
+        app.installedVersion != null &&
+        versionDetectionIsStandard) {
+      bool formatMismatch = false;
+      final isStoredPureInteger = RegExp(
+        r'^\d+$',
+      ).hasMatch(app.installedVersion!);
+      final isRealPureInteger = RegExp(r'^\d+$').hasMatch(realInstalledVersion);
+      if (app.additionalSettings['useVersionCodeAsOSVersion'] == true) {
+        if (!isStoredPureInteger) {
+          formatMismatch = true;
+        }
+      } else {
+        if (isStoredPureInteger &&
+            (!isRealPureInteger ||
+                realInstalledVersion != app.installedVersion)) {
+          formatMismatch = true;
+        }
+      }
+      if (formatMismatch) {
+        app.installedVersion = realInstalledVersion;
+        modded = true;
+      }
+    }
+
     // SECOND, RECONCILE DIFFERENCES BETWEEN THE APP'S REPORTED AND REAL INSTALLED VERSIONS, WHERE NEITHER IS NULL
     if (realInstalledVersion != null &&
         realInstalledVersion != app.installedVersion &&
@@ -2992,14 +3318,19 @@ class AppsProvider with ChangeNotifier {
     final bool realInstalledVersionMatchesLatest =
         realInstalledVersion != null &&
         versionsEffectivelyEqual(realInstalledVersion, app.latestVersion);
-    if (!trackOnly &&
+    final bool canAutoDisable =
+        app.additionalSettings['versionDetection'] == 'auto' ||
+        app.additionalSettings['versionDetection'] == true ||
+        app.additionalSettings['versionDetection'] == null;
+    if (canAutoDisable &&
+        !trackOnly &&
         installedInfo != null &&
         versionDetectionIsStandard &&
         !realInstalledVersionMatchesLatest &&
         !isVersionDetectionPossible(
           AppInMemory(app, null, installedInfo, null),
         )) {
-      app.additionalSettings['versionDetection'] = false;
+      app.additionalSettings['versionDetection'] = 'pseudo';
       app.installedVersion = app.latestVersion;
       logs.add('Could not reconcile version formats for: ${app.id}');
       modded = true;
@@ -3449,7 +3780,14 @@ class AppsProvider with ChangeNotifier {
           clearStaleSkippedLatestVersionInPlace(appCopy);
           final installedInfo = cachedInMemory?.installedInfo;
           final iconBytes = cachedInMemory?.icon;
-          appCopy.name = cachedInMemory?.app.name ?? appCopy.name;
+          final String? cachedName = cachedInMemory?.app.name.trim();
+          if (cachedName?.isNotEmpty == true &&
+              cachedName != cachedInMemory?.app.id &&
+              (appCopy.name.trim().isEmpty ||
+                  appCopy.name.trim() == appCopy.id ||
+                  appCopy.name.trim() == cachedName)) {
+            appCopy.name = cachedInMemory!.app.name;
+          }
           this.apps[appCopy.id] = AppInMemory(
             appCopy,
             cachedInMemory?.downloadProgress,
@@ -3474,7 +3812,14 @@ class AppsProvider with ChangeNotifier {
         if (!updateInstalledInfo && cachedInMemory != null) {
           info = cachedInMemory.installedInfo;
           icon = cachedInMemory.icon;
-          app.name = cachedInMemory.app.name;
+          final String cachedName = cachedInMemory.app.name.trim();
+          if (cachedName.isNotEmpty &&
+              cachedName != cachedInMemory.app.id &&
+              (app.name.trim().isEmpty ||
+                  app.name.trim() == app.id ||
+                  app.name.trim() == cachedName)) {
+            app.name = cachedInMemory.app.name;
+          }
         } else {
           info = await getInstalledInfo(app.id);
           // Reuse the cached icon whenever the installed package
@@ -3489,7 +3834,6 @@ class AppsProvider with ChangeNotifier {
               cachedInMemory.installedInfo?.versionCode == info?.versionCode;
           if (installedUnchanged) {
             icon = cachedInMemory.icon;
-            app.name = cachedInMemory.app.name;
           } else {
             icon = await info?.applicationInfo?.getAppIcon();
             String? localizedLabel;
@@ -3684,7 +4028,11 @@ class AppsProvider with ChangeNotifier {
       await _restoreAppJsonFromPendingRemoval(appId);
       final File mainJson = File('${(await getAppsDir()).path}/$appId.json');
       if (!mainJson.existsSync()) {
-        await saveApps([snapshot.app], onlyIfExists: false, updateInstalledInfo: false);
+        await saveApps(
+          [snapshot.app],
+          onlyIfExists: false,
+          updateInstalledInfo: false,
+        );
       }
       apps[appId] = snapshot.deepCopy();
     }
@@ -3899,7 +4247,10 @@ class AppsProvider with ChangeNotifier {
       ..rawApkNamesFromSource = newApp.rawApkNamesFromSource
       ..rawReleaseTitlesFromSource = newApp.rawReleaseTitlesFromSource
       ..apkSizeBytes = newApp.apkSizeBytes
-      ..pendingRepoRenameUrl = newApp.pendingRepoRenameUrl;
+      ..pendingRepoRenameUrl = newApp.pendingRepoRenameUrl
+      ..latestIsReproducible = newApp.latestIsReproducible
+      ..latestReproducibleStatus = newApp.latestReproducibleStatus
+      ..latestAttestationStatus = newApp.latestAttestationStatus;
     await saveApps(
       [appToSave],
       notifyListenersAfterSave: notifyListenersAfterSave,
@@ -4219,7 +4570,9 @@ class AppsProvider with ChangeNotifier {
       }
       if (exportDir == null || pickOnly) {
         await settingsProvider.pickExportDir();
-        exportDir = await settingsProvider.getExportDir(warnIfInaccessible: true);
+        exportDir = await settingsProvider.getExportDir(
+          warnIfInaccessible: true,
+        );
       }
       if (exportDir == null) {
         return null;
@@ -4254,10 +4607,9 @@ class AppsProvider with ChangeNotifier {
     } catch (e, stack) {
       debugPrint('Export failed: $e\n$stack');
       try {
-        await LogsProvider(runDefaultClear: false).add(
-          'Export failed: $e',
-          level: LogLevels.error,
-        );
+        await LogsProvider(
+          runDefaultClear: false,
+        ).add('Export failed: $e', level: LogLevels.error);
       } catch (_) {}
       return null;
     }

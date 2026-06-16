@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 // ignore: depend_on_referenced_packages
 import 'package:device_info_plus_platform_interface/device_info_plus_platform_interface.dart';
 import 'package:android_package_manager/android_package_manager.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart';
 import 'package:obtainium/app_sources/apkmirror.dart';
 import 'package:obtainium/app_sources/fdroid.dart';
@@ -197,6 +198,22 @@ void main() {
     },
   );
 
+  test('release package lookup only includes debug build when requested', () {
+    expect(
+      packageNamesToTryForInstalledInfo('dev.bikram.obtainx'),
+      const ['dev.bikram.obtainx'],
+    );
+    expect(
+      packageNamesToTryForInstalledInfo(
+        'dev.bikram.obtainx',
+        includeOwnDebugBuild: true,
+      ),
+      kDebugMode
+          ? const ['dev.bikram.obtainx.debug', 'dev.bikram.obtainx']
+          : const ['dev.bikram.obtainx'],
+    );
+  });
+
   test('legacy release-date microseconds compare with ISO release dates', () {
     expect(
       versionsEffectivelyEqual('1777370225000000', '2026-04-28T09:57:05.000Z'),
@@ -248,7 +265,7 @@ void main() {
       expect(correctedApp, isNotNull);
       expect(correctedApp!.installedVersion, '106');
       expect(correctedApp.latestVersion, '106');
-      expect(correctedApp.additionalSettings['versionDetection'], false);
+      expect(correctedApp.additionalSettings['versionDetection'], 'pseudo');
     },
   );
 
@@ -321,8 +338,11 @@ void main() {
   );
 
   test(
-    'disabled version detection coerces unreconciled system installed version to latestVersion (pseudo version)',
+    'disabled version detection preserves installed version when system version equals stored version',
     () {
+      // installed == realInstalledVersion == '9.18.50', but latest == '107' (different format).
+      // The system must NOT silently coerce installedVersion → latestVersion here; that would hide
+      // the available update. The update from '9.18.50' to '107' must remain visible.
       final appsProvider = AppsProvider();
       final app = App(
         'app.revanced.android.youtube',
@@ -347,10 +367,11 @@ void main() {
         ),
       );
 
-      expect(correctedApp, isNotNull);
-      expect(app.installedVersion, '107');
+      expect(correctedApp, isNull);
+      expect(app.installedVersion, '9.18.50');
       expect(app.latestVersion, '107');
       expect(app.additionalSettings['versionDetection'], false);
+      expect(appHasActionableUpdate(app), true);
     },
   );
 
@@ -418,7 +439,7 @@ void main() {
       expect(correctedApp, isNotNull);
       expect(app.installedVersion, '26.06.01-de-vanced');
       expect(app.latestVersion, '26.06.01-de-vanced');
-      expect(app.additionalSettings['versionDetection'], false);
+      expect(app.additionalSettings['versionDetection'], 'pseudo');
     },
   );
 
@@ -625,4 +646,208 @@ void main() {
       ],
     );
   });
+
+  test(
+    'commit-sha-like version update does not disable version detection',
+    () {
+      final appsProvider = AppsProvider();
+      final app = App(
+        'app.example',
+        'https://github.com/example/example',
+        'example',
+        'example',
+        'debug-75094d8',
+        'debug-86094f9',
+        const <MapEntry<String, String>>[],
+        0,
+        {'versionDetection': true},
+        DateTime.now(),
+        false,
+      );
+
+      final correctedApp = appsProvider.getCorrectedInstallStatusAppIfPossible(
+        app,
+        const FakePackageInfo(
+          packageName: 'app.example',
+          versionName: '1.5.3-DEV (75094D8)',
+          versionCode: 106,
+        ),
+      );
+
+      expect(correctedApp, isNull);
+      expect(app.additionalSettings['versionDetection'], true);
+      expect(app.installedVersion, 'debug-75094d8');
+    },
+  );
+
+  test(
+    'releaseCommitShaAsVersion setting does not disable version detection even if commit hashes differ',
+    () {
+      final appsProvider = AppsProvider();
+      final app = App(
+        'app.example',
+        'https://github.com/example/example',
+        'example',
+        'example',
+        '75094d8',
+        '86094f9',
+        const <MapEntry<String, String>>[],
+        0,
+        {'versionDetection': true, 'releaseCommitShaAsVersion': true},
+        DateTime.now(),
+        false,
+      );
+
+      final correctedApp = appsProvider.getCorrectedInstallStatusAppIfPossible(
+        app,
+        const FakePackageInfo(
+          packageName: 'app.example',
+          versionName: '1.5.3-DEV (75094D8)',
+          versionCode: 106,
+        ),
+      );
+
+      expect(correctedApp, isNull);
+      expect(app.additionalSettings['versionDetection'], true);
+      expect(app.installedVersion, '75094d8');
+    },
+  );
+
+  test(
+    'partially sha-like version updates (e.g. 26.06 to 26.07.1a2b3c4) do not disable version detection',
+    () {
+      final appsProvider = AppsProvider();
+      final app = App(
+        'app.example',
+        'https://github.com/wxxsfxyzm/InstallerX-Revived',
+        'wxxsfxyzm',
+        'InstallerX-Revived',
+        '26.06.9df4c85',
+        '26.07.1a2b3c4',
+        const <MapEntry<String, String>>[],
+        0,
+        {'versionDetection': true},
+        DateTime.now(),
+        false,
+      );
+
+      final correctedApp = appsProvider.getCorrectedInstallStatusAppIfPossible(
+        app,
+        const FakePackageInfo(
+          packageName: 'app.example',
+          versionName: '26.06',
+          versionCode: 106,
+        ),
+      );
+
+      expect(correctedApp, isNull);
+      expect(app.additionalSettings['versionDetection'], true);
+      expect(app.installedVersion, '26.06.9df4c85');
+    },
+  );
+
+  test(
+    'partially sha-like version update from null stored version does not disable version detection',
+    () {
+      final appsProvider = AppsProvider();
+      final app = App(
+        'app.example',
+        'https://github.com/wxxsfxyzm/InstallerX-Revived',
+        'wxxsfxyzm',
+        'InstallerX-Revived',
+        null,
+        '26.07.1a2b3c4',
+        const <MapEntry<String, String>>[],
+        0,
+        {'versionDetection': true},
+        DateTime.now(),
+        false,
+      );
+
+      final correctedApp = appsProvider.getCorrectedInstallStatusAppIfPossible(
+        app,
+        const FakePackageInfo(
+          packageName: 'app.example',
+          versionName: '26.06',
+          versionCode: 106,
+        ),
+      );
+
+      expect(correctedApp, isNotNull);
+      expect(app.additionalSettings['versionDetection'], true);
+      expect(app.installedVersion, '26.06');
+    },
+  );
+
+  test(
+    'unclear version order is resolved using lastInstalledTime and releaseDate',
+    () {
+      // Scenario 1: releaseDate is after lastInstalledTime (update available)
+      final appUpdate = App(
+        'app.example',
+        'https://github.com/example/example',
+        'example',
+        'example',
+        '26.06.9df4c85',
+        '26.06.8df31d',
+        const <MapEntry<String, String>>[],
+        0,
+        {
+          'versionDetection': true,
+          'lastInstalledTime': 1780272000000, // June 1st, 2026 in ms since epoch
+        },
+        DateTime.now(),
+        false,
+        releaseDate: DateTime.utc(2026, 6, 2),
+      );
+
+      expect(appHasActionableUpdate(appUpdate), true);
+      expect(versionOrderUncertainUpdate(appUpdate), false);
+
+      // Scenario 2: releaseDate is before lastInstalledTime (no update)
+      final appNoUpdate = App(
+        'app.example',
+        'https://github.com/example/example',
+        'example',
+        'example',
+        '26.06.9df4c85',
+        '26.06.8df31d',
+        const <MapEntry<String, String>>[],
+        0,
+        {
+          'versionDetection': true,
+          'lastInstalledTime': 1780444800000, // June 3rd, 2026 in ms since epoch
+        },
+        DateTime.now(),
+        false,
+        releaseDate: DateTime.utc(2026, 6, 2),
+      );
+
+      expect(appHasActionableUpdate(appNoUpdate), false);
+      // Even when timestamps suggest no update, the version order is still ambiguous,
+      // so the uncertain indicator must remain visible so the user can decide.
+      expect(versionOrderUncertainUpdate(appNoUpdate), true);
+
+      // Scenario 3: no lastInstalledTime (uncertain update)
+      final appUncertain = App(
+        'app.example',
+        'https://github.com/example/example',
+        'example',
+        'example',
+        '26.06.9df4c85',
+        '26.06.8df31d',
+        const <MapEntry<String, String>>[],
+        0,
+        {
+          'versionDetection': true,
+        },
+        DateTime.now(),
+        false,
+        releaseDate: DateTime.utc(2026, 6, 2),
+      );
+
+      expect(appHasActionableUpdate(appUncertain), false);
+      expect(versionOrderUncertainUpdate(appUncertain), true);
+    },
+  );
 }

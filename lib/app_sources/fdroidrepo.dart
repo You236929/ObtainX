@@ -66,6 +66,14 @@ class FDroidRepo extends AppSource {
           defaultValue: true,
         ),
       ],
+      [
+        GeneratedFormSwitch(
+          'enforceReproducibleBuilds',
+          label: tr('enforceReproducibleBuilds'),
+          labelTooltip: tr('reproducibleBuildsTooltip'),
+          defaultValue: false,
+        ),
+      ],
     ];
   }
 
@@ -124,8 +132,13 @@ class FDroidRepo extends AppSource {
     Response indexXmlResponse,
     String appIdOrName,
     Map<String, dynamic> additionalSettings,
-    String authorFallback,
-  ) async {
+    String authorFallback, {
+    bool requireReproducible = false,
+    Future<bool?> Function(String appId, int versionCode, String? apkSha256)?
+    isReproducibleRelease,
+    Future<String?> Function(String appId, int versionCode, String? apkSha256)?
+    reproducibleReleaseStatus,
+  }) async {
     var body = await parseHtmlOffIsolate(indexXmlResponse.body);
     var foundApps = body.querySelectorAll('application').where((element) {
       return element.attributes['id'] == appIdOrName;
@@ -154,9 +167,59 @@ class FDroidRepo extends AppSource {
     String appId = foundApps[0].attributes['id']!;
     foundApps[0].querySelector('name')?.innerHtml ?? appId;
     var appName = foundApps[0].querySelector('name')?.innerHtml ?? appId;
-    var releases = foundApps[0].querySelectorAll('package');
+    List<dynamic> releases = foundApps[0].querySelectorAll('package').toList();
+    releases = releases.where((release) {
+      return release.querySelector('apkname') != null;
+    }).toList();
     if (releases.isEmpty) {
       throw NoReleasesError();
+    }
+    Future<String> releaseReproducibleStatus(dynamic release) async {
+      if (release.querySelector('binaries') != null) {
+        return reproducibleBuildStatusVerified;
+      }
+      final int? versionCode = int.tryParse(
+        release.querySelector('versioncode')?.innerHtml ?? '',
+      );
+      if (versionCode == null) {
+        return reproducibleBuildStatusNoData;
+      }
+      final String? apkSha256 = release.querySelector('hash')?.innerHtml.trim();
+      try {
+        if (reproducibleReleaseStatus != null) {
+          return await reproducibleReleaseStatus(
+                appId,
+                versionCode,
+                apkSha256,
+              ) ??
+              reproducibleBuildStatusNoData;
+        }
+        if (isReproducibleRelease != null) {
+          return reproducibleBuildStatusFromBool(
+            await isReproducibleRelease(appId, versionCode, apkSha256),
+          );
+        }
+        return reproducibleBuildStatusNoData;
+      } catch (_) {
+        if (requireReproducible) {
+          rethrow;
+        }
+        return reproducibleBuildStatusError;
+      }
+    }
+
+    if (requireReproducible) {
+      final reproducibleReleases = <dynamic>[];
+      for (final release in releases) {
+        if (await releaseReproducibleStatus(release) ==
+            reproducibleBuildStatusVerified) {
+          reproducibleReleases.add(release);
+        }
+      }
+      releases = reproducibleReleases;
+      if (releases.isEmpty) {
+        throw NoReleasesError();
+      }
     }
     String? changeLog = foundApps[0].querySelector('changelog')?.innerHtml;
     String? latestVersion = releases[0].querySelector('version')?.innerHtml;
@@ -232,6 +295,9 @@ class FDroidRepo extends AppSource {
     if (iconFile != null && iconFile.isNotEmpty) {
       iconUrl = '$repoBase/icons/$iconFile';
     }
+    final String reproducibleStatus = selectedReleases.isNotEmpty
+        ? await releaseReproducibleStatus(selectedReleases[0])
+        : reproducibleBuildStatusNoData;
     return APKDetails(
       selectedVersion,
       getApkUrlsFromUrls(apkUrls),
@@ -240,6 +306,8 @@ class FDroidRepo extends AppSource {
       changeLog: changeLog,
       iconUrl: iconUrl,
       apkSizeBytes: apkSizeBytes,
+      isReproducible: reproducibleBuildBoolFromStatus(reproducibleStatus),
+      reproducibleStatus: reproducibleStatus,
     );
   }
 

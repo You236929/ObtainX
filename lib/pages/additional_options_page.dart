@@ -2,6 +2,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:expressive_loading_indicator/expressive_loading_indicator.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:obtainium/app_sources/github.dart';
 import 'package:obtainium/components/custom_app_bar.dart';
 import 'package:obtainium/components/generated_form.dart';
 import 'package:obtainium/components/version_regex_assist_dialog.dart';
@@ -36,6 +37,7 @@ Future<bool> persistAdditionalOptionsForm({
     app.url,
     overrideSource: app.overrideSource,
   );
+  final SettingsProvider settingsProvider = context.read<SettingsProvider>();
 
   final Map<String, dynamic> originalSettings = Map<String, dynamic>.from(
     app.additionalSettings,
@@ -43,6 +45,16 @@ Future<bool> persistAdditionalOptionsForm({
   syncVersionStringSourceSettings(originalSettings);
   app.additionalSettings = {...originalSettings, ...formValues};
   syncVersionStringSourceSettings(app.additionalSettings);
+  if (source is GitHub) {
+    if (!source.canVerifyAttestations(
+      app.additionalSettings,
+      settingsProvider,
+    )) {
+      app.additionalSettings[GitHub.buildVerificationModeKey] =
+          GitHub.buildVerificationOff;
+    }
+    app.additionalSettings[GitHub.enforceAttestationsKey] = false;
+  }
 
   if (source.enforceTrackOnly) {
     app.additionalSettings['trackOnly'] = true;
@@ -52,10 +64,15 @@ Future<bool> persistAdditionalOptionsForm({
   }
 
   final bool versionDetectionPreviouslyActive =
+      originalSettings['versionDetection'] == 'auto' ||
+      originalSettings['versionDetection'] == 'standard' ||
       originalSettings['versionDetection'] == true ||
-      !originalSettings.containsKey('versionDetection');
+      originalSettings['versionDetection'] == null;
   final bool versionDetectionCurrentlyActive =
-      app.additionalSettings['versionDetection'] == true;
+      app.additionalSettings['versionDetection'] == 'auto' ||
+      app.additionalSettings['versionDetection'] == 'standard' ||
+      app.additionalSettings['versionDetection'] == true ||
+      app.additionalSettings['versionDetection'] == null;
 
   final bool versionDetectionEnabled =
       versionDetectionCurrentlyActive && !versionDetectionPreviouslyActive;
@@ -82,7 +99,10 @@ Future<bool> persistAdditionalOptionsForm({
   }
 
   if (versionDetectionEnabled) {
-    app.additionalSettings['versionDetection'] = true;
+    if (app.additionalSettings['versionDetection'] != 'auto' &&
+        app.additionalSettings['versionDetection'] != 'standard') {
+      app.additionalSettings['versionDetection'] = 'auto';
+    }
     if (app.additionalSettings['releaseDateAsVersion'] == true) {
       app.additionalSettings['versionStringSource'] =
           versionStringSourceDefault;
@@ -91,17 +111,39 @@ Future<bool> persistAdditionalOptionsForm({
   } else if (versionDetectionDisabled && app.installedVersion != null) {
     final String? realInstalledVersion =
         app.additionalSettings['useVersionCodeAsOSVersion'] == true
-            ? appInMem.installedInfo?.versionCode.toString()
-            : appInMem.installedInfo?.versionName;
+        ? appInMem.installedInfo?.versionCode.toString()
+        : appInMem.installedInfo?.versionName;
     if (realInstalledVersion != null) {
-      if (reconcileVersionDifferences(realInstalledVersion, app.latestVersion)?.key != true) {
+      if (reconcileVersionDifferences(
+            realInstalledVersion,
+            app.latestVersion,
+          )?.key !=
+          true) {
         app.installedVersion = app.latestVersion;
       }
     }
   }
 
+  bool versionSettingsChanged = versionDetectionEnabled;
+  if (versionDetectionCurrentlyActive) {
+    final List<String> versionKeys = [
+      'useVersionCodeAsOSVersion',
+      'versionStringSource',
+      'versionExtractionRegEx',
+      'matchGroupToUse',
+      'releaseCommitShaAsVersion',
+    ];
+    for (final String key in versionKeys) {
+      if (originalSettings[key] != app.additionalSettings[key]) {
+        versionSettingsChanged = true;
+        app.installedVersion = null;
+        break;
+      }
+    }
+  }
+
   await appsProvider.saveApps([app], updateInstalledInfo: false);
-  return versionDetectionEnabled;
+  return versionSettingsChanged;
 }
 
 /// Full-screen editor for per-app additional options (keyboard-friendly).
@@ -147,6 +189,7 @@ class _AdditionalOptionsPageState extends State<AdditionalOptionsPage> {
     final Map<String, dynamic> appAdditionalSettings =
         Map<String, dynamic>.from(app.additionalSettings);
     syncVersionStringSourceSettings(appAdditionalSettings);
+    final SettingsProvider settingsProvider = context.read<SettingsProvider>();
     final AppSource source = SourceProvider().getSource(
       app.url,
       overrideSource: app.overrideSource,
@@ -156,6 +199,25 @@ class _AdditionalOptionsPageState extends State<AdditionalOptionsPage> {
       for (final GeneratedFormItem element in row) {
         if (appAdditionalSettings[element.key] != null) {
           element.defaultValue = appAdditionalSettings[element.key];
+        }
+        if (source is GitHub &&
+            element is GeneratedFormDropdown &&
+            element.key == GitHub.buildVerificationModeKey) {
+          final bool canVerifyGitHubBuild = source.canVerifyAttestations(
+            appAdditionalSettings,
+            settingsProvider,
+          );
+          if (!canVerifyGitHubBuild) {
+            element.disabledOptKeys = [
+              GitHub.buildVerificationAudit,
+              GitHub.buildVerificationEnforce,
+            ];
+            element.defaultValue = GitHub.buildVerificationOff;
+          } else if (appAdditionalSettings[GitHub.buildVerificationModeKey] ==
+                  null &&
+              appAdditionalSettings[GitHub.enforceAttestationsKey] == true) {
+            element.defaultValue = GitHub.buildVerificationEnforce;
+          }
         }
       }
     }

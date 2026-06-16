@@ -9,12 +9,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:obtainium/widgets/help_hint_icon.dart';
+import 'package:obtainium/components/app_dropdown_field.dart';
 import 'package:obtainium/components/custom_app_bar.dart';
 import 'package:obtainium/components/themes_settings_section.dart';
 import 'package:obtainium/components/generated_form.dart';
 import 'package:obtainium/components/generated_form_modal.dart';
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/main.dart';
+import 'package:obtainium/app_sources/github.dart';
 import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/providers/installer_provider.dart' as installer;
 import 'package:obtainium/providers/logs_provider.dart';
@@ -349,34 +351,53 @@ class _SettingsPageState extends State<SettingsPage> {
     if (settingsProvider.prefs == null) settingsProvider.initializeSettings();
     processIntervalSliderValue(settingsProvider.updateIntervalSliderVal);
 
-    final Widget localeMenu = m3eCompactDropdownScope(
+    final Widget localeMenu = appDropdownField<String>(
+      key: ValueKey(
+        settingsProvider.forcedLocale?.toLanguageTag() ?? '_system',
+      ),
       context: context,
-      child: DropdownMenu<Locale?>(
-        key: ValueKey(
-          settingsProvider.forcedLocale?.toLanguageTag() ?? '_system',
-        ),
-        initialSelection: settingsProvider.forcedLocale,
-        label: Text(tr('language')),
-        expandedInsets: EdgeInsets.zero,
-        onSelected: (Locale? value) {
-          settingsProvider.forcedLocale = value;
-          if (value != null) {
-            context.setLocale(value);
-          } else {
-            settingsProvider.resetLocaleSafe(context);
-          }
-        },
-        dropdownMenuEntries: [
-          DropdownMenuEntry<Locale?>(value: null, label: tr('followSystem')),
+      value: settingsProvider.forcedLocale?.toLanguageTag() ?? '_system',
+      labelText: tr('language'),
+      menuWidth: appDropdownMenuWidth(
+        context,
+        [
+          tr('followSystem'),
           ...supportedLocales.map(
-            (MapEntry<Locale, String> localeEntry) =>
-                DropdownMenuEntry<Locale?>(
-                  value: localeEntry.key,
-                  label: localeEntry.value,
-                ),
+            (MapEntry<Locale, String> localeEntry) => localeEntry.value,
           ),
         ],
+        style: Theme.of(context).textTheme.bodyLarge,
+        horizontalPadding: 96,
+        minWidth: 150,
       ),
+      items: [
+        DropdownMenuItem<String>(
+          value: '_system',
+          child: Text(tr('followSystem')),
+        ),
+        ...supportedLocales.map(
+          (MapEntry<Locale, String> localeEntry) => DropdownMenuItem<String>(
+            value: localeEntry.key.toLanguageTag(),
+            child: Text(localeEntry.value),
+          ),
+        ),
+      ],
+      onChanged: (String? value) {
+        final Locale? selectedLocale = value == null || value == '_system'
+            ? null
+            : supportedLocales
+                  .firstWhere(
+                    (MapEntry<Locale, String> localeEntry) =>
+                        localeEntry.key.toLanguageTag() == value,
+                  )
+                  .key;
+        settingsProvider.forcedLocale = selectedLocale;
+        if (selectedLocale != null) {
+          context.setLocale(selectedLocale);
+        } else {
+          settingsProvider.resetLocaleSafe(context);
+        }
+      },
     );
 
     // M3 Expressive slider design - thick gapped track + vertical-bar thumb.
@@ -423,15 +444,27 @@ class _SettingsPageState extends State<SettingsPage> {
           return GeneratedForm(
             outlinedInputFields: true,
             items: source.sourceConfigSettingFormItems.map((item) {
-              if (item is GeneratedFormSwitch) {
-                item.defaultValue = settingsProvider.getSettingBool(item.key);
+              final GeneratedFormItem formItem = item.clone();
+              if (formItem is GeneratedFormSwitch) {
+                formItem.defaultValue = settingsProvider.getSettingBool(
+                  formItem.key,
+                );
               } else {
-                item.defaultValue = settingsProvider.getSettingString(item.key);
+                formItem.defaultValue = settingsProvider.getSettingString(
+                  formItem.key,
+                );
               }
-              return [item];
+              return [formItem];
             }).toList(),
             onValueChanges: (values, valid, isBuilding) {
               if (valid && !isBuilding) {
+                if (source is GitHub) {
+                  final String? githubCreds = values[GitHub.githubCredsKey]
+                      ?.toString();
+                  if (!GitHub.hasValidatedPAT(githubCreds, settingsProvider)) {
+                    GitHub.clearPATValidation(settingsProvider);
+                  }
+                }
                 values.forEach((key, value) {
                   final formItem = source.sourceConfigSettingFormItems
                       .where((i) => i.key == key)
@@ -1110,86 +1143,86 @@ class _SettingsPageState extends State<SettingsPage> {
                                   16,
                                   12,
                                 ),
-                                child: m3eCompactDropdownScope(
-                                  context: context,
-                                  child: Column(
+                                child: (() {
+                                  final List<SwipeAction> actions =
+                                      swipeActionsSortedByLocalizedLabel();
+                                  final double swipeMenuWidth =
+                                      appDropdownMenuWidth(
+                                        context,
+                                        actions.map(
+                                          (SwipeAction action) =>
+                                              tr('swipeAction_${action.name}'),
+                                        ),
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodyLarge,
+                                        horizontalPadding: 120,
+                                        minWidth: 180,
+                                        maxWidthInset: 80,
+                                      );
+                                  List<DropdownMenuItem<SwipeAction>>
+                                  actionItems() {
+                                    return actions.map((SwipeAction action) {
+                                      return DropdownMenuItem<SwipeAction>(
+                                        value: action,
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              _swipeActionIcon(action),
+                                              size: 18,
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Text(
+                                              tr('swipeAction_${action.name}'),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }).toList();
+                                  }
+
+                                  return Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.stretch,
                                     children: [
-                                      DropdownMenu<SwipeAction>(
+                                      appDropdownField<SwipeAction>(
                                         key: ValueKey(
                                           'rightSwipeAction_${settingsProvider.rightSwipeAction}',
                                         ),
-                                        initialSelection:
+                                        context: context,
+                                        value:
                                             settingsProvider.rightSwipeAction,
-                                        label: Text(tr('rightSwipeAction')),
-                                        expandedInsets: EdgeInsets.zero,
-                                        onSelected: (SwipeAction? value) {
+                                        labelText: tr('rightSwipeAction'),
+                                        menuWidth: swipeMenuWidth,
+                                        items: actionItems(),
+                                        onChanged: (SwipeAction? value) {
                                           if (value != null) {
                                             settingsProvider.rightSwipeAction =
                                                 value;
                                           }
                                         },
-                                        dropdownMenuEntries:
-                                            swipeActionsSortedByLocalizedLabel()
-                                                .map(
-                                                  (SwipeAction action) =>
-                                                      DropdownMenuEntry<
-                                                        SwipeAction
-                                                      >(
-                                                        value: action,
-                                                        label: tr(
-                                                          'swipeAction_${action.name}',
-                                                        ),
-                                                        leadingIcon: Icon(
-                                                          _swipeActionIcon(
-                                                            action,
-                                                          ),
-                                                          size: 18,
-                                                        ),
-                                                      ),
-                                                )
-                                                .toList(),
                                       ),
                                       const SizedBox(height: 16),
-                                      DropdownMenu<SwipeAction>(
+                                      appDropdownField<SwipeAction>(
                                         key: ValueKey(
                                           'leftSwipeAction_${settingsProvider.leftSwipeAction}',
                                         ),
-                                        initialSelection:
-                                            settingsProvider.leftSwipeAction,
-                                        label: Text(tr('leftSwipeAction')),
-                                        expandedInsets: EdgeInsets.zero,
-                                        onSelected: (SwipeAction? value) {
+                                        context: context,
+                                        value: settingsProvider.leftSwipeAction,
+                                        labelText: tr('leftSwipeAction'),
+                                        menuWidth: swipeMenuWidth,
+                                        items: actionItems(),
+                                        onChanged: (SwipeAction? value) {
                                           if (value != null) {
                                             settingsProvider.leftSwipeAction =
                                                 value;
                                           }
                                         },
-                                        dropdownMenuEntries:
-                                            swipeActionsSortedByLocalizedLabel()
-                                                .map(
-                                                  (SwipeAction action) =>
-                                                      DropdownMenuEntry<
-                                                        SwipeAction
-                                                      >(
-                                                        value: action,
-                                                        label: tr(
-                                                          'swipeAction_${action.name}',
-                                                        ),
-                                                        leadingIcon: Icon(
-                                                          _swipeActionIcon(
-                                                            action,
-                                                          ),
-                                                          size: 18,
-                                                        ),
-                                                      ),
-                                                )
-                                                .toList(),
                                       ),
                                     ],
-                                  ),
-                                ),
+                                  );
+                                })(),
                               ),
                             ]),
                             // ── Categories ────────────────────────────────────────
@@ -1275,7 +1308,11 @@ class _AboutSectionContent extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           FutureBuilder<PackageInfo?>(
-            future: getInstalledInfo(obtainiumId, printErr: false),
+            future: getInstalledInfo(
+              obtainiumId,
+              printErr: false,
+              includeOwnDebugBuild: true,
+            ),
             builder: (context, snapshot) {
               final String versionName =
                   snapshot.data?.versionName ?? tr('unknown');
@@ -1725,10 +1762,7 @@ void _openLogsDialog(BuildContext context) {
 
 class LogsDialog extends StatefulWidget {
   final int initialDays;
-  const LogsDialog({
-    super.key,
-    required this.initialDays,
-  });
+  const LogsDialog({super.key, required this.initialDays});
 
   @override
   State<LogsDialog> createState() => _LogsDialogState();
@@ -1759,20 +1793,23 @@ class _LogsDialogState extends State<LogsDialog> {
           orderBy: 'timestamp DESC',
         )
         .then((logsList) {
-      if (!mounted) return;
-      setState(() {
-        final chronologicalLogs = logsList.reversed.toList();
-        String joinedLogs = chronologicalLogs.map((logEntry) => logEntry.toString()).join('\n\n');
-        logString = joinedLogs.isNotEmpty ? joinedLogs : tr('noLogs');
-        isLoading = false;
-      });
-    }).catchError((error) {
-      if (!mounted) return;
-      setState(() {
-        logString = tr('noLogs');
-        isLoading = false;
-      });
-    });
+          if (!mounted) return;
+          setState(() {
+            final chronologicalLogs = logsList.reversed.toList();
+            String joinedLogs = chronologicalLogs
+                .map((logEntry) => logEntry.toString())
+                .join('\n\n');
+            logString = joinedLogs.isNotEmpty ? joinedLogs : tr('noLogs');
+            isLoading = false;
+          });
+        })
+        .catchError((error) {
+          if (!mounted) return;
+          setState(() {
+            logString = tr('noLogs');
+            isLoading = false;
+          });
+        });
   }
 
   @override
@@ -1782,20 +1819,34 @@ class _LogsDialogState extends State<LogsDialog> {
     Future<String> getDiagnosticsText() async {
       final buffer = StringBuffer();
       buffer.writeln('=== ObtainX Diagnostic Log ===');
-      
+
       try {
-        final packageInfo = await getInstalledInfo(obtainiumId, printErr: false);
-        buffer.writeln('App Version: ${packageInfo?.versionName ?? 'Unknown'} (code ${packageInfo?.versionCode ?? 'unknown'})');
-        buffer.writeln('Package ID: ${packageInfo?.packageName ?? obtainiumId}');
+        final packageInfo = await getInstalledInfo(
+          obtainiumId,
+          printErr: false,
+          includeOwnDebugBuild: true,
+        );
+        buffer.writeln(
+          'App Version: ${packageInfo?.versionName ?? 'Unknown'} (code ${packageInfo?.versionCode ?? 'unknown'})',
+        );
+        buffer.writeln(
+          'Package ID: ${packageInfo?.packageName ?? obtainiumId}',
+        );
       } catch (exception) {
         buffer.writeln('App Version: Unknown (Error fetching package info)');
       }
 
       try {
         final androidInfo = await DeviceInfoPlugin().androidInfo;
-        buffer.writeln('Device: ${androidInfo.manufacturer} ${androidInfo.model} (${androidInfo.device})');
-        buffer.writeln('Android Version: ${androidInfo.version.release} (SDK ${androidInfo.version.sdkInt})');
-        buffer.writeln('Supported ABIs: ${androidInfo.supportedAbis.join(', ')}');
+        buffer.writeln(
+          'Device: ${androidInfo.manufacturer} ${androidInfo.model} (${androidInfo.device})',
+        );
+        buffer.writeln(
+          'Android Version: ${androidInfo.version.release} (SDK ${androidInfo.version.sdkInt})',
+        );
+        buffer.writeln(
+          'Supported ABIs: ${androidInfo.supportedAbis.join(', ')}',
+        );
       } catch (exception) {
         buffer.writeln('Device Info: Unknown (Error fetching device info)');
       }
@@ -1804,27 +1855,41 @@ class _LogsDialogState extends State<LogsDialog> {
       final appsProvider = context.read<AppsProvider>();
       buffer.writeln('Installer Mode: ${settingsProvider.installerMode}');
       buffer.writeln('Use Shizuku: ${settingsProvider.useShizuku}');
-      buffer.writeln('Background Updates: ${settingsProvider.enableBackgroundUpdates}');
-      buffer.writeln('Parallel Downloads: ${settingsProvider.parallelDownloads}');
+      buffer.writeln(
+        'Background Updates: ${settingsProvider.enableBackgroundUpdates}',
+      );
+      buffer.writeln(
+        'Parallel Downloads: ${settingsProvider.parallelDownloads}',
+      );
       buffer.writeln('Tracked Apps: ${appsProvider.apps.length}');
 
       try {
         final notificationGranted = await Permission.notification.isGranted;
         buffer.writeln('Notifications Enabled: $notificationGranted');
       } catch (exception) {
-        buffer.writeln('Notifications Enabled: Unknown (Error checking permission)');
+        buffer.writeln(
+          'Notifications Enabled: Unknown (Error checking permission)',
+        );
       }
 
       final autoExportEnabled = settingsProvider.autoExportOnChanges;
       buffer.writeln('Auto-Export on Changes: $autoExportEnabled');
       if (autoExportEnabled) {
         try {
-          final exportDir = await settingsProvider.getExportDir(requireAccess: false);
+          final exportDir = await settingsProvider.getExportDir(
+            requireAccess: false,
+          );
           if (exportDir == null) {
             buffer.writeln('Export Directory: Not configured');
           } else {
-            final accessGranted = await settingsProvider.getExportDir(warnIfInaccessible: false) != null;
-            buffer.writeln('Export Directory Configured: true (Access Present: $accessGranted)');
+            final accessGranted =
+                await settingsProvider.getExportDir(
+                  warnIfInaccessible: false,
+                ) !=
+                null;
+            buffer.writeln(
+              'Export Directory Configured: true (Access Present: $accessGranted)',
+            );
           }
         } catch (exception) {
           buffer.writeln('Export Directory: Unknown (Error checking path)');
@@ -1835,12 +1900,20 @@ class _LogsDialogState extends State<LogsDialog> {
       buffer.writeln('Save APK Copies: $saveApkCopies');
       if (saveApkCopies) {
         try {
-          final apkSaveDir = await settingsProvider.getApkSaveDir(requireAccess: false);
+          final apkSaveDir = await settingsProvider.getApkSaveDir(
+            requireAccess: false,
+          );
           if (apkSaveDir == null) {
             buffer.writeln('APK Save Directory: Not configured');
           } else {
-            final accessGranted = await settingsProvider.getApkSaveDir(warnIfInaccessible: false) != null;
-            buffer.writeln('APK Save Directory Configured: true (Access Present: $accessGranted)');
+            final accessGranted =
+                await settingsProvider.getApkSaveDir(
+                  warnIfInaccessible: false,
+                ) !=
+                null;
+            buffer.writeln(
+              'APK Save Directory Configured: true (Access Present: $accessGranted)',
+            );
           }
         } catch (exception) {
           buffer.writeln('APK Save Directory: Unknown (Error checking path)');
@@ -1860,24 +1933,30 @@ class _LogsDialogState extends State<LogsDialog> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            DropdownButtonFormField<int>(
-              initialValue: selectedDays,
+            appDropdownField<int>(
+              key: ValueKey(selectedDays),
+              context: context,
+              value: selectedDays,
+              enabled: !isLoading,
+              menuWidth: appDropdownMenuWidth(
+                context,
+                days.map((int dayValue) => plural('day', dayValue)),
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
               items: days
                   .map(
-                    (dayValue) => DropdownMenuItem<int>(
+                    (int dayValue) => DropdownMenuItem<int>(
                       value: dayValue,
                       child: Text(plural('day', dayValue)),
                     ),
                   )
                   .toList(),
-              onChanged: isLoading
-                  ? null
-                  : (selectedVal) {
-                      if (selectedVal != null) {
-                        selectedDays = selectedVal;
-                        fetchLogs(selectedVal);
-                      }
-                    },
+              onChanged: (int? selectedValue) {
+                if (selectedValue != null) {
+                  selectedDays = selectedValue;
+                  fetchLogs(selectedValue);
+                }
+              },
             ),
             const SizedBox(height: 16),
             Expanded(
@@ -1954,7 +2033,9 @@ class _LogsDialogState extends State<LogsDialog> {
                       final logFileName =
                           'obtainx-logs-$timestampForFilename.txt';
                       final logFile = XFile.fromData(
-                        Uint8List.fromList(utf8.encode('$diagnostics${logString ?? ''}')),
+                        Uint8List.fromList(
+                          utf8.encode('$diagnostics${logString ?? ''}'),
+                        ),
                         mimeType: 'text/plain',
                         name: logFileName,
                       );

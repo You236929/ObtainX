@@ -1,8 +1,16 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 // ignore: depend_on_referenced_packages
 import 'package:device_info_plus_platform_interface/device_info_plus_platform_interface.dart';
 import 'package:obtainium/app_sources/apkmirror.dart';
+import 'package:obtainium/app_sources/fdroid.dart';
+import 'package:obtainium/app_sources/fdroidrepo.dart';
+import 'package:obtainium/app_sources/github.dart';
+import 'package:obtainium/app_sources/izzyondroid.dart';
 import 'package:obtainium/providers/source_provider.dart';
+import 'package:http/http.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Stub source that returns a controllable [APKDetails] from
 /// [getLatestAPKDetails] without doing any network or HTML work.
@@ -42,6 +50,146 @@ class _StubAPKMirror extends APKMirror {
   }) async => null;
 }
 
+class _StubSource extends AppSource {
+  _StubSource() {
+    hosts = <String>['example.com'];
+    name = 'Example';
+  }
+
+  @override
+  String sourceSpecificStandardizeURL(String url, {bool forSelection = false}) {
+    return url;
+  }
+
+  @override
+  Future<APKDetails> getLatestAPKDetails(
+    String standardUrl,
+    Map<String, dynamic> additionalSettings,
+  ) async {
+    return APKDetails('2.0', const <MapEntry<String, String>>[
+      MapEntry('example.apk', 'https://example.com/example.apk'),
+    ], AppNames('Example Author', 'Readable Name'));
+  }
+
+  @override
+  Future<String?> tryInferringAppId(
+    String standardUrl, {
+    Map<String, dynamic> additionalSettings = const {},
+  }) async {
+    return 'org.example.app';
+  }
+}
+
+class _StubFDroid extends FDroid {
+  _StubFDroid(
+    this.pageHtml, {
+    bool hostChanged = false,
+    bool hostIdenticalDespiteAnyChange = false,
+  }) {
+    this.hostChanged = hostChanged;
+    this.hostIdenticalDespiteAnyChange = hostIdenticalDespiteAnyChange;
+  }
+
+  final String pageHtml;
+
+  @override
+  Future<Response> sourceRequest(
+    String url,
+    Map<String, dynamic> additionalSettings, {
+    bool followRedirects = true,
+    Object? postBody,
+  }) async {
+    return Response(pageHtml, 200);
+  }
+}
+
+class _StubIzzyOnDroid extends IzzyOnDroid {
+  @override
+  Future<Response> sourceRequest(
+    String url,
+    Map<String, dynamic> additionalSettings, {
+    bool followRedirects = true,
+    Object? postBody,
+  }) async {
+    if (url == 'https://apt.izzysoft.de/fdroid/repo/index.xml') {
+      return _fdroidRepoResponse('''
+<fdroid><repo name="IzzyOnDroid"/><application id="org.example.app">
+  <name>Example App</name>
+  <marketvercode>3</marketvercode>
+  <package>
+    <version>3.0</version>
+    <versioncode>3</versioncode>
+    <apkname>org.example.app_3.apk</apkname>
+  </package>
+</application></fdroid>
+''');
+    }
+    if (url == 'https://apt.izzysoft.de/fdroid/rbtlogs/izzy.json') {
+      return Response('{}', 200);
+    }
+    if (url == 'https://apt.izzysoft.de/fdroid/index/apk/org.example.app') {
+      return Response('''
+<html><head>
+<meta property="og:image" content="/fdroid/repo/org.example.app/en-US/icon.png" />
+</head><body></body></html>
+''', 200);
+    }
+    return Response('', 404);
+  }
+}
+
+class _StubGitHub extends GitHub {
+  @override
+  Future<Response> sourceRequest(
+    String url,
+    Map<String, dynamic> additionalSettings, {
+    bool followRedirects = true,
+    Object? postBody,
+  }) async {
+    if (url.endsWith('/releases?per_page=100')) {
+      return Response(
+        jsonEncode([
+          {
+            'tag_name': '1.0',
+            'name': '1.0',
+            'draft': false,
+            'prerelease': false,
+            'published_at': '2026-01-01T00:00:00Z',
+            'body': '',
+            'assets': [
+              {
+                'name': 'example.apk',
+                'browser_download_url':
+                    'https://github.com/example/app/releases/download/1.0/example.apk',
+                'url':
+                    'https://api.github.com/repos/example/app/releases/assets/1',
+                'size': 123,
+                'digest': 'sha256:abc123',
+              },
+            ],
+          },
+        ]),
+        200,
+      );
+    }
+    if (url.endsWith('/attestations/sha256:abc123')) {
+      return Response(
+        jsonEncode({
+          'attestations': [{}],
+        }),
+        200,
+      );
+    }
+    if (url.endsWith('/attestations/sha256:empty123')) {
+      return Response(jsonEncode({'attestations': []}), 200);
+    }
+    if (url.endsWith('/attestations/sha256:error123')) {
+      return Response('', 500);
+    }
+    return Response('', 404);
+  }
+}
+
 App _buildCurrentApp({required String latestVersion, int? apkSizeBytes}) {
   return App(
     'com.example.app',
@@ -56,6 +204,53 @@ App _buildCurrentApp({required String latestVersion, int? apkSizeBytes}) {
     DateTime.now(),
     false,
     apkSizeBytes: apkSizeBytes,
+  );
+}
+
+App _buildCurrentNamedApp({required String name}) {
+  return App(
+    'org.example.app',
+    'https://example.com/app',
+    'Example Author',
+    name,
+    null,
+    '1.0',
+    const <MapEntry<String, String>>[
+      MapEntry('example.apk', 'https://example.com/example.apk'),
+    ],
+    0,
+    <String, dynamic>{},
+    DateTime.now(),
+    false,
+  );
+}
+
+App _buildCurrentTempIdNamedApp({required String name}) {
+  return App(
+    '123456789',
+    'https://example.com/app',
+    'Example Author',
+    name,
+    null,
+    '1.0',
+    const <MapEntry<String, String>>[
+      MapEntry('example.apk', 'https://example.com/example.apk'),
+    ],
+    0,
+    <String, dynamic>{},
+    DateTime.now(),
+    false,
+  );
+}
+
+Response _fdroidRepoResponse(String xml) {
+  return Response(
+    xml,
+    200,
+    request: Request(
+      'GET',
+      Uri.parse('https://apt.izzysoft.de/fdroid/repo/index.xml'),
+    ),
   );
 }
 
@@ -103,6 +298,10 @@ class _FakeAndroidDeviceInfoPlatform extends DeviceInfoPlatform {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   DeviceInfoPlatform.instance = _FakeAndroidDeviceInfoPlatform();
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
 
   // ── Size cache key invalidation ─────────────────────────────────────
   // The contract: the size persisted onto an App is keyed implicitly by
@@ -175,4 +374,285 @@ void main() {
       expect(newApp.apkSizeBytes, isNull);
     },
   );
+
+  test(
+    'F-Droid repo parser filters to reproducible releases when enforced',
+    () async {
+      final details = await FDroidRepo.apkDetailsFromIndexXmlResponse(
+        _fdroidRepoResponse('''
+<fdroid><repo name="IzzyOnDroid"/><application id="org.example.app">
+  <name>Example App</name>
+  <marketvercode>3</marketvercode>
+  <package>
+    <version>3.0</version>
+    <versioncode>3</versioncode>
+    <apkname>org.example.app_3.apk</apkname>
+    <hash type="sha256">hash3</hash>
+  </package>
+  <package>
+    <version>2.0</version>
+    <versioncode>2</versioncode>
+    <apkname>org.example.app_2.apk</apkname>
+    <hash type="sha256">hash2</hash>
+  </package>
+</application></fdroid>
+'''),
+        'org.example.app',
+        <String, dynamic>{},
+        'IzzyOnDroid',
+        requireReproducible: true,
+        isReproducibleRelease:
+            (String appId, int versionCode, String? apkSha256) async {
+              return appId == 'org.example.app' &&
+                  versionCode == 2 &&
+                  apkSha256 == 'hash2';
+            },
+      );
+
+      expect(details.version, '2.0');
+      expect(details.names.name, 'Example App');
+      expect(details.isReproducible, isTrue);
+      expect(details.reproducibleStatus, reproducibleBuildStatusVerified);
+      expect(
+        details.apkUrls.single.value,
+        'https://apt.izzysoft.de/fdroid/repo/org.example.app_2.apk',
+      );
+    },
+  );
+
+  test(
+    'F-Droid repo parser keeps latest release when enforcement is off',
+    () async {
+      final details = await FDroidRepo.apkDetailsFromIndexXmlResponse(
+        _fdroidRepoResponse('''
+<fdroid><repo name="IzzyOnDroid"/><application id="org.example.app">
+  <name>Example App</name>
+  <marketvercode>3</marketvercode>
+  <package>
+    <version>3.0</version>
+    <versioncode>3</versioncode>
+    <apkname>org.example.app_3.apk</apkname>
+    <hash type="sha256">hash3</hash>
+  </package>
+  <package>
+    <version>2.0</version>
+    <versioncode>2</versioncode>
+    <apkname>org.example.app_2.apk</apkname>
+    <hash type="sha256">hash2</hash>
+  </package>
+</application></fdroid>
+'''),
+        'org.example.app',
+        <String, dynamic>{},
+        'IzzyOnDroid',
+        isReproducibleRelease:
+            (String appId, int versionCode, String? apkSha256) async {
+              return appId == 'org.example.app' &&
+                  versionCode == 2 &&
+                  apkSha256 == 'hash2';
+            },
+      );
+
+      expect(details.version, '3.0');
+      expect(details.isReproducible, isFalse);
+      expect(
+        details.reproducibleStatus,
+        reproducibleBuildStatusNotReproducible,
+      );
+    },
+  );
+
+  test(
+    'F-Droid repo parser marks missing reproducible metadata as no data',
+    () async {
+      final details = await FDroidRepo.apkDetailsFromIndexXmlResponse(
+        _fdroidRepoResponse('''
+<fdroid><repo name="IzzyOnDroid"/><application id="org.example.app">
+  <name>Example App</name>
+  <marketvercode>3</marketvercode>
+  <package>
+    <version>3.0</version>
+    <versioncode>3</versioncode>
+    <apkname>org.example.app_3.apk</apkname>
+    <hash type="sha256">hash3</hash>
+  </package>
+</application></fdroid>
+'''),
+        'org.example.app',
+        <String, dynamic>{},
+        'IzzyOnDroid',
+      );
+
+      expect(details.version, '3.0');
+      expect(details.isReproducible, isNull);
+      expect(details.reproducibleStatus, reproducibleBuildStatusNoData);
+    },
+  );
+
+  test('IzzyOnDroid uses app page metadata as icon fallback', () async {
+    final details = await _StubIzzyOnDroid().getLatestAPKDetails(
+      'https://apt.izzysoft.de/fdroid/index/apk/org.example.app',
+      <String, dynamic>{'appIdOrName': 'org.example.app'},
+    );
+
+    expect(details.names.name, 'Example App');
+    expect(
+      details.iconUrl,
+      'https://apt.izzysoft.de/fdroid/repo/org.example.app/en-US/icon.png',
+    );
+    expect(details.reproducibleStatus, reproducibleBuildStatusNoData);
+  });
+
+  test('GitHub verifies release asset attestation from digest', () async {
+    final attestationStatus = await _StubGitHub()
+        .getAttestationStatusForSha256Digest(
+          'https://github.com/example/app',
+          'sha256:abc123',
+          <String, dynamic>{},
+        );
+
+    expect(attestationStatus, githubAttestationStatusVerified);
+  });
+
+  test(
+    'GitHub marks missing release asset attestation as unsupported',
+    () async {
+      final attestationStatus = await _StubGitHub()
+          .getAttestationStatusForSha256Digest(
+            'https://github.com/example/app',
+            'sha256:empty123',
+            <String, dynamic>{},
+          );
+
+      expect(attestationStatus, githubAttestationStatusUnsupported);
+    },
+  );
+
+  test('GitHub marks attestation API failures as error', () async {
+    final attestationStatus = await _StubGitHub()
+        .getAttestationStatusForSha256Digest(
+          'https://github.com/example/app',
+          'sha256:error123',
+          <String, dynamic>{},
+        );
+
+    expect(attestationStatus, githubAttestationStatusError);
+  });
+
+  test(
+    'F-Droid API parser uses localized response name when available',
+    () async {
+      final details = await FDroid().getAPKUrlsFromFDroidPackagesAPIResponse(
+        Response(
+          jsonEncode({
+            'packageName': 'org.example.app',
+            'name': {'en-US': 'Readable F-Droid Name'},
+            'packages': [
+              {'versionName': '1.0', 'versionCode': 1},
+            ],
+          }),
+          200,
+        ),
+        'http://127.0.0.1:9/repo/org.example.app',
+        'https://example.com/packages/org.example.app',
+        'F-Droid',
+      );
+
+      expect(details.names.name, 'Readable F-Droid Name');
+      expect(details.version, '1.0');
+      expect(details.isReproducible, isNull);
+      expect(details.reproducibleStatus, reproducibleBuildStatusNoData);
+    },
+  );
+
+  test('F-Droid API parser falls back to package page title', () async {
+    final details =
+        await _StubFDroid(
+          '<html><head><title>NewPipe | F-Droid - Free and Open Source Android App Repository</title></head></html>',
+        ).getAPKUrlsFromFDroidPackagesAPIResponse(
+          Response(
+            jsonEncode({
+              'packageName': 'org.schabi.newpipe',
+              'packages': [
+                {'versionName': '0.28.8', 'versionCode': 1013},
+              ],
+            }),
+            200,
+          ),
+          'http://127.0.0.1:9/repo/org.schabi.newpipe',
+          'https://f-droid.org/packages/org.schabi.newpipe',
+          'F-Droid',
+        );
+
+    expect(details.names.name, 'NewPipe');
+  });
+
+  test(
+    'F-Droid overridden canonical host still falls back to package page title',
+    () async {
+      final details =
+          await _StubFDroid(
+            '<html><head><title>NewPipe | F-Droid - Free and Open Source Android App Repository</title></head></html>',
+            hostChanged: true,
+            hostIdenticalDespiteAnyChange: true,
+          ).getAPKUrlsFromFDroidPackagesAPIResponse(
+            Response(
+              jsonEncode({
+                'packageName': 'org.schabi.newpipe',
+                'packages': [
+                  {'versionName': '0.28.8', 'versionCode': 1013},
+                ],
+              }),
+              200,
+            ),
+            'http://127.0.0.1:9/repo/org.schabi.newpipe',
+            'https://f-droid.org/packages/org.schabi.newpipe',
+            'F-Droid',
+          );
+
+      expect(details.names.name, 'NewPipe');
+    },
+  );
+
+  test('source name replaces stale package-id app name', () async {
+    final newApp = await SourceProvider().getApp(
+      _StubSource(),
+      'https://example.com/app',
+      <String, dynamic>{},
+      currentApp: _buildCurrentNamedApp(name: 'org.example.app'),
+    );
+
+    expect(newApp.name, 'Readable Name');
+  });
+
+  test('source name replaces stale package-looking app name', () async {
+    final newApp = await SourceProvider().getApp(
+      _StubSource(),
+      'https://example.com/app',
+      <String, dynamic>{},
+      currentApp: _buildCurrentTempIdNamedApp(name: 'org.example.app'),
+    );
+
+    expect(newApp.name, 'Readable Name');
+  });
+
+  test('package-id name override is ignored when source name is readable', () {
+    final app = App(
+      'org.example.app',
+      'https://example.com/app',
+      'Example Author',
+      'Readable Name',
+      null,
+      '1.0',
+      const <MapEntry<String, String>>[
+        MapEntry('example.apk', 'https://example.com/example.apk'),
+      ],
+      0,
+      <String, dynamic>{'appName': 'org.example.app'},
+      DateTime.now(),
+      false,
+    );
+
+    expect(app.finalName, 'Readable Name');
+  });
 }

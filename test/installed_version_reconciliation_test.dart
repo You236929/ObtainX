@@ -72,6 +72,51 @@ void main() {
   );
 
   test(
+    'disabled version detection accepts installed version when latest version reconciles',
+    () {
+      expect(
+        reconciledInstalledVersionForDisabledVersionDetection(
+          '1.2.0',
+          'release-2026-04-01',
+          '1.3.0',
+        ),
+        '1.2.0',
+      );
+    },
+  );
+
+  test(
+    'disabled version detection reflects external upgrade even when latest is incompatible',
+    () {
+      // real upgraded from 1.1.0 → 1.2.0 externally; source uses a different format
+      expect(
+        reconciledInstalledVersionForDisabledVersionDetection(
+          '1.2.0',
+          '1.1.0',
+          'build-abc123',
+        ),
+        '1.2.0',
+      );
+    },
+  );
+
+  test(
+    'disabled version detection does not hide update when pseudo stored equals real',
+    () {
+      // pseudo stored == real (2.0), but source bumped to 2.1; reconciledInstalled
+      // returns 2.0 (equal check), so installedVersion stays 2.0 and update stays visible
+      expect(
+        reconciledInstalledVersionForDisabledVersionDetection(
+          '2.0',
+          '2.0',
+          '2.1',
+        ),
+        '2.0',
+      );
+    },
+  );
+
+  test(
     'disabled version detection ignores installed version when no version reconciles',
     () {
       expect(

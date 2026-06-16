@@ -760,6 +760,15 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  bool get hideBatteryOptimizationWarning {
+    return prefs?.getBool('hideBatteryOptimizationWarning') ?? false;
+  }
+
+  set hideBatteryOptimizationWarning(bool show) {
+    prefs?.setBool('hideBatteryOptimizationWarning', show);
+    notifyListeners();
+  }
+
   String? getSettingString(String settingId) {
     String? str = prefs?.getString(settingId);
     return str?.isNotEmpty == true ? str : null;

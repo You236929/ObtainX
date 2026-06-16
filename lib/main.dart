@@ -275,8 +275,46 @@ class _ObtainiumState extends State<Obtainium> {
     if (notificationPermission != NotificationPermission.granted) {
       await FlutterForegroundTask.requestNotificationPermission();
     }
-    if (!await FlutterForegroundTask.isIgnoringBatteryOptimizations) {
-      await FlutterForegroundTask.requestIgnoreBatteryOptimization();
+    if (!mounted) return;
+    await showBatteryOptimizationWarningIfNeeded();
+  }
+
+  Future<void> showBatteryOptimizationWarningIfNeeded() async {
+    final SettingsProvider settingsProvider = context.read<SettingsProvider>();
+    if (settingsProvider.hideBatteryOptimizationWarning) {
+      return;
+    }
+    final bool isIgnoringBatteryOptimizations =
+        await FlutterForegroundTask.isIgnoringBatteryOptimizations;
+    if (!mounted || isIgnoringBatteryOptimizations) {
+      return;
+    }
+    final BuildContext? dialogContext = globalNavigatorKey.currentContext;
+    if (dialogContext == null || !dialogContext.mounted) return;
+    final bool? openSettings = await showDialog<bool>(
+      context: dialogContext,
+      builder: (BuildContext alertContext) {
+        return AlertDialog(
+          title: Text(tr('batteryOptimizationWarningTitle')),
+          content: Text(tr('batteryOptimizationWarningBody')),
+          actions: [
+            TextButton(
+              onPressed: () {
+                settingsProvider.hideBatteryOptimizationWarning = true;
+                Navigator.of(alertContext).pop(false);
+              },
+              child: Text(tr('dontAskAgain')),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(alertContext).pop(true),
+              child: Text(tr('openSettings')),
+            ),
+          ],
+        );
+      },
+    );
+    if (openSettings == true) {
+      await FlutterForegroundTask.openIgnoreBatteryOptimizationSettings();
     }
   }
 
@@ -417,7 +455,7 @@ class _ObtainiumState extends State<Obtainium> {
         logs.add('This is the first ever run of ObtainX.');
         // If this is the first run, add ObtainX to the Apps list
         if (!fdroid) {
-          getInstalledInfo(obtainiumId)
+          getInstalledInfo(obtainiumId, includeOwnDebugBuild: true)
               .then((value) {
                 if (value?.versionName != null) {
                   appsProvider.saveApps([
