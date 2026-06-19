@@ -474,8 +474,7 @@ class GitHub extends AppSource {
     Map<String, dynamic> additionalSettings,
   ) async {
     if ((additionalSettings['GHReqPrefix'] as String? ?? '').isNotEmpty) {
-      var uri = Uri.parse(reqUrl);
-      return 'https://${additionalSettings['GHReqPrefix']}/${uri.toString().substring('https://'.length)}';
+      return 'https://${additionalSettings['GHReqPrefix']}/$reqUrl';
     }
     return reqUrl;
   }
@@ -1144,10 +1143,15 @@ class GitHub extends AppSource {
   String undoGHProxyMod(
     String reqUrl,
     Map<String, String> sourceConfigSettingValues,
-  ) => reqUrl.replaceFirst(
-    'https://${sourceConfigSettingValues['GHReqPrefix']}/',
-    '',
-  );
+  ) {
+    var prefix = sourceConfigSettingValues['GHReqPrefix'] ?? '';
+    if (prefix.isEmpty) return reqUrl;
+    var proxyPrefix = 'https://$prefix/';
+    if (reqUrl.startsWith(proxyPrefix)) {
+      return reqUrl.substring(proxyPrefix.length);
+    }
+    return reqUrl;
+  }
 
   @override
   Future<Map<String, List<String>>> search(
