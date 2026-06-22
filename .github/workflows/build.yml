@@ -1,4 +1,4 @@
-name: Build APKs
+name: Build APKs-test
 
 on:
   # push:
@@ -82,7 +82,7 @@ jobs:
           VERSION=${{ steps.extract_version.outputs.version }}
 
           # Normal flavor — gradle-signed, public GitHub download (in-app self-update enabled).
-          flutter build apk --split-per-abi --flavor normal
+          flutter build apk --target-platform=android-arm64 --flavor normal
           for f in "$APK_DIR"/app-*-normal-release.apk; do
             arch=$(basename "$f" | sed -E 's/^app-(.+)-normal-release\.apk$/\1/')
             mv "$f" "$APK_DIR/ObtainX-v${VERSION}-${arch}.apk"
@@ -97,7 +97,7 @@ jobs:
           # sign with --alignment-preserved so apksigner keeps that exact padding. The
           # gradle build-id strip already makes the .so byte-identical to F-Droid's build.
           rm -f android/key.properties          # build the fdroid flavor UNSIGNED
-          flutter build apk --split-per-abi --flavor fdroid -t lib/main_fdroid.dart
+          # flutter build apk --split-per-abi --flavor fdroid -t lib/main_fdroid.dart
           # zipalign.py is a VENDORED, reviewed copy of reproducible-apk-tools' zipalign.py
           # (pinned to commit 719c3471 — the exact version F-Droid's recipe uses). It is
           # committed and auditable in this repo and is NOT downloaded at build time.
