@@ -236,52 +236,27 @@ class _RefreshProgressBar extends StatelessWidget {
   const _RefreshProgressBar({
     required this.refreshingSince,
     required this.progressDenominator,
-    required this.onDemandOnlyList,
-    required this.folderId,
   });
 
   final DateTime? refreshingSince;
   final int progressDenominator;
-  final bool onDemandOnlyList;
-  final String? folderId;
 
   @override
   Widget build(BuildContext context) {
     final (bool loadingApps, int checkedCount) = context
-        .select<AppsProvider, (bool, int)>((p) {
-          if (p.loadingApps) {
-            return (true, 0);
-          }
-          final DateTime? since = refreshingSince;
-          if (since == null) {
-            return (false, 0);
-          }
-          int count = 0;
-          for (final a in p.apps.values) {
-            final last = a.app.lastUpdateCheck;
-            if (last == null || last.isBefore(since)) continue;
-            if (onDemandOnlyList &&
-                a.app.additionalSettings['onDemandOnly'] != true) {
-              continue;
-            }
-            final String? folder = folderId;
-            if (folder != null && !folderIdsForApp(a.app).contains(folder)) {
-              continue;
-            }
-            count++;
-          }
-          return (false, count);
-        });
+        .select<AppsProvider, (bool, int)>((p) => (p.loadingApps, p.progressCheckedCount));
     // M3 Expressive linear progress indicator. Wavy active track with a
     // stop-dot at the end (per the M3E spec). The widget draws two
     // separate lanes (active above, track below) with a fixed gap so the
     // active and inactive segments never overlap.
-    return LinearProgressIndicatorM3E(
-      value: loadingApps
-          ? null
-          : (progressDenominator > 0
-                ? checkedCount / progressDenominator
-                : 0.0),
+    return RepaintBoundary(
+      child: LinearProgressIndicatorM3E(
+        value: loadingApps
+            ? null
+            : (progressDenominator > 0
+                  ? checkedCount / progressDenominator
+                  : 0.0),
+      ),
     );
   }
 }
@@ -2071,8 +2046,11 @@ class AppsPageState extends State<AppsPage> {
   // row selection or the refresh-indicator doesn't need a new sort).
   int? _lastListBuildToken;
   List<AppInMemory> _listedAppsCache = const [];
-  List<String> _existingUpdatesCache = const [];
-  List<String> _newInstallsCache = const [];
+  Set<String> _existingUpdatesCache = const {};
+  Set<String> _newInstallsCache = const {};
+  Map<String, int> _folderAppCountsCache = const {};
+  Map<String, int> _folderUpdateCountsCache = const {};
+  int? _lastFolderCountsToken;
   List<String> _listedSourcesCache = const [];
   List<String?> _listedCategoriesCache = const [];
   List<AppTypeGroup> _listedAppTypesCache = const [];
@@ -2827,10 +2805,10 @@ class AppsPageState extends State<AppsPage> {
             installedOnly: true,
             includeVersionOrderUncertain: true,
           )
-          .toList();
+          .toSet();
       _newInstallsCache = appsProvider
           .findExistingUpdates(nonInstalledOnly: true)
-          .toList();
+          .toSet();
 
       if (_effectivePinUpdates(settingsProvider)) {
         final temp = <AppInMemory>[];
@@ -2876,30 +2854,30 @@ class AppsPageState extends State<AppsPage> {
         .length;
 
     // Folder counts: number of non-on-demand apps in each folder.
+    if (listBuildToken != _lastFolderCountsToken) {
+      _lastFolderCountsToken = listBuildToken;
+      final appFolders = settingsProvider.appFolders;
+      final folderAppCounts = <String, int>{for (final f in appFolders) f.id: 0};
+      final folderUpdateCounts = <String, int>{for (final f in appFolders) f.id: 0};
+      for (final a in appsProvider.apps.values) {
+        if (a.app.additionalSettings['onDemandOnly'] == true) continue;
+        final fIds = folderIdsForApp(a.app);
+        final hasUpdate = appHasActionableUpdate(a.app) || versionOrderUncertainUpdate(a.app);
+        for (final fId in fIds) {
+          if (folderAppCounts.containsKey(fId)) {
+            folderAppCounts[fId] = folderAppCounts[fId]! + 1;
+            if (hasUpdate) {
+              folderUpdateCounts[fId] = folderUpdateCounts[fId]! + 1;
+            }
+          }
+        }
+      }
+      _folderAppCountsCache = folderAppCounts;
+      _folderUpdateCountsCache = folderUpdateCounts;
+    }
+    final Map<String, int> folderAppCounts = _folderAppCountsCache;
+    final Map<String, int> folderUpdateCounts = _folderUpdateCountsCache;
     final appFolders = settingsProvider.appFolders;
-    final Map<String, int> folderAppCounts = {
-      for (final f in appFolders)
-        f.id: appsProvider.apps.values
-            .where(
-              (a) =>
-                  a.app.additionalSettings['onDemandOnly'] != true &&
-                  folderIdsForApp(a.app).contains(f.id),
-            )
-            .length,
-    };
-    // Update counts per folder (mirrors the badge logic on the home tab icon).
-    final Map<String, int> folderUpdateCounts = {
-      for (final f in appFolders)
-        f.id: appsProvider.apps.values
-            .where(
-              (a) =>
-                  a.app.additionalSettings['onDemandOnly'] != true &&
-                  folderIdsForApp(a.app).contains(f.id) &&
-                  (appHasActionableUpdate(a.app) ||
-                      versionOrderUncertainUpdate(a.app)),
-            )
-            .length,
-    };
     final String? currentFolderName = widget.folderId != null
         ? appFolders
               .where((f) => f.id == widget.folderId)
@@ -2989,19 +2967,6 @@ class AppsPageState extends State<AppsPage> {
     }
     listedApps = [...tempRenamed, ...tempPinned, ...tempNotPinned];
 
-    // Apps that go into normal category/source/appType groups (excluding
-    // segregated non-installed and the updates group when those features are on).
-    List<AppInMemory> appsForGroups(List<AppInMemory> source) => source
-        .where(
-          (e) =>
-              !(segregateNonInstalled && e.app.installedVersion == null) &&
-              !isInUpdatesGroup(e),
-        )
-        .toList();
-
-    final appsListedForCategoryKeys = appsForGroups(listedApps);
-    final appsListedForSourceKeys = appsListedForCategoryKeys;
-    final appsListedForAppTypeKeys = appsListedForCategoryKeys;
     final showNonInstalledGroupSection =
         segregateNonInstalled &&
         listedApps.any((e) => e.app.installedVersion == null);
@@ -3013,55 +2978,39 @@ class AppsPageState extends State<AppsPage> {
 
       // 1. Categories
       if (effectiveGroupBy == AppsListGroupBy.category) {
-        List<String?> getListedCategories(List<AppInMemory> appsSource) {
-          var temp = appsSource.map(
-            (e) => e.app.categories.isNotEmpty ? e.app.categories : [null],
-          );
-          return temp.isNotEmpty
-              ? {
-                  ...temp.reduce((v, e) => [...v, ...e]),
-                }.toList()
-              : [];
-        }
-
-        final cats = getListedCategories(appsListedForCategoryKeys);
-        cats.sort((a, b) {
-          return a != null && b != null
-              ? a.toLowerCase().compareTo(b.toLowerCase())
-              : a == null
-              ? 1
-              : -1;
-        });
-        _listedCategoriesCache = cats;
-
-        final nextCategoryMap = <String, List<int>>{};
+        final categoryIndices = <String, List<int>>{};
         for (
-          int categoryIndex = 0;
-          categoryIndex < _listedCategoriesCache.length;
-          categoryIndex++
+          int listingIndex = 0;
+          listingIndex < listedApps.length;
+          listingIndex++
         ) {
-          final String? categoryNullable =
-              _listedCategoriesCache[categoryIndex];
-          final String mapKey = categoryNullable ?? '__null__';
-          final indices = <int>[];
-          for (
-            int listingIndex = 0;
-            listingIndex < listedApps.length;
-            listingIndex++
-          ) {
-            final AppInMemory row = listedApps[listingIndex];
-            if (segregateNonInstalled && row.app.installedVersion == null) {
-              continue;
-            }
-            if (isInUpdatesGroup(row)) continue;
-            if (row.app.categories.contains(categoryNullable) ||
-                (row.app.categories.isEmpty && categoryNullable == null)) {
-              indices.add(listingIndex);
-            }
+          final AppInMemory row = listedApps[listingIndex];
+          if (segregateNonInstalled && row.app.installedVersion == null) {
+            continue;
           }
-          nextCategoryMap[mapKey] = indices;
+          if (isInUpdatesGroup(row)) continue;
+          final cats = row.app.categories.isNotEmpty
+              ? row.app.categories
+              : <String?>[null];
+          for (final cat in cats) {
+            final String mapKey = cat ?? '__null__';
+            categoryIndices.putIfAbsent(mapKey, () => <int>[]);
+            categoryIndices[mapKey]!.add(listingIndex);
+          }
         }
-        _categoryGroupListedIndices = nextCategoryMap;
+        final cats = categoryIndices.keys.toList()
+          ..sort((a, b) {
+            final aIsNull = a == '__null__';
+            final bIsNull = b == '__null__';
+            if (aIsNull && bIsNull) return 0;
+            if (aIsNull) return 1;
+            if (bIsNull) return -1;
+            return a.toLowerCase().compareTo(b.toLowerCase());
+          });
+        _listedCategoriesCache = cats
+            .map((k) => k == '__null__' ? null : k)
+            .toList();
+        _categoryGroupListedIndices = categoryIndices;
       } else {
         _listedCategoriesCache = const [];
         _categoryGroupListedIndices = const {};
@@ -3069,55 +3018,28 @@ class AppsPageState extends State<AppsPage> {
 
       // 2. Sources
       if (effectiveGroupBy == AppsListGroupBy.source) {
-        List<String> getListedSourceKeys(List<AppInMemory> appsSource) {
-          if (appsSource.isEmpty) return [];
-          final keys = appsSource
-              .map(
-                (e) => sourceProvider
-                    .getSource(e.app.url, overrideSource: e.app.overrideSource)
-                    .runtimeType
-                    .toString(),
-              )
-              .toSet()
-              .toList();
-          keys.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-          return keys;
-        }
-
-        _listedSourcesCache = getListedSourceKeys(appsListedForSourceKeys);
-
-        final nextSourceMap = <String, List<int>>{};
+        final sourceIndices = <String, List<int>>{};
         for (
-          int sourceIndex = 0;
-          sourceIndex < _listedSourcesCache.length;
-          sourceIndex++
+          int listingIndex = 0;
+          listingIndex < listedApps.length;
+          listingIndex++
         ) {
-          final String sourceKey = _listedSourcesCache[sourceIndex];
-          final indices = <int>[];
-          for (
-            int listingIndex = 0;
-            listingIndex < listedApps.length;
-            listingIndex++
-          ) {
-            final AppInMemory row = listedApps[listingIndex];
-            if (segregateNonInstalled && row.app.installedVersion == null) {
-              continue;
-            }
-            if (isInUpdatesGroup(row)) continue;
-            if (sourceProvider
-                    .getSource(
-                      row.app.url,
-                      overrideSource: row.app.overrideSource,
-                    )
-                    .runtimeType
-                    .toString() ==
-                sourceKey) {
-              indices.add(listingIndex);
-            }
+          final AppInMemory row = listedApps[listingIndex];
+          if (segregateNonInstalled && row.app.installedVersion == null) {
+            continue;
           }
-          nextSourceMap[sourceKey] = indices;
+          if (isInUpdatesGroup(row)) continue;
+          final sourceKey = sourceProvider
+              .getSource(row.app.url, overrideSource: row.app.overrideSource)
+              .runtimeType
+              .toString();
+          sourceIndices.putIfAbsent(sourceKey, () => <int>[]);
+          sourceIndices[sourceKey]!.add(listingIndex);
         }
-        _sourceGroupListedIndices = nextSourceMap;
+        final sourceKeys = sourceIndices.keys.toList()
+          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+        _listedSourcesCache = sourceKeys;
+        _sourceGroupListedIndices = sourceIndices;
       } else {
         _listedSourcesCache = const [];
         _sourceGroupListedIndices = const {};
@@ -3125,33 +3047,23 @@ class AppsPageState extends State<AppsPage> {
 
       // 3. App Types
       if (effectiveGroupBy == AppsListGroupBy.appType) {
-        _listedAppTypesCache = AppTypeGroup.values
-            .where(
-              (t) =>
-                  appsListedForAppTypeKeys.any((e) => classifyAppType(e) == t),
-            )
-            .toList();
-
-        final nextAppTypeMap = <AppTypeGroup, List<int>>{};
-        for (final type in _listedAppTypesCache) {
-          final indices = <int>[];
-          for (
-            int listingIndex = 0;
-            listingIndex < listedApps.length;
-            listingIndex++
-          ) {
-            final AppInMemory row = listedApps[listingIndex];
-            if (segregateNonInstalled && row.app.installedVersion == null) {
-              continue;
-            }
-            if (isInUpdatesGroup(row)) continue;
-            if (classifyAppType(row) == type) {
-              indices.add(listingIndex);
-            }
+        final appTypeIndices = <AppTypeGroup, List<int>>{};
+        for (
+          int listingIndex = 0;
+          listingIndex < listedApps.length;
+          listingIndex++
+        ) {
+          final AppInMemory row = listedApps[listingIndex];
+          if (segregateNonInstalled && row.app.installedVersion == null) {
+            continue;
           }
-          if (indices.isNotEmpty) nextAppTypeMap[type] = indices;
+          if (isInUpdatesGroup(row)) continue;
+          final type = classifyAppType(row);
+          appTypeIndices.putIfAbsent(type, () => <int>[]);
+          appTypeIndices[type]!.add(listingIndex);
         }
-        _appTypeGroupListedIndices = nextAppTypeMap;
+        _listedAppTypesCache = appTypeIndices.keys.toList();
+        _appTypeGroupListedIndices = appTypeIndices;
       } else {
         _listedAppTypesCache = const [];
         _appTypeGroupListedIndices = const {};
@@ -3270,8 +3182,6 @@ class AppsPageState extends State<AppsPage> {
               child: _RefreshProgressBar(
                 refreshingSince: refreshingSince,
                 progressDenominator: progressDenominator,
-                onDemandOnlyList: widget.onDemandOnlyList,
-                folderId: progressFolderId,
               ),
             ),
           ),

@@ -1435,6 +1435,7 @@ class AppsProvider with ChangeNotifier {
   Map<String, AppInMemory> apps = {};
   final Map<String, String> appPageErrors = {};
   bool loadingApps = false;
+  int progressCheckedCount = 0;
   Completer<void>? _loadingCompleter;
   bool gettingUpdates = false;
   LogsProvider logs = LogsProvider();
@@ -3510,6 +3511,7 @@ class AppsProvider with ChangeNotifier {
     _loadingCompleter = Completer<void>();
     if (!silent) {
       loadingApps = true;
+      progressCheckedCount = 0;
       notifyListeners();
     }
     await _purgeStalePendingRemovalFilesWithoutLiveDeferral();
@@ -4587,6 +4589,7 @@ class AppsProvider with ChangeNotifier {
     MultiAppMultiError errors = MultiAppMultiError();
     if (!gettingUpdates) {
       gettingUpdates = true;
+      progressCheckedCount = 0;
       try {
         late List<String> appIds;
         if (specificIds != null) {
@@ -4659,12 +4662,6 @@ class AppsProvider with ChangeNotifier {
                 prefetchedInstalledInfo: prefetchedInstalledInfo,
               );
               appSaveCompleted = true;
-              final now = DateTime.now();
-              if (now.difference(lastProgressNotificationAt) >=
-                  progressNotificationInterval) {
-                lastProgressNotificationAt = now;
-                notifyListeners();
-              }
             } catch (error) {
               if ((error is RateLimitError || error is SocketException) &&
                   throwErrorsForRetry) {
@@ -4675,6 +4672,13 @@ class AppsProvider with ChangeNotifier {
               } else {
                 errors.add(appId, error, appName: apps[appId]?.name);
               }
+            }
+            progressCheckedCount += 1;
+            final now = DateTime.now();
+            if (now.difference(lastProgressNotificationAt) >=
+                progressNotificationInterval) {
+              lastProgressNotificationAt = now;
+              notifyListeners();
             }
             if (newApp != null) {
               updates.add(newApp);
