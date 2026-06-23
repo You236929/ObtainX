@@ -240,6 +240,20 @@ extension ColorSchemeBoost on ColorScheme {
 
     return result;
   }
+
+  ColorScheme boostContainersForSeedThemes({
+    required bool darkTheme,
+  }) {
+    final double primaryBlend = darkTheme ? 0.30 : 0.24;
+    final double secondaryBlend = darkTheme ? 0.26 : 0.20;
+    final double tertiaryBlend = darkTheme ? 0.28 : 0.22;
+
+    return copyWith(
+      primaryContainer: Color.lerp(primaryContainer, primary, primaryBlend),
+      secondaryContainer: Color.lerp(secondaryContainer, secondary, secondaryBlend),
+      tertiaryContainer: Color.lerp(tertiaryContainer, tertiary, tertiaryBlend),
+    );
+  }
 }
 
 extension ColorSchemeBlackTheme on ColorScheme {

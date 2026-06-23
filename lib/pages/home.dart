@@ -373,6 +373,9 @@ class _HomePageState extends State<HomePage> {
         builder: (BuildContext context) {
           final ColorScheme scheme = Theme.of(context).colorScheme;
           final bool blurBottomNav = settingsProvider.progressiveBlurEnabled;
+          final double screenWidth = MediaQuery.of(context).size.width;
+          final bool isLargeScreen = screenWidth >= 720;
+
           final List<NavigationDestination> homeNavDestinations = pages
               .asMap()
               .entries
@@ -389,51 +392,101 @@ class _HomePageState extends State<HomePage> {
                     ),
               )
               .toList();
+
+          final List<NavigationRailDestination> homeNavRailDestinations = pages
+              .asMap()
+              .entries
+              .map(
+                (MapEntry<int, NavigationPageItem> entry) =>
+                    NavigationRailDestination(
+                      icon: entry.key == 0 && updateCount > 0
+                          ? Badge(
+                              label: Text(updateCount.toString()),
+                              child: Icon(entry.value.icon),
+                            )
+                          : Icon(entry.value.icon),
+                      selectedIcon: entry.key == 0 && updateCount > 0
+                          ? Badge(
+                              label: Text(updateCount.toString()),
+                              child: Icon(entry.value.icon),
+                            )
+                          : Icon(entry.value.icon),
+                      label: Text(entry.value.title),
+                    ),
+              )
+              .toList();
+
           final int homeNavSelectedIndex = selectedIndexHistory.isEmpty
               ? 0
               : selectedIndexHistory.last;
 
           return Scaffold(
             backgroundColor: scheme.surface,
-            extendBody: blurBottomNav,
-            body: Stack(
-              fit: StackFit.expand,
-              children: [
-                // IndexedStack keeps all four pages mounted so tab switches
-                // are a single paint op — no rebuild, no tear-down.
-                IndexedStack(
-                  index: selectedIndexHistory.isEmpty
-                      ? 0
-                      : selectedIndexHistory.last,
-                  children: pages.map((p) => p.widget).toList(),
-                ),
-              ],
-            ),
-            bottomNavigationBar: blurBottomNav
-                ? ClipRect(
-                    child: Stack(
-                      alignment: Alignment.bottomCenter,
-                      fit: StackFit.loose,
-                      children: [
-                        Positioned.fill(
-                          child: ProgressiveBottomEdgeBlur(
-                            overlayColor:
-                                scheme.schemeProgressiveBlurOverlayTint,
-                          ),
+            extendBody: blurBottomNav && !isLargeScreen,
+            body: isLargeScreen
+                ? Row(
+                    children: [
+                      NavigationRail(
+                        selectedIndex: homeNavSelectedIndex,
+                        onDestinationSelected: (int index) async {
+                          HapticFeedback.selectionClick();
+                          switchToPage(index);
+                        },
+                        labelType: NavigationRailLabelType.all,
+                        destinations: homeNavRailDestinations,
+                        backgroundColor: scheme.surface,
+                      ),
+                      VerticalDivider(
+                        width: 1,
+                        thickness: 1,
+                        color: scheme.outlineVariant.withAlpha(50),
+                      ),
+                      Expanded(
+                        child: IndexedStack(
+                          index: homeNavSelectedIndex,
+                          children: pages.map((p) => p.widget).toList(),
                         ),
-                        _materialHomeNavigationBar(
-                          destinations: homeNavDestinations,
-                          selectedIndex: homeNavSelectedIndex,
-                          transparent: true,
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   )
-                : _materialHomeNavigationBar(
-                    destinations: homeNavDestinations,
-                    selectedIndex: homeNavSelectedIndex,
-                    transparent: false,
+                : Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // IndexedStack keeps all four pages mounted so tab switches
+                      // are a single paint op — no rebuild, no tear-down.
+                      IndexedStack(
+                        index: homeNavSelectedIndex,
+                        children: pages.map((p) => p.widget).toList(),
+                      ),
+                    ],
                   ),
+            bottomNavigationBar: isLargeScreen
+                ? null
+                : blurBottomNav
+                    ? ClipRect(
+                        child: Stack(
+                          alignment: Alignment.bottomCenter,
+                          fit: StackFit.loose,
+                          children: [
+                            Positioned.fill(
+                              child: ProgressiveBottomEdgeBlur(
+                                overlayColor:
+                                    scheme.schemeProgressiveBlurOverlayTint,
+                              ),
+                            ),
+                            _materialHomeNavigationBar(
+                              destinations: homeNavDestinations,
+                              selectedIndex: homeNavSelectedIndex,
+                              transparent: true,
+                            ),
+                          ],
+                        ),
+                      )
+                    : _materialHomeNavigationBar(
+                        destinations: homeNavDestinations,
+                        selectedIndex: homeNavSelectedIndex,
+                        transparent: false,
+                      ),
           );
         },
       ),

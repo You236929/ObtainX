@@ -66,6 +66,8 @@ class _SettingsPageState extends State<SettingsPage> {
   late final Future<AndroidDeviceInfo> _androidInfo =
       DeviceInfoPlugin().androidInfo;
 
+  String? _selectedCategory;
+
   // ── Scaffold-level subscriptions ────────────────────────────────────
   // We deliberately avoid `context.watch<SettingsProvider>()`: that would
   // rebuild this whole widget tree on every single setter change. Instead
@@ -332,6 +334,265 @@ class _SettingsPageState extends State<SettingsPage> {
             ],
           ),
         ),
+      );
+    }
+
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final bool isLargeScreen = screenWidth >= 720;
+
+    final List<Map<String, dynamic>> categoriesList = [
+      {
+        'key': 'updates',
+        'title': tr('updates'),
+        'icon': Icons.update_rounded,
+        'widget': _UpdatesSection(
+          cs: cs,
+          androidInfo: _androidInfo,
+        ),
+      },
+      if (sourceProvider.sources.any(
+        (s) => s.sourceConfigSettingFormItems.isNotEmpty,
+      ))
+        {
+          'key': 'sourceSpecific',
+          'title': tr('sourceSpecific'),
+          'icon': Icons.dns_rounded,
+          'widget': const _SourceSpecificSection(),
+        },
+      {
+        'key': 'themes',
+        'title': tr('settingsThemesSection'),
+        'icon': Icons.palette_rounded,
+        'widget': _ThemesSettingsSection(
+          androidInfoFuture: _androidInfo,
+        ),
+      },
+      {
+        'key': 'appearance',
+        'title': tr('appearance'),
+        'icon': Icons.tune_rounded,
+        'widget': _AppearanceSection(androidInfo: _androidInfo),
+      },
+      {
+        'key': 'gestures',
+        'title': tr('gestures'),
+        'icon': Icons.swipe_rounded,
+        'widget': const _GesturesSection(),
+      },
+      {
+        'key': 'categories',
+        'title': tr('categories'),
+        'icon': Icons.label_rounded,
+        'widget': const _CategoriesSection(),
+      },
+      {
+        'key': 'about',
+        'title': tr('about'),
+        'icon': Icons.info_rounded,
+        'widget': settingsCard([
+          _AboutSectionContent(colorScheme: cs),
+        ]),
+      },
+    ];
+
+    Widget buildCategoryTile(Map<String, dynamic> categoryObj) {
+      final String key = categoryObj['key'] as String;
+      final String title = categoryObj['title'] as String;
+      final IconData icon = categoryObj['icon'] as IconData;
+      final bool selected = _selectedCategory == key;
+
+      final Color containerColor = selected
+          ? cs.secondaryContainer
+          : cs.surfaceContainerHigh;
+      final Color contentColor = selected
+          ? cs.onSecondaryContainer
+          : cs.onSurface;
+
+      final Color iconBoxColor = selected
+          ? cs.primary.withValues(alpha: 0.16)
+          : cs.primaryContainer.withValues(alpha: 0.48);
+      
+      final Color iconColor = selected
+          ? cs.primary
+          : cs.onSurfaceVariant;
+
+      final Color chevronColor = cs.onSurfaceVariant;
+
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8.0),
+        child: Container(
+          decoration: BoxDecoration(
+            color: containerColor,
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: Material(
+            type: MaterialType.transparency,
+            child: InkWell(
+              onTap: () {
+                setState(() {
+                  _selectedCategory = key;
+                });
+              },
+              borderRadius: BorderRadius.circular(28),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: iconBoxColor,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        icon,
+                        color: iconColor,
+                        size: 18,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: TextStyle(
+                          fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                          color: contentColor,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      color: chevronColor,
+                      size: 20,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (isLargeScreen) {
+      _selectedCategory ??= categoriesList.first['key'] as String;
+      if (!categoriesList.any((c) => c['key'] == _selectedCategory)) {
+        _selectedCategory = categoriesList.first['key'] as String;
+      }
+      final selectedCategoryObj = categoriesList.firstWhere(
+        (c) => c['key'] == _selectedCategory,
+        orElse: () => categoriesList.first,
+      );
+
+      return Row(
+        children: [
+          Expanded(
+            flex: 3,
+            child: Scaffold(
+              backgroundColor: sp.useGradientBackground ? Colors.transparent : cs.surface,
+              body: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (sp.useGradientBackground)
+                    Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            stops: const [0, 0.38, 0.72, 1],
+                            colors: [
+                              cs.schemePageGradientTopColor,
+                              cs.schemePageGradientMidColor,
+                              cs.surface,
+                              cs.surface,
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  CustomScrollView(
+                    key: const PageStorageKey<String>('settings-master-scroll'),
+                    slivers: [
+                      CustomAppBar(
+                        title: tr('settings'),
+                        matchGradientBackground: sp.useGradientBackground,
+                      ),
+                      SliverPadding(
+                        padding: const EdgeInsets.all(16),
+                        sliver: SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) => buildCategoryTile(categoriesList[index]),
+                            childCount: categoriesList.length,
+                          ),
+                        ),
+                      ),
+                      if (sp.progressiveBlurEnabled)
+                        SliverToBoxAdapter(
+                          child: SizedBox(height: MediaQuery.paddingOf(context).bottom),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          VerticalDivider(
+            width: 1,
+            thickness: 1,
+            color: cs.outlineVariant.withAlpha(50),
+          ),
+          Expanded(
+            flex: 4,
+            child: Scaffold(
+              backgroundColor: sp.useGradientBackground ? Colors.transparent : cs.surface,
+              body: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (sp.useGradientBackground)
+                    Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            stops: const [0, 0.38, 0.72, 1],
+                            colors: [
+                              cs.schemePageGradientTopColor,
+                              cs.schemePageGradientMidColor,
+                              cs.surface,
+                              cs.surface,
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  CustomScrollView(
+                    key: ValueKey('settings-detail-${selectedCategoryObj['key']}'),
+                    slivers: [
+                      CustomAppBar(
+                        title: '',
+                        matchGradientBackground: sp.useGradientBackground,
+                      ),
+                      SliverPadding(
+                        padding: const EdgeInsets.all(16),
+                        sliver: SliverToBoxAdapter(
+                          child: selectedCategoryObj['widget'] as Widget,
+                        ),
+                      ),
+                      if (sp.progressiveBlurEnabled)
+                        SliverToBoxAdapter(
+                          child: SizedBox(height: MediaQuery.paddingOf(context).bottom),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       );
     }
 
@@ -1403,143 +1664,176 @@ class _AboutSectionContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final SettingsProvider sp = context.read<SettingsProvider>();
     final TextTheme textTheme = Theme.of(context).textTheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          FutureBuilder<PackageInfo?>(
-            future: getInstalledInfo(
-              obtainiumId,
-              printErr: false,
-              includeOwnDebugBuild: true,
-            ),
-            builder: (context, snapshot) {
-              final String versionName =
-                  snapshot.data?.versionName ?? tr('unknown');
-              return Text(
-                tr('aboutAppVersion', args: [versionName]),
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: textTheme.displaySmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: colorScheme.onSurface,
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 6),
-          Text(
-            tr('aboutTagline'),
-            textAlign: TextAlign.center,
-            style: textTheme.bodyMedium?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 18),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final bool isLargeScreen = screenWidth >= 720;
+
+    return Stack(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              _AboutImageTile(
-                assetPath: 'assets/graphics/icon_small.png',
-                borderRadius: 24,
-                semanticLabel: tr('about'),
-                fit: BoxFit.contain,
-                backgroundColor: colorScheme.surfaceContainerHighest,
+              FutureBuilder<PackageInfo?>(
+                future: getInstalledInfo(
+                  obtainiumId,
+                  printErr: false,
+                  includeOwnDebugBuild: true,
+                ),
+                builder: (context, snapshot) {
+                  final String versionName =
+                      snapshot.data?.versionName ?? tr('unknown');
+                  return Text(
+                    tr('aboutAppVersion', args: [versionName]),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: textTheme.displaySmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: colorScheme.onSurface,
+                    ),
+                  );
+                },
               ),
-              const SizedBox(width: 14),
-              _AboutImageTile(
-                assetPath: 'assets/graphics/me_600.webp',
-                borderRadius: 18,
-                semanticLabel: tr('aboutAuthorProfile'),
-                onTap: () => _openAboutUrl(_aboutAuthorUrl),
-                onLongPress: () => _copyAboutUrl(context, _aboutAuthorUrl),
+              const SizedBox(height: 6),
+              Text(
+                tr('aboutTagline'),
+                textAlign: TextAlign.center,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _AboutImageTile(
+                    assetPath: 'assets/graphics/icon_small.png',
+                    borderRadius: 24,
+                    semanticLabel: tr('about'),
+                    fit: BoxFit.contain,
+                    backgroundColor: colorScheme.surfaceContainerHighest,
+                  ),
+                  const SizedBox(width: 14),
+                  _AboutImageTile(
+                    assetPath: 'assets/graphics/me_600.webp',
+                    borderRadius: 18,
+                    semanticLabel: tr('aboutAuthorProfile'),
+                    onTap: () => _openAboutUrl(_aboutAuthorUrl),
+                    onLongPress: () => _copyAboutUrl(context, _aboutAuthorUrl),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Text(
+                tr('aboutByline'),
+                textAlign: TextAlign.center,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 18),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 360),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () => _openAboutUrl(sp.sourceUrl),
+                    onLongPress: () => _copyAboutUrl(context, sp.sourceUrl),
+                    icon: _GitHubMarkIcon(color: colorScheme.onPrimary),
+                    label: Text(tr('aboutStarOnGithub')),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 360),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.tonalIcon(
+                        style: _aboutSecondaryButtonStyle(colorScheme),
+                        onPressed: () => _openAboutUrl(_aboutWikiUrl),
+                        onLongPress: () => _copyAboutUrl(context, _aboutWikiUrl),
+                        icon: const Icon(Icons.open_in_new_rounded),
+                        label: Text(tr('aboutOpenWiki')),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: FilledButton.tonalIcon(
+                        style: _aboutSecondaryButtonStyle(colorScheme),
+                        onPressed: () => _shareAboutUrl(sp.sourceUrl, 'ObtainX'),
+                        onLongPress: () => _copyAboutUrl(context, sp.sourceUrl),
+                        icon: const Icon(Icons.share_rounded),
+                        label: Text(tr('share')),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 22),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 360),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        tr('aboutOtherApps'),
+                        style: textTheme.labelLarge?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _AboutAppPromo(
+                      colorScheme: colorScheme,
+                      assetPath: 'assets/graphics/remember_logo.png',
+                      accentColor: const Color(0xFF74B84A),
+                      name: tr('aboutRememberName'),
+                      tagline: tr('aboutRememberTagline'),
+                      url: _aboutRememberUrl,
+                    ),
+                    const SizedBox(height: 10),
+                    _AboutAppPromo(
+                      colorScheme: colorScheme,
+                      assetPath: 'assets/graphics/filepipe_logo.png',
+                      accentColor: const Color(0xFF5967D8),
+                      name: tr('aboutFilePipeName'),
+                      tagline: tr('aboutFilePipeTagline'),
+                      url: _aboutFilePipeUrl,
+                    ),
+                    const SizedBox(height: 8),
+                    _AboutLegalLinks(colorScheme: colorScheme),
+                  ],
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          Text(
-            tr('aboutByline'),
-            textAlign: TextAlign.center,
-            style: textTheme.bodyMedium?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 18),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 360),
-            child: SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: () => _openAboutUrl(sp.sourceUrl),
-                onLongPress: () => _copyAboutUrl(context, sp.sourceUrl),
-                icon: _GitHubMarkIcon(color: colorScheme.onPrimary),
-                label: Text(tr('aboutStarOnGithub')),
+        ),
+        if (isLargeScreen)
+          Positioned(
+            top: 8,
+            right: 8,
+            child: IconButton(
+              onPressed: () => _openLogsDialog(context),
+              icon: Icon(Icons.bug_report_outlined, color: colorScheme.primary),
+              tooltip: tr('appLogs'),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(
+                width: 40,
+                height: 40,
+              ),
+              style: IconButton.styleFrom(
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
             ),
           ),
-          const SizedBox(height: 10),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 360),
-            child: Row(
-              children: [
-                Expanded(
-                  child: FilledButton.tonalIcon(
-                    style: _aboutSecondaryButtonStyle(colorScheme),
-                    onPressed: () => _openAboutUrl(_aboutWikiUrl),
-                    onLongPress: () => _copyAboutUrl(context, _aboutWikiUrl),
-                    icon: const Icon(Icons.open_in_new_rounded),
-                    label: Text(tr('aboutOpenWiki')),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton.tonalIcon(
-                    style: _aboutSecondaryButtonStyle(colorScheme),
-                    onPressed: () => _shareAboutUrl(sp.sourceUrl, 'ObtainX'),
-                    onLongPress: () => _copyAboutUrl(context, sp.sourceUrl),
-                    icon: const Icon(Icons.share_rounded),
-                    label: Text(tr('share')),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 22),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              tr('aboutOtherApps'),
-              style: textTheme.labelLarge?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          _AboutAppPromo(
-            colorScheme: colorScheme,
-            assetPath: 'assets/graphics/remember_logo.png',
-            accentColor: const Color(0xFF74B84A),
-            name: tr('aboutRememberName'),
-            tagline: tr('aboutRememberTagline'),
-            url: _aboutRememberUrl,
-          ),
-          const SizedBox(height: 10),
-          _AboutAppPromo(
-            colorScheme: colorScheme,
-            assetPath: 'assets/graphics/filepipe_logo.png',
-            accentColor: const Color(0xFF5967D8),
-            name: tr('aboutFilePipeName'),
-            tagline: tr('aboutFilePipeTagline'),
-            url: _aboutFilePipeUrl,
-          ),
-          const SizedBox(height: 8),
-          _AboutLegalLinks(colorScheme: colorScheme),
-        ],
-      ),
+      ],
     );
   }
 }

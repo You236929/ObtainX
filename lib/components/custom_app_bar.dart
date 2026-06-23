@@ -230,31 +230,33 @@ class _CustomAppBarState extends State<CustomAppBar> {
           top: 16,
           bottom: 16,
         );
-    final Widget flexibleSpace = headerBackground != null
-        ? Stack(
-            fit: StackFit.expand,
-            children: [
-              headerBackground,
-              FlexibleSpaceBar(
+    final Widget? flexibleSpace = widget.title.isEmpty
+        ? headerBackground
+        : (headerBackground != null
+            ? Stack(
+                fit: StackFit.expand,
+                children: [
+                  headerBackground,
+                  FlexibleSpaceBar(
+                    titlePadding: expandingTitlePadding,
+                    title: Text(
+                      widget.title,
+                      style: Theme.of(context).textTheme.titleLarge!.copyWith(
+                        color: colorScheme.onSurface,
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : FlexibleSpaceBar(
                 titlePadding: expandingTitlePadding,
                 title: Text(
                   widget.title,
-                  style: Theme.of(context).textTheme.titleLarge!.copyWith(
-                    color: colorScheme.onSurface,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge!.copyWith(color: colorScheme.onSurface),
                 ),
-              ),
-            ],
-          )
-        : FlexibleSpaceBar(
-            titlePadding: expandingTitlePadding,
-            title: Text(
-              widget.title,
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge!.copyWith(color: colorScheme.onSurface),
-            ),
-          );
+              ));
 
     return SliverAppBar(
       pinned: true,
@@ -262,7 +264,7 @@ class _CustomAppBarState extends State<CustomAppBar> {
       leading: widget.leading,
       leadingWidth: widget.leading != null ? kToolbarHeight : null,
       actions: widget.actions,
-      expandedHeight: 100,
+      expandedHeight: widget.title.isEmpty ? null : 100,
       bottom: widget.bottom,
       elevation: 0,
       scrolledUnderElevation: 0,

@@ -30,6 +30,7 @@ import 'package:obtainium/providers/source_provider.dart';
 import 'package:obtainium/store_source_icons.dart';
 import 'package:obtainium/services/bulk_import_service.dart';
 import 'package:obtainium/services/bulk_scan_cache.dart';
+import 'package:obtainium/widgets/progressive_top_edge_overlay.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:provider/provider.dart';
@@ -281,6 +282,7 @@ class AppPage extends StatefulWidget {
     this.showOppositeOfPreferredView = false,
     this.openInEditMode = false,
     this.appsListHeroFolderId,
+    this.isEmbedded = false,
   });
 
   final String appId;
@@ -291,6 +293,8 @@ class AppPage extends StatefulWidget {
 
   /// When true (e.g. swipe-to-edit), enter inline edit mode once the app is loaded.
   final bool openInEditMode;
+
+  final bool isEmbedded;
 
   @override
   State<AppPage> createState() => _AppPageState();
@@ -4192,10 +4196,12 @@ class _AppPageState extends State<AppPage> {
             child: Scaffold(
               resizeToAvoidBottomInset: true,
               appBar: showAppWebpageFinal ? AppBar() : null,
-              backgroundColor: appPageDeeperSurfaceColor(
-                pageColorSchemeForPage.surface,
-                pageBrightness,
-              ),
+              backgroundColor: settingsProvider.useGradientBackground && widget.isEmbedded
+                  ? Colors.transparent
+                  : appPageDeeperSurfaceColor(
+                      pageColorSchemeForPage.surface,
+                      pageBrightness,
+                    ),
               floatingActionButton: _editModeFloatingActionButtons(
                 themedPageContext,
                 app,
@@ -4223,107 +4229,122 @@ class _AppPageState extends State<AppPage> {
                           ),
                         ],
                       )
-                    : CustomScrollView(
-                        scrollCacheExtent: const ScrollCacheExtent.pixels(1600),
-                        controller: _appPageScrollController,
-                        physics: const AlwaysScrollableScrollPhysics(
-                          parent: ClampingScrollPhysics(),
-                        ),
-                        slivers: [
-                          SliverToBoxAdapter(
-                            child: SafeArea(
-                              top: true,
-                              bottom: false,
-                              child: Padding(
-                                padding: const EdgeInsets.only(top: 12),
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.center,
-                                      children: [
-                                        IconButton(
-                                          icon: const Icon(Icons.arrow_back),
-                                          // Pin to the per-app PRIMARY
-                                          // colour. The previous attempt
-                                          // used [colorScheme.onSurface],
-                                          // which on light themes is a
-                                          // near-black and on dark themes
-                                          // a near-white - effectively the
-                                          // same value the main app theme
-                                          // produces, so the per-app tint
-                                          // wasn't visible.
-                                          // [colorScheme.primary] is the
-                                          // accent derived from this app's
-                                          // icon, so the back button now
-                                          // visibly belongs to the page.
-                                          color: pageThemeForPage
-                                              .colorScheme
-                                              .primary,
-                                          onPressed: updating
-                                              ? null
-                                              : () => Navigator.of(
-                                                  themedPageContext,
-                                                ).maybePop(),
-                                          tooltip: MaterialLocalizations.of(
-                                            themedPageContext,
-                                          ).backButtonTooltip,
-                                        ),
-                                        Expanded(
-                                          child: buildDetailHeroContent(
-                                            themedPageContext,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    if (_editMode && app != null)
-                                      _buildEditMetadataSection(
-                                        themedPageContext,
-                                        app,
-                                        appsProvider,
-                                        settingsProvider,
-                                      )
-                                    else ...[
-                                      _buildPersistentPageError(
-                                        themedPageContext,
-                                        pageThemeForPage,
-                                        effectivePersistentPageError,
-                                        title:
-                                            buildVerificationPersistentPageError,
-                                      ),
-                                      getInfoColumn(
-                                        themedPageContext,
-                                        small: false,
-                                      ),
+                    : Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          if (settingsProvider.useGradientBackground && widget.isEmbedded)
+                            Positioned.fill(
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    stops: const [0, 0.38, 0.72, 1],
+                                    colors: [
+                                      pageColorSchemeForPage.schemePageGradientTopColor,
+                                      pageColorSchemeForPage.schemePageGradientMidColor,
+                                      pageColorSchemeForPage.surface,
+                                      pageColorSchemeForPage.surface,
                                     ],
-                                    Padding(
-                                      padding: const EdgeInsets.fromLTRB(
-                                        16,
-                                        0,
-                                        16,
-                                        16,
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          Expanded(
-                                            child: getBottomCenterActions(
-                                              themedPageContext,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    if (_editMode)
-                                      SizedBox(
-                                        height: _editModeBottomSpacerHeight,
-                                      ),
-                                  ],
+                                  ),
                                 ),
                               ),
                             ),
+                          CustomScrollView(
+                            scrollCacheExtent: const ScrollCacheExtent.pixels(1600),
+                            controller: _appPageScrollController,
+                            physics: const AlwaysScrollableScrollPhysics(
+                              parent: ClampingScrollPhysics(),
+                            ),
+                            slivers: [
+                              SliverToBoxAdapter(
+                                child: SafeArea(
+                                  top: true,
+                                  bottom: false,
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(top: 12),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.center,
+                                          children: [
+                                            if (!widget.isEmbedded)
+                                              IconButton(
+                                                icon: const Icon(Icons.arrow_back),
+                                                color: pageThemeForPage
+                                                    .colorScheme
+                                                    .primary,
+                                                onPressed: updating
+                                                    ? null
+                                                    : () => Navigator.of(
+                                                        themedPageContext,
+                                                      ).maybePop(),
+                                                tooltip: MaterialLocalizations.of(
+                                                  themedPageContext,
+                                                ).backButtonTooltip,
+                                              ),
+                                            if (widget.isEmbedded)
+                                              const SizedBox(width: 16),
+                                            Expanded(
+                                              child: buildDetailHeroContent(
+                                                themedPageContext,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        if (_editMode && app != null)
+                                          _buildEditMetadataSection(
+                                            themedPageContext,
+                                            app,
+                                            appsProvider,
+                                            settingsProvider,
+                                          )
+                                        else ...[
+                                          _buildPersistentPageError(
+                                            themedPageContext,
+                                            pageThemeForPage,
+                                            effectivePersistentPageError,
+                                            title:
+                                                buildVerificationPersistentPageError,
+                                          ),
+                                          getInfoColumn(
+                                            themedPageContext,
+                                            small: false,
+                                          ),
+                                        ],
+                                        Padding(
+                                          padding: const EdgeInsets.fromLTRB(
+                                            16,
+                                            0,
+                                            16,
+                                            16,
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              Expanded(
+                                                child: getBottomCenterActions(
+                                                  themedPageContext,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        if (_editMode)
+                                          SizedBox(
+                                            height: _editModeBottomSpacerHeight,
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
+                          if (settingsProvider.progressiveBlurEnabled && !widget.isEmbedded)
+                            buildTopProgressiveOverlay(themedPageContext, settingsProvider) ?? const SizedBox.shrink(),
                         ],
                       ),
                 onRefresh: () async {

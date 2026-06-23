@@ -519,6 +519,14 @@ class _ObtainiumState extends State<Obtainium> {
             useGradient: useGradient,
             shadingIntensity: settingsProvider.shadingIntensity,
           );
+          if (settingsProvider.appAccentColorSource != AppAccentColorSource.materialYou) {
+            lightColorScheme = lightColorScheme.boostContainersForSeedThemes(
+              darkTheme: false,
+            );
+            darkColorScheme = darkColorScheme.boostContainersForSeedThemes(
+              darkTheme: true,
+            );
+          }
           if (settingsProvider.useBlackTheme) {
             darkColorScheme = darkColorScheme.withPureBlackBackgrounds();
           }
