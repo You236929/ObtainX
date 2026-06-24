@@ -378,19 +378,22 @@ class _AppListItem extends StatelessWidget {
     final hasUncertainUpdate =
         installed != null && versionOrderUncertainUpdate(app.app);
     final settingsProvider = context.read<SettingsProvider>();
-    final source = SourceProvider().getSource(
+    // Use getSourceTemplate instead of getSource to avoid constructing a new
+    // AppSource instance for every list item build. The template is sufficient
+    // because build verification only needs type checks and stateless methods.
+    final sourceTpl = SourceProvider().getSourceTemplate(
       app.app.url,
       overrideSource: app.app.overrideSource,
     );
     final buildVerificationBlocked = buildVerificationEnforcementBlocksInstall(
       app.app,
-      source,
+      sourceTpl,
       settingsProvider,
     );
     final String buildVerificationBlockedMessage =
         buildVerificationEnforcedBlockedMessage(
           app.app,
-          source,
+          sourceTpl,
           settingsProvider,
         );
 
@@ -1417,11 +1420,13 @@ void showChangeLogDialog(
 }
 
 Null Function()? getChangeLogFn(BuildContext context, App app) {
-  AppSource appSource = SourceProvider().getSource(
+  // Use getSourceTemplate since changeLogPageFromStandardUrl and
+  // changeLogIfAnyIsMarkDown are type-level / stateless properties.
+  final AppSource appSourceTpl = SourceProvider().getSourceTemplate(
     app.url,
     overrideSource: app.overrideSource,
   );
-  String? changesUrl = appSource.changeLogPageFromStandardUrl(app.url);
+  String? changesUrl = appSourceTpl.changeLogPageFromStandardUrl(app.url);
   String? changeLog = app.changeLog;
   if (changeLog?.split('\n').length == 1) {
     if (RegExp(
@@ -1434,7 +1439,7 @@ Null Function()? getChangeLogFn(BuildContext context, App app) {
   return (changeLog == null && changesUrl == null)
       ? null
       : () {
-          showChangeLogDialog(context, app, changesUrl, appSource, changeLog);
+          showChangeLogDialog(context, app, changesUrl, appSourceTpl, changeLog);
         };
 }
 
@@ -2733,7 +2738,7 @@ class AppsPageState extends State<AppsPage> {
         }
         if (filter.sourceFilter.isNotEmpty &&
             sourceProvider
-                    .getSource(
+                    .getSourceTemplate(
                       app.app.url,
                       overrideSource: app.app.overrideSource,
                     )
@@ -2905,13 +2910,13 @@ class AppsPageState extends State<AppsPage> {
       if (app == null) {
         return false;
       }
-      final AppSource source = SourceProvider().getSource(
+      final AppSource sourceTpl = SourceProvider().getSourceTemplate(
         app.url,
         overrideSource: app.overrideSource,
       );
       return buildVerificationEnforcementBlocksInstall(
         app,
-        source,
+        sourceTpl,
         settingsProvider,
       );
     }
@@ -3030,7 +3035,7 @@ class AppsPageState extends State<AppsPage> {
           }
           if (isInUpdatesGroup(row)) continue;
           final sourceKey = sourceProvider
-              .getSource(row.app.url, overrideSource: row.app.overrideSource)
+              .getSourceTemplate(row.app.url, overrideSource: row.app.overrideSource)
               .runtimeType
               .toString();
           sourceIndices.putIfAbsent(sourceKey, () => <int>[]);
@@ -3237,10 +3242,7 @@ class AppsPageState extends State<AppsPage> {
       final hasUncertainUpdate =
           installed != null && versionOrderUncertainUpdate(app.app);
       final downloadsRunning = appsProvider.areDownloadsRunning();
-      final sourceHost = sourceProvider
-          .getSource(app.app.url, overrideSource: app.app.overrideSource)
-          .hosts
-          .firstOrNull;
+      final sourceHost = Uri.tryParse(app.app.url)?.host;
       // M3 Container Transform: tapping the row morphs the row's container
       // into the AppPage's container. Replaces the previous
       // `Navigator.push(heroFriendlyAppPageRoute(...))` flow plus the
@@ -3570,7 +3572,7 @@ class AppsPageState extends State<AppsPage> {
           ? listedApps.firstWhere(
               (appInMem) =>
                   sourceProvider
-                      .getSource(
+                      .getSourceTemplate(
                         appInMem.app.url,
                         overrideSource: appInMem.app.overrideSource,
                       )
@@ -3580,7 +3582,7 @@ class AppsPageState extends State<AppsPage> {
             )
           : listedApps[matchingIndices.first];
       final sourceTitle = sourceProvider
-          .getSource(
+          .getSourceTemplate(
             firstForTitle.app.url,
             overrideSource: firstForTitle.app.overrideSource,
           )
@@ -5018,7 +5020,7 @@ class AppsPageState extends State<AppsPage> {
       final app = appInMem.app;
       if (excludedFolderIdsForApp(app).contains(folder.id)) continue;
       final resolvedSource = sourceProvider
-          .getSource(app.url, overrideSource: app.overrideSource)
+          .getSourceTemplate(app.url, overrideSource: app.overrideSource)
           .runtimeType
           .toString();
       if (folder.rule!.matches(app, resolvedSource: resolvedSource)) {
@@ -5075,7 +5077,7 @@ class AppsPageState extends State<AppsPage> {
           .where((a) => a.app.additionalSettings['onDemandOnly'] != true)
           .where((a) {
             final resolvedSource = sourceProvider
-                .getSource(a.app.url, overrideSource: a.app.overrideSource)
+                .getSourceTemplate(a.app.url, overrideSource: a.app.overrideSource)
                 .runtimeType
                 .toString();
             return rule.matches(a.app, resolvedSource: resolvedSource);
