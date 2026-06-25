@@ -20,6 +20,7 @@ import 'package:obtainium/main.dart';
 import 'package:obtainium/pages/additional_options_page.dart';
 import 'package:obtainium/pages/page_route_slide_up.dart';
 import 'package:obtainium/pages/app.dart';
+import 'package:obtainium/pages/settings.dart';
 import 'package:obtainium/folders/app_folder.dart';
 import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/providers/logs_provider.dart';
@@ -398,6 +399,12 @@ class _AppListItem extends StatelessWidget {
 
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final bool isLargeScreen = screenWidth >= 720;
+    final bool hideVersionAndChangelog =
+        isLargeScreen &&
+        MediaQuery.of(context).orientation == Orientation.portrait;
+
     final showChangesFn = getChangeLogFn(context, app.app);
     final installed = app.app.installedVersion;
     final skipActive = isSkipActiveForCurrentLatest(app.app);
@@ -450,6 +457,8 @@ class _AppListItem extends StatelessWidget {
       final trackOnly = app.app.additionalSettings['trackOnly'] == true;
       return IconButton(
         visualDensity: VisualDensity.compact,
+        padding: isLargeScreen ? EdgeInsets.zero : const EdgeInsets.all(8),
+        constraints: isLargeScreen ? const BoxConstraints() : null,
         color: colorScheme.primary,
         tooltip: buildVerificationBlocked
             ? buildVerificationBlockedMessage
@@ -466,6 +475,8 @@ class _AppListItem extends StatelessWidget {
     Widget buildUncertainUpdateButton() {
       return IconButton(
         visualDensity: VisualDensity.compact,
+        padding: isLargeScreen ? EdgeInsets.zero : const EdgeInsets.all(8),
+        constraints: isLargeScreen ? const BoxConstraints() : null,
         color: colorScheme.primary,
         tooltip: buildVerificationBlocked
             ? buildVerificationBlockedMessage
@@ -481,7 +492,7 @@ class _AppListItem extends StatelessWidget {
       return Tooltip(
         message: tr('latestVersionSkipped'),
         child: Padding(
-          padding: const EdgeInsets.all(8),
+          padding: isLargeScreen ? EdgeInsets.zero : const EdgeInsets.all(8),
           child: Icon(
             Icons.skip_next_rounded,
             color: colorScheme.onSurfaceVariant,
@@ -495,81 +506,93 @@ class _AppListItem extends StatelessWidget {
         ? (showChangesFn != null ? tr('changes') : '')
         : DateFormat('yyyy-MM-dd').format(app.app.releaseDate!.toLocal());
 
-    final Widget trailingRow = Row(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        if (skipActive) ...[
-          buildSkippedVersionIcon(),
-          const SizedBox(width: 5),
-        ],
-        if (!skipActive && hasUpdate) ...[
-          buildUpdateButton(),
-          const SizedBox(width: 5),
-        ],
-        if (!skipActive && !hasUpdate && hasUncertainUpdate) ...[
-          buildUncertainUpdateButton(),
-          const SizedBox(width: 5),
-        ],
-        GestureDetector(
-          onTap: showChangesFn,
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              color: highlightTouchTargets && showChangesFn != null
-                  ? (theme.brightness == Brightness.light
-                            ? theme.primaryColor
-                            : theme.primaryColorLight)
-                        .withAlpha(
-                          theme.brightness == Brightness.light ? 20 : 40,
-                        )
-                  : null,
-            ),
-            padding: highlightTouchTargets
-                ? const EdgeInsetsDirectional.fromSTEB(12, 0, 12, 0)
-                : const EdgeInsetsDirectional.fromSTEB(24, 0, 0, 0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      constraints: BoxConstraints(
-                        maxWidth: MediaQuery.of(context).size.width / 4,
-                      ),
-                      child: Text(
-                        versionText,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.end,
-                        style: isVersionPseudo(app.app)
-                            ? const TextStyle(fontStyle: FontStyle.italic)
-                            : null,
-                      ),
-                    ),
-                  ],
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      changesButtonString,
-                      style: TextStyle(
-                        fontStyle: FontStyle.italic,
-                        decoration: showChangesFn != null
-                            ? TextDecoration.underline
-                            : TextDecoration.none,
-                      ),
-                    ),
-                  ],
-                ),
+    final bool hasTrailingWidgets =
+        skipActive ||
+        (!skipActive && hasUpdate) ||
+        (!skipActive && !hasUpdate && hasUncertainUpdate);
+
+    final Widget? trailingRow = (hideVersionAndChangelog && !hasTrailingWidgets)
+        ? null
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              if (skipActive) ...[
+                buildSkippedVersionIcon(),
+                if (!hideVersionAndChangelog) const SizedBox(width: 5),
               ],
-            ),
-          ),
-        ),
-      ],
-    );
+              if (!skipActive && hasUpdate) ...[
+                buildUpdateButton(),
+                if (!hideVersionAndChangelog) const SizedBox(width: 5),
+              ],
+              if (!skipActive && !hasUpdate && hasUncertainUpdate) ...[
+                buildUncertainUpdateButton(),
+                if (!hideVersionAndChangelog) const SizedBox(width: 5),
+              ],
+              if (!hideVersionAndChangelog)
+                GestureDetector(
+                  onTap: showChangesFn,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      color: highlightTouchTargets && showChangesFn != null
+                          ? (theme.brightness == Brightness.light
+                                    ? theme.primaryColor
+                                    : theme.primaryColorLight)
+                                .withAlpha(
+                                  theme.brightness == Brightness.light
+                                      ? 20
+                                      : 40,
+                                )
+                          : null,
+                    ),
+                    padding: highlightTouchTargets
+                        ? const EdgeInsetsDirectional.fromSTEB(12, 0, 12, 0)
+                        : const EdgeInsetsDirectional.fromSTEB(24, 0, 0, 0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              constraints: BoxConstraints(
+                                maxWidth: MediaQuery.of(context).size.width / 4,
+                              ),
+                              child: Text(
+                                versionText,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.end,
+                                style: isVersionPseudo(app.app)
+                                    ? const TextStyle(
+                                        fontStyle: FontStyle.italic,
+                                      )
+                                    : null,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              changesButtonString,
+                              style: TextStyle(
+                                fontStyle: FontStyle.italic,
+                                decoration: showChangesFn != null
+                                    ? TextDecoration.underline
+                                    : TextDecoration.none,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          );
 
     Widget buildDownloadProgressControl() {
       final double activeDownloadProgress = downloadProgress ?? 0;
@@ -701,25 +724,27 @@ class _AppListItem extends StatelessWidget {
         : iconWithBadge;
 
     // Leading = [icon+type-badge or check] + [store column] inside ListTile.leading.
-    // Store column always rendered (keeps title position stable); badge shown
-    // only when showTrackedStoreBadge is true and sourceHost is known.
+    // Store column keeps title position stable when showTrackedStoreBadge is true;
+    // collapses when showTrackedStoreBadge is false so content on the right can expand.
     final Widget leadingWidget = Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         leadingIconForSlot,
-        const SizedBox(width: 6),
-        SizedBox(
-          width: 20,
-          child: Center(
-            child: (showTrackedStoreBadge && sourceHost != null)
-                ? Transform.scale(
-                    scale: 1.25,
-                    child: StoreSourceListBadge(host: sourceHost!),
-                  )
-                : null,
+        if (showTrackedStoreBadge) ...[
+          const SizedBox(width: 6),
+          SizedBox(
+            width: 20,
+            child: Center(
+              child: sourceHost != null
+                  ? Transform.scale(
+                      scale: 1.25,
+                      child: StoreSourceListBadge(host: sourceHost!),
+                    )
+                  : null,
+            ),
           ),
-        ),
+        ],
       ],
     );
 
@@ -781,6 +806,9 @@ class _AppListItem extends StatelessWidget {
           selectedTileColor: Colors.transparent,
           selected: isSelected,
           onLongPress: onLongPress,
+          contentPadding: isLargeScreen
+              ? const EdgeInsets.symmetric(horizontal: 12)
+              : null,
           leading: leadingWidget,
           title: Row(
             children: [
@@ -2032,7 +2060,9 @@ class AppsPageState extends State<AppsPage> {
   bool handleBack() {
     if (clearSelected()) return true;
     final navKey = detailsNavKey;
-    if (navKey != null && navKey.currentState != null && navKey.currentState!.canPop()) {
+    if (navKey != null &&
+        navKey.currentState != null &&
+        navKey.currentState!.canPop()) {
       navKey.currentState!.pop();
       return true;
     }
@@ -2251,6 +2281,15 @@ class AppsPageState extends State<AppsPage> {
         setState(() => _applySearchText(_searchField, text));
       }
     });
+    _searchFocusNode.addListener(() {
+      if (!_searchFocusNode.hasFocus &&
+          _searchController.text.isEmpty &&
+          _searchExpanded) {
+        setState(() {
+          _searchExpanded = false;
+        });
+      }
+    });
   }
 
   @override
@@ -2291,7 +2330,6 @@ class AppsPageState extends State<AppsPage> {
       autofocus: true,
       decoration: InputDecoration(
         hintText: tr('search'),
-        prefixIcon: const Icon(Icons.search, size: 18),
         isDense: true,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(30)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -3235,7 +3273,9 @@ class AppsPageState extends State<AppsPage> {
     final listedAppTypes = _listedAppTypesCache;
 
     List<String> getActiveGroupKeys() {
-      final folderPrefix = widget.folderId != null ? 'folder_${widget.folderId}_' : '';
+      final folderPrefix = widget.folderId != null
+          ? 'folder_${widget.folderId}_'
+          : '';
       final List<String> keys = [];
       if (effectiveGroupBy == AppsListGroupBy.category) {
         for (final category in listedCategories) {
@@ -3422,8 +3462,11 @@ class AppsPageState extends State<AppsPage> {
         appsListHeroFolderId: widget.folderId,
         child: _AppListItem(
           appId: appId,
-          isSelected: selectedAppIds.contains(appId) ||
-              (isLargeScreen && selectedAppId == appId && selectedAppIds.isEmpty),
+          isSelected:
+              selectedAppIds.contains(appId) ||
+              (isLargeScreen &&
+                  selectedAppId == appId &&
+                  selectedAppIds.isEmpty),
           showCheckmark: selectedAppIds.contains(appId),
           areDownloadsRunning: downloadsRunning,
           iconWidget: getAppIcon(index),
@@ -3462,40 +3505,38 @@ class AppsPageState extends State<AppsPage> {
       // view) still uses the standard Navigator.push - that's a secondary
       // path and doesn't benefit from container transform.
       final Widget swipeItem = isLargeScreen
-          ? buildRowWith(
-              () => setState(() => selectedAppId = appId),
-            )
+          ? buildRowWith(() => setState(() => selectedAppId = appId))
           : settingsProvider.reduceVisualEffects
-              ? buildRowWith(
-                  () => Navigator.push(
-                    context,
-                    heroFriendlyAppPageRoute(
-                      (_) => AppPage(
-                        appId: appId,
-                        appsListHeroFolderId: widget.folderId,
-                      ),
-                    ),
+          ? buildRowWith(
+              () => Navigator.push(
+                context,
+                heroFriendlyAppPageRoute(
+                  (_) => AppPage(
+                    appId: appId,
+                    appsListHeroFolderId: widget.folderId,
                   ),
-                )
-              : OpenContainer(
-                  key: ValueKey('open-$appId'),
-                  closedColor: Colors.transparent,
-                  openColor: Theme.of(context).scaffoldBackgroundColor,
-                  closedElevation: 0,
-                  openElevation: 0,
-                  transitionType: ContainerTransitionType.fadeThrough,
-                  transitionDuration: const Duration(milliseconds: 320),
-                  closedShape: itemRadius != null
-                      ? RoundedRectangleBorder(borderRadius: itemRadius)
-                      : const RoundedRectangleBorder(),
-                  // We drive the open trigger from [_AppListItem.onTap] ourselves
-                  // so selection-mode taps stay routed to [toggleAppSelected].
-                  tappable: false,
-                  openBuilder: (BuildContext _, VoidCallback _) =>
-                      AppPage(appId: appId, appsListHeroFolderId: widget.folderId),
-                  closedBuilder: (BuildContext _, VoidCallback openContainer) =>
-                      buildRowWith(openContainer),
-                );
+                ),
+              ),
+            )
+          : OpenContainer(
+              key: ValueKey('open-$appId'),
+              closedColor: Colors.transparent,
+              openColor: Theme.of(context).scaffoldBackgroundColor,
+              closedElevation: 0,
+              openElevation: 0,
+              transitionType: ContainerTransitionType.fadeThrough,
+              transitionDuration: const Duration(milliseconds: 320),
+              closedShape: itemRadius != null
+                  ? RoundedRectangleBorder(borderRadius: itemRadius)
+                  : const RoundedRectangleBorder(),
+              // We drive the open trigger from [_AppListItem.onTap] ourselves
+              // so selection-mode taps stay routed to [toggleAppSelected].
+              tappable: false,
+              openBuilder: (BuildContext _, VoidCallback _) =>
+                  AppPage(appId: appId, appsListHeroFolderId: widget.folderId),
+              closedBuilder: (BuildContext _, VoidCallback openContainer) =>
+                  buildRowWith(openContainer),
+            );
       if (groupPosition != null) {
         return ClipRRect(
           borderRadius: m3eListGroupItemRadius(
@@ -3569,8 +3610,11 @@ class AppsPageState extends State<AppsPage> {
     }
 
     getCategoryCollapsibleTile(int index) {
-      final folderPrefix = widget.folderId != null ? 'folder_${widget.folderId}_' : '';
-      final catKey = '${folderPrefix}cat:${listedCategories[index] ?? '__null__'}';
+      final folderPrefix = widget.folderId != null
+          ? 'folder_${widget.folderId}_'
+          : '';
+      final catKey =
+          '${folderPrefix}cat:${listedCategories[index] ?? '__null__'}';
       final isExpanded = !_collapsedGroups.contains(catKey);
       final controller = _groupControllers.putIfAbsent(
         catKey,
@@ -3638,7 +3682,9 @@ class AppsPageState extends State<AppsPage> {
     }
 
     getNonInstalledCollapsibleTile() {
-      final folderPrefix = widget.folderId != null ? 'folder_${widget.folderId}_' : '';
+      final folderPrefix = widget.folderId != null
+          ? 'folder_${widget.folderId}_'
+          : '';
       final nonInstalledKey = '${folderPrefix}__nonInstalled__';
       final isExpanded = !_collapsedGroups.contains(nonInstalledKey);
       final controller = _groupControllers.putIfAbsent(
@@ -3705,7 +3751,9 @@ class AppsPageState extends State<AppsPage> {
 
     getSourceCollapsibleTile(int index) {
       final sourceKey = listedSources[index];
-      final folderPrefix = widget.folderId != null ? 'folder_${widget.folderId}_' : '';
+      final folderPrefix = widget.folderId != null
+          ? 'folder_${widget.folderId}_'
+          : '';
       final groupKey = '${folderPrefix}src:$sourceKey';
       final isExpanded = !_collapsedGroups.contains(groupKey);
       final controller = _groupControllers.putIfAbsent(
@@ -3858,7 +3906,9 @@ class AppsPageState extends State<AppsPage> {
     }
 
     getAppTypeCollapsibleTile(AppTypeGroup type) {
-      final folderPrefix = widget.folderId != null ? 'folder_${widget.folderId}_' : '';
+      final folderPrefix = widget.folderId != null
+          ? 'folder_${widget.folderId}_'
+          : '';
       final String groupKey = '${folderPrefix}appType:${type.name}';
       final matchingIndices = _appTypeGroupListedIndices[type] ?? const <int>[];
       final String title = switch (type) {
@@ -3874,7 +3924,9 @@ class AppsPageState extends State<AppsPage> {
     }
 
     getUpdatesCollapsibleTile() {
-      final folderPrefix = widget.folderId != null ? 'folder_${widget.folderId}_' : '';
+      final folderPrefix = widget.folderId != null
+          ? 'folder_${widget.folderId}_'
+          : '';
       return buildCollapsibleTile(
         groupKey: '${folderPrefix}__updates__',
         title: tr('updatesGroup'),
@@ -4874,8 +4926,8 @@ class AppsPageState extends State<AppsPage> {
                 child: ExpressiveRefreshIndicator(
                   key: _refreshIndicatorKey,
                   onRefresh: refresh,
-                  child: Scrollbar(
-                    interactive: true,
+                  child: _ConditionalScrollbar(
+                    condition: !isLargeScreen,
                     controller: scrollController,
                     child: Stack(
                       fit: StackFit.expand,
@@ -4903,7 +4955,9 @@ class AppsPageState extends State<AppsPage> {
                             ),
                           ),
                         CustomScrollView(
-                          scrollCacheExtent: const ScrollCacheExtent.pixels(1800),
+                          scrollCacheExtent: const ScrollCacheExtent.pixels(
+                            1800,
+                          ),
                           key: PageStorageKey<String>(
                             'apps-scroll-${widget.folderId ?? (widget.onDemandOnlyList ? 'on-demand' : 'main')}',
                           ),
@@ -4925,13 +4979,17 @@ class AppsPageState extends State<AppsPage> {
                                       ).backButtonTooltip,
                                     )
                                   : null,
-                              title: widget.onDemandOnlyList
-                                  ? tr('onDemandOnlyAppsTitle')
-                                  : currentFolderName ?? tr('appsString'),
+                              title: _searchExpanded
+                                  ? ""
+                                  : (widget.onDemandOnlyList
+                                        ? tr('onDemandOnlyAppsTitle')
+                                        : currentFolderName ??
+                                              tr('appsString')),
                               matchGradientBackground:
                                   settingsProvider.useGradientBackground,
-                              titleStyle: _searchExpanded
-                                  ? Theme.of(context).textTheme.titleSmall
+                              progressiveBlurOverlayColor: isLargeScreen
+                                  ? Theme.of(context).colorScheme.surface
+                                        .withValues(alpha: 0.72)
                                   : null,
                               actions: [
                                 if (!_searchExpanded)
@@ -4941,15 +4999,6 @@ class AppsPageState extends State<AppsPage> {
                                       setState(() => _searchExpanded = true);
                                       _searchFocusNode.requestFocus();
                                     },
-                                  )
-                                else
-                                  IconButton(
-                                    icon: const Icon(Icons.close),
-                                    onPressed: () => setState(() {
-                                      _searchExpanded = false;
-                                      _searchController.clear();
-                                      _searchFocusNode.unfocus();
-                                    }),
                                   ),
                                 if (effectiveGroupBy != AppsListGroupBy.none ||
                                     showUpdatesGroupSection) ...[
@@ -4972,7 +5021,9 @@ class AppsPageState extends State<AppsPage> {
                                             _groupControllers[key]?.collapse();
                                           }
                                         } else {
-                                           _collapsedGroups.removeAll(activeGroupKeys);
+                                          _collapsedGroups.removeAll(
+                                            activeGroupKeys,
+                                          );
                                           for (final key in activeGroupKeys) {
                                             _groupControllers[key]?.expand();
                                           }
@@ -4986,7 +5037,9 @@ class AppsPageState extends State<AppsPage> {
                               // and "Apps" title are always on the same toolbar row.
                               searchWidget: _searchExpanded
                                   ? _buildSearchBar(
-                                      colorScheme: Theme.of(context).colorScheme,
+                                      colorScheme: Theme.of(
+                                        context,
+                                      ).colorScheme,
                                       showFilterSheet: showFilterSheet,
                                       neutralFilter: neutralFilter,
                                       settingsProvider: settingsProvider,
@@ -5122,7 +5175,8 @@ class AppsPageState extends State<AppsPage> {
                   ),
                 ),
               ),
-              if (appsProvider.apps.isNotEmpty && !(isLargeScreen && selectedAppIds.isNotEmpty))
+              if (appsProvider.apps.isNotEmpty &&
+                  !(isLargeScreen && selectedAppIds.isNotEmpty))
                 _ScrollLinkedAppFooter(
                   scrollController: scrollController,
                   selectionActive: selectedAppIds.isNotEmpty,
@@ -5144,376 +5198,655 @@ class AppsPageState extends State<AppsPage> {
         );
 
         if (isLargeScreen) {
-          return Row(
+          // Full-bleed page background behind both panes - prevents the master
+          // pane's app-bar progressive-blur BackdropFilter from sampling
+          // transparent-black at the seam (the detail pane paints after the
+          // master in this Row, so that strip is empty when the blur
+          // rasterizes), which produced the two-panel "dark smudge" at the
+          // right end of the master title bar. See settings.dart and
+          // custom_app_bar.dart's _buildBlur.
+          return Stack(
+            fit: StackFit.expand,
             children: [
-              Expanded(
-                flex: 3,
-                child: listScaffold,
+              Positioned.fill(
+                child: settingsProvider.useGradientBackground
+                    ? DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            stops: const [0, 0.38, 0.72, 1],
+                            colors: [
+                              Theme.of(
+                                context,
+                              ).colorScheme.schemePageGradientTopColor,
+                              Theme.of(
+                                context,
+                              ).colorScheme.schemePageGradientMidColor,
+                              Theme.of(context).colorScheme.surface,
+                              Theme.of(context).colorScheme.surface,
+                            ],
+                          ),
+                        ),
+                      )
+                    : ColoredBox(color: Theme.of(context).colorScheme.surface),
               ),
-              VerticalDivider(
-                width: 1,
-                thickness: 1,
-                color: Theme.of(context).colorScheme.outlineVariant.withAlpha(50),
-              ),
-              Expanded(
-                flex: 4,
-                child: selectedAppIds.isNotEmpty
-                    ? Builder(
-                        builder: (BuildContext context) {
-                          final ColorScheme scheme = Theme.of(context).colorScheme;
-                          final buttonStyle = ElevatedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(56),
-                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                            alignment: Alignment.centerLeft,
-                          );
-                          final destructiveButtonStyle = ElevatedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(56),
-                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                            backgroundColor: scheme.errorContainer,
-                            foregroundColor: scheme.onErrorContainer,
-                            alignment: Alignment.centerLeft,
-                          );
-                          return Scaffold(
-                            backgroundColor: settingsProvider.useGradientBackground ? Colors.transparent : scheme.surface,
-                            body: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                if (settingsProvider.useGradientBackground)
-                                  Positioned.fill(
-                                    child: DecoratedBox(
-                                      decoration: BoxDecoration(
-                                        gradient: LinearGradient(
-                                          begin: Alignment.topCenter,
-                                          end: Alignment.bottomCenter,
-                                          stops: const [0, 0.38, 0.72, 1],
-                                          colors: [
-                                            scheme.schemePageGradientTopColor,
-                                            scheme.schemePageGradientMidColor,
-                                            scheme.surface,
-                                            scheme.surface,
-                                          ],
+              Row(
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: Theme(
+                      data: Theme.of(context).copyWith(
+                        scrollbarTheme: const ScrollbarThemeData(
+                          thumbColor: WidgetStatePropertyAll(
+                            Colors.transparent,
+                          ),
+                          trackColor: WidgetStatePropertyAll(
+                            Colors.transparent,
+                          ),
+                          trackBorderColor: WidgetStatePropertyAll(
+                            Colors.transparent,
+                          ),
+                          minThumbLength: 0,
+                        ),
+                      ),
+                      child: listScaffold,
+                    ),
+                  ),
+                  VerticalDivider(
+                    width: 1,
+                    thickness: 1,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.outlineVariant.withAlpha(50),
+                  ),
+                  Expanded(
+                    flex: 4,
+                    child: selectedAppIds.isNotEmpty
+                        ? Builder(
+                            builder: (BuildContext context) {
+                              final ColorScheme scheme = Theme.of(
+                                context,
+                              ).colorScheme;
+                              final buttonStyle = ElevatedButton.styleFrom(
+                                minimumSize: const Size.fromHeight(56),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                  vertical: 16,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                alignment: Alignment.centerLeft,
+                              );
+                              final destructiveButtonStyle =
+                                  ElevatedButton.styleFrom(
+                                    minimumSize: const Size.fromHeight(56),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 24,
+                                      vertical: 16,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    backgroundColor: scheme.errorContainer,
+                                    foregroundColor: scheme.onErrorContainer,
+                                    alignment: Alignment.centerLeft,
+                                  );
+                              return Scaffold(
+                                backgroundColor:
+                                    settingsProvider.useGradientBackground
+                                    ? Colors.transparent
+                                    : scheme.surface,
+                                body: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    if (settingsProvider.useGradientBackground)
+                                      Positioned.fill(
+                                        child: DecoratedBox(
+                                          decoration: BoxDecoration(
+                                            gradient: LinearGradient(
+                                              begin: Alignment.topCenter,
+                                              end: Alignment.bottomCenter,
+                                              stops: const [0, 0.38, 0.72, 1],
+                                              colors: [
+                                                scheme
+                                                    .schemePageGradientTopColor,
+                                                scheme
+                                                    .schemePageGradientMidColor,
+                                                scheme.surface,
+                                                scheme.surface,
+                                              ],
+                                            ),
+                                          ),
                                         ),
                                       ),
-                                    ),
-                                  ),
-                                CustomScrollView(
-                                  slivers: [
-                                    CustomAppBar(
-                                      title: tr('selectedX', args: [selectedAppIds.length.toString()]),
-                                      matchGradientBackground: settingsProvider.useGradientBackground,
-                                    ),
-                                    SliverSafeArea(
-                                      top: false,
-                                      bottom: true,
-                                      sliver: SliverPadding(
-                                        padding: const EdgeInsets.all(24),
-                                        sliver: SliverToBoxAdapter(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                                            children: [
-                                              Row(
+                                    CustomScrollView(
+                                      slivers: [
+                                        CustomAppBar(
+                                          title: tr(
+                                            'selectedX',
+                                            args: [
+                                              selectedAppIds.length.toString(),
+                                            ],
+                                          ),
+                                          matchGradientBackground:
+                                              settingsProvider
+                                                  .useGradientBackground,
+                                        ),
+                                        SliverSafeArea(
+                                          top: false,
+                                          bottom: true,
+                                          sliver: SliverPadding(
+                                            padding: const EdgeInsets.all(24),
+                                            sliver: SliverToBoxAdapter(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.stretch,
                                                 children: [
-                                                  Expanded(
-                                                    child: OutlinedButton.icon(
-                                                      style: OutlinedButton.styleFrom(
-                                                        minimumSize: const Size.fromHeight(48),
-                                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                                  Row(
+                                                    children: [
+                                                      Expanded(
+                                                        child: OutlinedButton.icon(
+                                                          style: OutlinedButton.styleFrom(
+                                                            minimumSize:
+                                                                const Size.fromHeight(
+                                                                  48,
+                                                                ),
+                                                            shape: RoundedRectangleBorder(
+                                                              borderRadius:
+                                                                  BorderRadius.circular(
+                                                                    12,
+                                                                  ),
+                                                            ),
+                                                            side: BorderSide(
+                                                              color: scheme
+                                                                  .primary
+                                                                  .withAlpha(
+                                                                    120,
+                                                                  ),
+                                                              width: 1,
+                                                              strokeAlign:
+                                                                  BorderSide
+                                                                      .strokeAlignInside,
+                                                            ),
+                                                          ),
+                                                          onPressed:
+                                                              listedApps.isEmpty
+                                                              ? null
+                                                              : () {
+                                                                  setState(() {
+                                                                    for (final appInMem
+                                                                        in listedApps) {
+                                                                      selectedAppIds.add(
+                                                                        appInMem
+                                                                            .app
+                                                                            .id,
+                                                                      );
+                                                                    }
+                                                                  });
+                                                                },
+                                                          icon: const Icon(
+                                                            Icons
+                                                                .select_all_outlined,
+                                                          ),
+                                                          label: Text(
+                                                            tr('selectAll'),
+                                                          ),
+                                                        ),
                                                       ),
-                                                      onPressed: listedApps.isEmpty
-                                                          ? null
-                                                          : () {
-                                                              setState(() {
-                                                                for (final appInMem in listedApps) {
-                                                                  selectedAppIds.add(appInMem.app.id);
-                                                                }
-                                                              });
-                                                            },
-                                                      icon: const Icon(Icons.select_all_outlined),
-                                                      label: Text(tr('selectAll')),
+                                                      const SizedBox(width: 12),
+                                                      Expanded(
+                                                        child: OutlinedButton.icon(
+                                                          style: OutlinedButton.styleFrom(
+                                                            minimumSize:
+                                                                const Size.fromHeight(
+                                                                  48,
+                                                                ),
+                                                            shape: RoundedRectangleBorder(
+                                                              borderRadius:
+                                                                  BorderRadius.circular(
+                                                                    12,
+                                                                  ),
+                                                            ),
+                                                            side: BorderSide(
+                                                              color: scheme
+                                                                  .primary
+                                                                  .withAlpha(
+                                                                    120,
+                                                                  ),
+                                                              width: 1,
+                                                              strokeAlign:
+                                                                  BorderSide
+                                                                      .strokeAlignInside,
+                                                            ),
+                                                          ),
+                                                          onPressed: () {
+                                                            setState(() {
+                                                              selectedAppIds
+                                                                  .clear();
+                                                            });
+                                                          },
+                                                          icon: const Icon(
+                                                            Icons.deselect,
+                                                          ),
+                                                          label: Text(
+                                                            tr('deselectAll'),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 16),
+                                                  FilledButton.icon(
+                                                    style: FilledButton.styleFrom(
+                                                      minimumSize:
+                                                          const Size.fromHeight(
+                                                            56,
+                                                          ),
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 24,
+                                                            vertical: 16,
+                                                          ),
+                                                      shape: RoundedRectangleBorder(
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              16,
+                                                            ),
+                                                      ),
+                                                      alignment:
+                                                          Alignment.centerLeft,
+                                                    ),
+                                                    onPressed:
+                                                        getMassObtainFunction(),
+                                                    icon: const Icon(
+                                                      Icons
+                                                          .file_download_outlined,
+                                                    ),
+                                                    label: Text(
+                                                      tr(
+                                                        'installUpdateSelectedApps',
+                                                      ),
                                                     ),
                                                   ),
-                                                  const SizedBox(width: 12),
-                                                  Expanded(
-                                                    child: OutlinedButton.icon(
-                                                      style: OutlinedButton.styleFrom(
-                                                        minimumSize: const Size.fromHeight(48),
-                                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                                  const SizedBox(height: 12),
+                                                  ElevatedButton.icon(
+                                                    style: buttonStyle,
+                                                    onPressed:
+                                                        appsProvider
+                                                            .areDownloadsRunning()
+                                                        ? null
+                                                        : showMassMarkDialog,
+                                                    icon: const Icon(
+                                                      Icons
+                                                          .check_circle_outline_rounded,
+                                                    ),
+                                                    label: Text(
+                                                      tr(
+                                                        'markSelectedAppsUpdated',
                                                       ),
-                                                      onPressed: () {
-                                                        setState(() {
-                                                          selectedAppIds.clear();
-                                                        });
-                                                      },
-                                                      icon: const Icon(Icons.deselect),
-                                                      label: Text(tr('deselectAll')),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 12),
+                                                  ElevatedButton.icon(
+                                                    style: buttonStyle,
+                                                    onPressed: () {
+                                                      appsProvider
+                                                          .downloadAppAssets(
+                                                            selectedApps
+                                                                .map(
+                                                                  (e) => e.id,
+                                                                )
+                                                                .toList(),
+                                                            globalNavigatorKey
+                                                                    .currentContext ??
+                                                                context,
+                                                          )
+                                                          .catchError((e) {
+                                                            showError(
+                                                              e,
+                                                              globalNavigatorKey
+                                                                      .currentContext ??
+                                                                  context,
+                                                            );
+                                                            return <String>[];
+                                                          });
+                                                    },
+                                                    icon: const Icon(
+                                                      Icons
+                                                          .download_for_offline_outlined,
+                                                    ),
+                                                    label: Text(
+                                                      tr(
+                                                        'downloadX',
+                                                        args: [
+                                                          lowerCaseIfEnglish(
+                                                            tr('releaseAsset'),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 12),
+                                                  ElevatedButton.icon(
+                                                    style: buttonStyle,
+                                                    onPressed:
+                                                        launchCategorizeDialog(),
+                                                    icon: const Icon(
+                                                      Icons.category_outlined,
+                                                    ),
+                                                    label: Text(
+                                                      tr('categorize'),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 12),
+                                                  ElevatedButton.icon(
+                                                    style: buttonStyle,
+                                                    onPressed: pinSelectedApps,
+                                                    icon: const Icon(
+                                                      Icons.push_pin_outlined,
+                                                    ),
+                                                    label: Text(
+                                                      selectedApps
+                                                              .where(
+                                                                (element) =>
+                                                                    element
+                                                                        .pinned,
+                                                              )
+                                                              .isEmpty
+                                                          ? tr('pinToTop')
+                                                          : tr('unpinFromTop'),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 12),
+                                                  ElevatedButton.icon(
+                                                    style: buttonStyle,
+                                                    onPressed: () =>
+                                                        _showFolderAssignDialog(
+                                                          context,
+                                                          selectedApps,
+                                                        ),
+                                                    icon: const Icon(
+                                                      Icons
+                                                          .folder_copy_outlined,
+                                                    ),
+                                                    label: Text(
+                                                      tr('addToFolder'),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 12),
+                                                  ElevatedButton.icon(
+                                                    style: buttonStyle,
+                                                    onPressed: () {
+                                                      String urls = '';
+                                                      for (var a
+                                                          in selectedApps) {
+                                                        urls += '${a.url}\n';
+                                                      }
+                                                      urls = urls.substring(
+                                                        0,
+                                                        urls.length - 1,
+                                                      );
+                                                      SharePlus.instance.share(
+                                                        ShareParams(
+                                                          text: urls,
+                                                          subject:
+                                                              'ObtainX - ${tr('appsString')}',
+                                                        ),
+                                                      );
+                                                    },
+                                                    icon: const Icon(
+                                                      Icons.share_outlined,
+                                                    ),
+                                                    label: Text(
+                                                      tr(
+                                                        'shareSelectedAppURLs',
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 12),
+                                                  ElevatedButton.icon(
+                                                    style: buttonStyle,
+                                                    onPressed: () {
+                                                      String urls = '';
+                                                      for (var a
+                                                          in selectedApps) {
+                                                        urls +=
+                                                            'https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/${Uri.encodeComponent(jsonEncode({'id': a.id, 'url': a.url, 'author': a.author, 'name': a.name, 'preferredApkIndex': a.preferredApkIndex, 'additionalSettings': jsonEncode(a.additionalSettings), 'overrideSource': a.overrideSource}))}\n\n';
+                                                      }
+                                                      SharePlus.instance.share(
+                                                        ShareParams(
+                                                          text: urls,
+                                                          subject:
+                                                              'ObtainX - ${tr('appsString')}',
+                                                        ),
+                                                      );
+                                                    },
+                                                    icon: const Icon(
+                                                      Icons
+                                                          .settings_suggest_outlined,
+                                                    ),
+                                                    label: Text(
+                                                      tr('shareAppConfigLinks'),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 12),
+                                                  ElevatedButton.icon(
+                                                    style: buttonStyle,
+                                                    onPressed: () {
+                                                      var encoder =
+                                                          const JsonEncoder.withIndent(
+                                                            "    ",
+                                                          );
+                                                      var exportJSON = encoder.convert(
+                                                        appsProvider
+                                                            .generateExportJSON(
+                                                              appIds:
+                                                                  selectedApps
+                                                                      .map(
+                                                                        (e) => e
+                                                                            .id,
+                                                                      )
+                                                                      .toList(),
+                                                              overrideExportSettings:
+                                                                  0,
+                                                            ),
+                                                      );
+                                                      String fn =
+                                                          '${tr('obtainiumExportHyphenatedLowercase')}-${DateTime.now().toIso8601String().replaceAll(':', '-')}-count-${selectedApps.length}';
+                                                      XFile f = XFile.fromData(
+                                                        Uint8List.fromList(
+                                                          utf8.encode(
+                                                            exportJSON,
+                                                          ),
+                                                        ),
+                                                        mimeType:
+                                                            'application/json',
+                                                        name: fn,
+                                                      );
+                                                      SharePlus.instance.share(
+                                                        ShareParams(
+                                                          files: [f],
+                                                          fileNameOverrides: [
+                                                            '$fn.json',
+                                                          ],
+                                                        ),
+                                                      );
+                                                    },
+                                                    icon: const Icon(
+                                                      Icons
+                                                          .import_export_outlined,
+                                                    ),
+                                                    label: Text(
+                                                      '${tr('share')} - ${tr('obtainiumExport')}',
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 24),
+                                                  ElevatedButton.icon(
+                                                    style:
+                                                        destructiveButtonStyle,
+                                                    onPressed: () async {
+                                                      final appsProviderRef =
+                                                          appsProvider;
+                                                      final messenger =
+                                                          scaffoldMessengerKey
+                                                              .currentState;
+                                                      final RemoveAppsWithModalResult
+                                                      removeResult =
+                                                          await appsProviderRef
+                                                              .removeAppsWithModal(
+                                                                context,
+                                                                selectedApps
+                                                                    .toList(),
+                                                              );
+                                                      if (removeResult
+                                                          .shouldShowSnackBar) {
+                                                        final Set<String>
+                                                        undoAppIds = removeResult
+                                                            .deferredUndoAppIds;
+                                                        final int removedCount =
+                                                            removeResult
+                                                                .deferredUndoAppIds
+                                                                .isNotEmpty
+                                                            ? removeResult
+                                                                  .deferredUndoAppIds
+                                                                  .length
+                                                            : selectedApps
+                                                                  .length;
+                                                        messenger
+                                                          ?..clearSnackBars()
+                                                          ..showSnackBar(
+                                                            SnackBar(
+                                                              content: Text(
+                                                                tr(
+                                                                  'xAppsRemoved',
+                                                                  args: [
+                                                                    '$removedCount',
+                                                                  ],
+                                                                ),
+                                                              ),
+                                                              persist: false,
+                                                              duration:
+                                                                  const Duration(
+                                                                    seconds: 5,
+                                                                  ),
+                                                              behavior:
+                                                                  SnackBarBehavior
+                                                                      .floating,
+                                                              action:
+                                                                  undoAppIds
+                                                                      .isNotEmpty
+                                                                  ? SnackBarAction(
+                                                                      label: tr(
+                                                                        'undo',
+                                                                      ),
+                                                                      onPressed: () =>
+                                                                          appsProviderRef.undoDeferredObtainiumRemovals(
+                                                                            undoAppIds,
+                                                                          ),
+                                                                    )
+                                                                  : null,
+                                                            ),
+                                                          );
+                                                      }
+                                                    },
+                                                    icon: const Icon(
+                                                      Icons
+                                                          .delete_outline_outlined,
+                                                    ),
+                                                    label: Text(
+                                                      tr('removeSelectedApps'),
                                                     ),
                                                   ),
                                                 ],
                                               ),
-                                              const SizedBox(height: 16),
-                                              FilledButton.icon(
-                                                style: FilledButton.styleFrom(
-                                                  minimumSize: const Size.fromHeight(56),
-                                                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                                  alignment: Alignment.centerLeft,
-                                                ),
-                                                onPressed: getMassObtainFunction(),
-                                                icon: const Icon(Icons.file_download_outlined),
-                                                label: Text(tr('installUpdateSelectedApps')),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          )
+                        : (selectedAppId == null
+                              ? Scaffold(
+                                  backgroundColor:
+                                      settingsProvider.useGradientBackground
+                                      ? Colors.transparent
+                                      : Theme.of(context).colorScheme.surface,
+                                  body: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      if (settingsProvider
+                                          .useGradientBackground)
+                                        Positioned.fill(
+                                          child: DecoratedBox(
+                                            decoration: BoxDecoration(
+                                              gradient: LinearGradient(
+                                                begin: Alignment.topCenter,
+                                                end: Alignment.bottomCenter,
+                                                stops: const [0, 0.38, 0.72, 1],
+                                                colors: [
+                                                  Theme.of(context)
+                                                      .colorScheme
+                                                      .schemePageGradientTopColor,
+                                                  Theme.of(context)
+                                                      .colorScheme
+                                                      .schemePageGradientMidColor,
+                                                  Theme.of(
+                                                    context,
+                                                  ).colorScheme.surface,
+                                                  Theme.of(
+                                                    context,
+                                                  ).colorScheme.surface,
+                                                ],
                                               ),
-                                              const SizedBox(height: 12),
-                                              ElevatedButton.icon(
-                                                style: buttonStyle,
-                                                onPressed: appsProvider.areDownloadsRunning()
-                                                    ? null
-                                                    : showMassMarkDialog,
-                                                icon: const Icon(Icons.check_circle_outline_rounded),
-                                                label: Text(tr('markSelectedAppsUpdated')),
-                                              ),
-                                              const SizedBox(height: 12),
-                                              ElevatedButton.icon(
-                                                style: buttonStyle,
-                                                onPressed: () {
-                                                  appsProvider
-                                                      .downloadAppAssets(
-                                                        selectedApps.map((e) => e.id).toList(),
-                                                        globalNavigatorKey.currentContext ?? context,
-                                                      )
-                                                      .catchError(
-                                                        (e) => showError(
-                                                          e,
-                                                          globalNavigatorKey.currentContext ?? context,
-                                                        ),
-                                                      );
-                                                },
-                                                icon: const Icon(Icons.download_for_offline_outlined),
-                                                label: Text(
-                                                  tr(
-                                                    'downloadX',
-                                                    args: [lowerCaseIfEnglish(tr('releaseAsset'))],
-                                                  ),
-                                                ),
-                                              ),
-                                              const SizedBox(height: 12),
-                                              ElevatedButton.icon(
-                                                style: buttonStyle,
-                                                onPressed: launchCategorizeDialog(),
-                                                icon: const Icon(Icons.category_outlined),
-                                                label: Text(tr('categorize')),
-                                              ),
-                                              const SizedBox(height: 12),
-                                              ElevatedButton.icon(
-                                                style: buttonStyle,
-                                                onPressed: pinSelectedApps,
-                                                icon: const Icon(Icons.push_pin_outlined),
-                                                label: Text(
-                                                  selectedApps.where((element) => element.pinned).isEmpty
-                                                      ? tr('pinToTop')
-                                                      : tr('unpinFromTop'),
-                                                ),
-                                              ),
-                                              const SizedBox(height: 12),
-                                              ElevatedButton.icon(
-                                                style: buttonStyle,
-                                                onPressed: () => _showFolderAssignDialog(context, selectedApps),
-                                                icon: const Icon(Icons.folder_copy_outlined),
-                                                label: Text(tr('addToFolder')),
-                                              ),
-                                              const SizedBox(height: 12),
-                                              ElevatedButton.icon(
-                                                style: buttonStyle,
-                                                onPressed: () {
-                                                  String urls = '';
-                                                  for (var a in selectedApps) {
-                                                    urls += '${a.url}\n';
-                                                  }
-                                                  urls = urls.substring(0, urls.length - 1);
-                                                  SharePlus.instance.share(
-                                                    ShareParams(
-                                                      text: urls,
-                                                      subject: 'ObtainX - ${tr('appsString')}',
-                                                    ),
-                                                  );
-                                                },
-                                                icon: const Icon(Icons.share_outlined),
-                                                label: Text(tr('shareSelectedAppURLs')),
-                                              ),
-                                              const SizedBox(height: 12),
-                                              ElevatedButton.icon(
-                                                style: buttonStyle,
-                                                onPressed: () {
-                                                  String urls = '';
-                                                  for (var a in selectedApps) {
-                                                    urls +=
-                                                        'https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/${Uri.encodeComponent(jsonEncode({'id': a.id, 'url': a.url, 'author': a.author, 'name': a.name, 'preferredApkIndex': a.preferredApkIndex, 'additionalSettings': jsonEncode(a.additionalSettings), 'overrideSource': a.overrideSource}))}\n\n';
-                                                  }
-                                                  SharePlus.instance.share(
-                                                    ShareParams(
-                                                      text: urls,
-                                                      subject: 'ObtainX - ${tr('appsString')}',
-                                                    ),
-                                                  );
-                                                },
-                                                icon: const Icon(Icons.settings_suggest_outlined),
-                                                label: Text(tr('shareAppConfigLinks')),
-                                              ),
-                                              const SizedBox(height: 12),
-                                              ElevatedButton.icon(
-                                                style: buttonStyle,
-                                                onPressed: () {
-                                                  var encoder = const JsonEncoder.withIndent("    ");
-                                                  var exportJSON = encoder.convert(
-                                                    appsProvider.generateExportJSON(
-                                                      appIds: selectedApps.map((e) => e.id).toList(),
-                                                      overrideExportSettings: 0,
-                                                    ),
-                                                  );
-                                                  String fn =
-                                                      '${tr('obtainiumExportHyphenatedLowercase')}-${DateTime.now().toIso8601String().replaceAll(':', '-')}-count-${selectedApps.length}';
-                                                  XFile f = XFile.fromData(
-                                                    Uint8List.fromList(utf8.encode(exportJSON)),
-                                                    mimeType: 'application/json',
-                                                    name: fn,
-                                                  );
-                                                  SharePlus.instance.share(
-                                                    ShareParams(
-                                                      files: [f],
-                                                      fileNameOverrides: ['$fn.json'],
-                                                    ),
-                                                  );
-                                                },
-                                                icon: const Icon(Icons.import_export_outlined),
-                                                label: Text('${tr('share')} - ${tr('obtainiumExport')}'),
-                                              ),
-                                              const SizedBox(height: 24),
-                                              ElevatedButton.icon(
-                                                style: destructiveButtonStyle,
-                                                onPressed: () async {
-                                                  final appsProviderRef = appsProvider;
-                                                  final messenger = scaffoldMessengerKey.currentState;
-                                                  final RemoveAppsWithModalResult removeResult =
-                                                      await appsProviderRef.removeAppsWithModal(
-                                                        context,
-                                                        selectedApps.toList(),
-                                                      );
-                                                  if (removeResult.shouldShowSnackBar) {
-                                                    final Set<String> undoAppIds =
-                                                        removeResult.deferredUndoAppIds;
-                                                    final int removedCount =
-                                                        removeResult.deferredUndoAppIds.isNotEmpty
-                                                        ? removeResult.deferredUndoAppIds.length
-                                                        : selectedApps.length;
-                                                    messenger
-                                                      ?..clearSnackBars()
-                                                      ..showSnackBar(
-                                                        SnackBar(
-                                                          content: Text(
-                                                            tr('xAppsRemoved', args: ['$removedCount']),
-                                                          ),
-                                                          persist: false,
-                                                          duration: const Duration(seconds: 5),
-                                                          behavior: SnackBarBehavior.floating,
-                                                          action: undoAppIds.isNotEmpty
-                                                              ? SnackBarAction(
-                                                                  label: tr('undo'),
-                                                                  onPressed: () => appsProviderRef
-                                                                      .undoDeferredObtainiumRemovals(
-                                                                        undoAppIds,
-                                                                      ),
-                                                                )
-                                                              : null,
-                                                        ),
-                                                      );
-                                                  }
-                                                },
-                                                icon: const Icon(Icons.delete_outline_outlined),
-                                                label: Text(tr('removeSelectedApps')),
+                                            ),
+                                          ),
+                                        ),
+                                      Center(
+                                        child: SingleChildScrollView(
+                                          padding: const EdgeInsets.all(24),
+                                          child: m3eExpressiveSettingsCard(
+                                            context: context,
+                                            colorScheme: Theme.of(
+                                              context,
+                                            ).colorScheme,
+                                            items: [
+                                              AboutSectionContent(
+                                                colorScheme: Theme.of(
+                                                  context,
+                                                ).colorScheme,
                                               ),
                                             ],
                                           ),
                                         ),
                                       ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      )
-                    : (selectedAppId == null
-                        ? Scaffold(
-                            backgroundColor: settingsProvider.useGradientBackground
-                                ? Colors.transparent
-                                : Theme.of(context).colorScheme.surface,
-                            body: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                if (settingsProvider.useGradientBackground)
-                                  Positioned.fill(
-                                    child: DecoratedBox(
-                                      decoration: BoxDecoration(
-                                        gradient: LinearGradient(
-                                          begin: Alignment.topCenter,
-                                          end: Alignment.bottomCenter,
-                                          stops: const [0, 0.38, 0.72, 1],
-                                          colors: [
-                                            Theme.of(context).colorScheme.schemePageGradientTopColor,
-                                            Theme.of(context).colorScheme.schemePageGradientMidColor,
-                                            Theme.of(context).colorScheme.surface,
-                                            Theme.of(context).colorScheme.surface,
-                                          ],
-                                        ),
-                                      ),
-                                    ),
+                                    ],
                                   ),
-                                Center(
-                                  child: Card(
-                                    elevation: 0,
-                                    color: Theme.of(context).colorScheme.surfaceContainerLow,
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(24.0),
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            Icons.touch_app_outlined,
-                                            size: 48,
-                                            color: Theme.of(context).colorScheme.secondary,
-                                          ),
-                                          const SizedBox(height: 16),
-                                          Text(
-                                            tr('selectX', args: [lowerCaseIfEnglish(tr('app'))]),
-                                            style: Theme.of(context).textTheme.titleMedium,
-                                          ),
-                                        ],
+                                )
+                              : Navigator(
+                                  key: _getDetailsNavKey(selectedAppId!),
+                                  onGenerateRoute: (RouteSettings settings) {
+                                    return MaterialPageRoute(
+                                      builder: (context) => AppPage(
+                                        appId: selectedAppId!,
+                                        isEmbedded: true,
                                       ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                        : Navigator(
-                            key: _getDetailsNavKey(selectedAppId!),
-                            onGenerateRoute: (RouteSettings settings) {
-                              return MaterialPageRoute(
-                                builder: (context) => AppPage(
-                                  appId: selectedAppId!,
-                                  isEmbedded: true,
-                                ),
-                              );
-                            },
-                          )),
+                                    );
+                                  },
+                                )),
+                  ),
+                ],
               ),
             ],
           );
         }
         return listScaffold;
-      }()
+      }(),
     );
   }
 
@@ -6406,4 +6739,40 @@ class AppsFilter {
       ) &&
       categoryMatchMode == other.categoryMatchMode &&
       sourceFilter.trim() == other.sourceFilter.trim();
+}
+
+class _NoScrollbarBehavior extends MaterialScrollBehavior {
+  const _NoScrollbarBehavior();
+
+  @override
+  Widget buildScrollbar(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) {
+    return child;
+  }
+}
+
+class _ConditionalScrollbar extends StatelessWidget {
+  const _ConditionalScrollbar({
+    required this.condition,
+    required this.controller,
+    required this.child,
+  });
+
+  final bool condition;
+  final ScrollController controller;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!condition) {
+      return ScrollConfiguration(
+        behavior: const _NoScrollbarBehavior(),
+        child: child,
+      );
+    }
+    return Scrollbar(interactive: true, controller: controller, child: child);
+  }
 }

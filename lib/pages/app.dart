@@ -4194,6 +4194,7 @@ class _AppPageState extends State<AppPage> {
               }
             },
             child: Scaffold(
+              extendBody: true,
               resizeToAvoidBottomInset: true,
               appBar: showAppWebpageFinal ? AppBar() : null,
               backgroundColor: settingsProvider.useGradientBackground && widget.isEmbedded
@@ -4215,7 +4216,11 @@ class _AppPageState extends State<AppPage> {
                 child: showAppWebpageFinal
                     ? Stack(
                         children: [
-                          Positioned.fill(
+                          Positioned(
+                            left: 0,
+                            top: 0,
+                            right: 0,
+                            bottom: _bottomActionBarHeight > 0 ? _bottomActionBarHeight : 80,
                             child: getAppWebView(themedPageContext),
                           ),
                           SafeArea(
@@ -4335,6 +4340,12 @@ class _AppPageState extends State<AppPage> {
                                         if (_editMode)
                                           SizedBox(
                                             height: _editModeBottomSpacerHeight,
+                                          )
+                                        else
+                                          SizedBox(
+                                            height: _bottomActionBarHeight > 0
+                                                ? _bottomActionBarHeight
+                                                : 80,
                                           ),
                                       ],
                                     ),

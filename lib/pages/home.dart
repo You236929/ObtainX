@@ -56,7 +56,7 @@ class _HomePageState extends State<HomePage> {
     ),
     NavigationPageItem(
       tr('importExport'),
-      Icons.import_export,
+      Icons.backup_outlined,
       const ImportExportPage(),
     ),
     NavigationPageItem(tr('settings'), Icons.settings, const SettingsPage()),

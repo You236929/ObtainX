@@ -345,10 +345,7 @@ class _SettingsPageState extends State<SettingsPage> {
         'key': 'updates',
         'title': tr('updates'),
         'icon': Icons.update_rounded,
-        'widget': _UpdatesSection(
-          cs: cs,
-          androidInfo: _androidInfo,
-        ),
+        'widget': _UpdatesSection(cs: cs, androidInfo: _androidInfo),
       },
       if (sourceProvider.sources.any(
         (s) => s.sourceConfigSettingFormItems.isNotEmpty,
@@ -363,9 +360,7 @@ class _SettingsPageState extends State<SettingsPage> {
         'key': 'themes',
         'title': tr('settingsThemesSection'),
         'icon': Icons.palette_rounded,
-        'widget': _ThemesSettingsSection(
-          androidInfoFuture: _androidInfo,
-        ),
+        'widget': _ThemesSettingsSection(androidInfoFuture: _androidInfo),
       },
       {
         'key': 'appearance',
@@ -389,9 +384,7 @@ class _SettingsPageState extends State<SettingsPage> {
         'key': 'about',
         'title': tr('about'),
         'icon': Icons.info_rounded,
-        'widget': settingsCard([
-          _AboutSectionContent(colorScheme: cs),
-        ]),
+        'widget': settingsCard([AboutSectionContent(colorScheme: cs)]),
       },
     ];
 
@@ -411,10 +404,8 @@ class _SettingsPageState extends State<SettingsPage> {
       final Color iconBoxColor = selected
           ? cs.primary.withValues(alpha: 0.16)
           : cs.primaryContainer.withValues(alpha: 0.48);
-      
-      final Color iconColor = selected
-          ? cs.primary
-          : cs.onSurfaceVariant;
+
+      final Color iconColor = selected ? cs.primary : cs.onSurfaceVariant;
 
       final Color chevronColor = cs.onSurfaceVariant;
 
@@ -435,7 +426,10 @@ class _SettingsPageState extends State<SettingsPage> {
               },
               borderRadius: BorderRadius.circular(28),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
                 child: Row(
                   children: [
                     Container(
@@ -445,18 +439,16 @@ class _SettingsPageState extends State<SettingsPage> {
                         color: iconBoxColor,
                         shape: BoxShape.circle,
                       ),
-                      child: Icon(
-                        icon,
-                        color: iconColor,
-                        size: 18,
-                      ),
+                      child: Icon(icon, color: iconColor, size: 18),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
                         title,
                         style: TextStyle(
-                          fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                          fontWeight: selected
+                              ? FontWeight.w600
+                              : FontWeight.w500,
                           color: contentColor,
                           fontSize: 14,
                         ),
@@ -486,111 +478,182 @@ class _SettingsPageState extends State<SettingsPage> {
         orElse: () => categoriesList.first,
       );
 
-      return Row(
+      // Full-bleed page background painted *behind* both panes. The master
+      // pane's app-bar progressive-blur BackdropFilter samples its layer's
+      // backdrop, and in this Row the detail pane is painted after the master
+      // - so without a background here, the strip just past the master's right
+      // edge is transparent-black when the blur rasterizes, and the blur pulls
+      // that darkness into the right end of the master title bar (the two-panel
+      // "dark smudge"). Painting an opaque page background first gives the blur
+      // real pixels to sample at the seam. See custom_app_bar.dart's _buildBlur.
+      return Stack(
+        fit: StackFit.expand,
         children: [
-          Expanded(
-            flex: 3,
-            child: Scaffold(
-              backgroundColor: sp.useGradientBackground ? Colors.transparent : cs.surface,
-              body: Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (sp.useGradientBackground)
-                    Positioned.fill(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            stops: const [0, 0.38, 0.72, 1],
-                            colors: [
-                              cs.schemePageGradientTopColor,
-                              cs.schemePageGradientMidColor,
-                              cs.surface,
-                              cs.surface,
+          Positioned.fill(
+            child: sp.useGradientBackground
+                ? DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        stops: const [0, 0.38, 0.72, 1],
+                        colors: [
+                          cs.schemePageGradientTopColor,
+                          cs.schemePageGradientMidColor,
+                          cs.surface,
+                          cs.surface,
+                        ],
+                      ),
+                    ),
+                  )
+                : ColoredBox(color: cs.surface),
+          ),
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: Theme(
+                  data: Theme.of(context).copyWith(
+                    scrollbarTheme: const ScrollbarThemeData(
+                      thumbColor: WidgetStatePropertyAll(Colors.transparent),
+                      trackColor: WidgetStatePropertyAll(Colors.transparent),
+                      trackBorderColor: WidgetStatePropertyAll(
+                        Colors.transparent,
+                      ),
+                      minThumbLength: 0,
+                    ),
+                  ),
+                  child: Scaffold(
+                    backgroundColor: sp.useGradientBackground
+                        ? Colors.transparent
+                        : cs.surface,
+                    body: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        if (sp.useGradientBackground)
+                          Positioned.fill(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  stops: const [0, 0.38, 0.72, 1],
+                                  colors: [
+                                    cs.schemePageGradientTopColor,
+                                    cs.schemePageGradientMidColor,
+                                    cs.surface,
+                                    cs.surface,
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ScrollConfiguration(
+                          behavior: const _NoScrollbarBehavior(),
+                          child: CustomScrollView(
+                            key: const PageStorageKey<String>(
+                              'settings-master-scroll',
+                            ),
+                            slivers: [
+                              CustomAppBar(
+                                title: tr('settings'),
+                                matchGradientBackground:
+                                    sp.useGradientBackground,
+                                progressiveBlurOverlayColor: isLargeScreen
+                                    ? cs.surface.withValues(alpha: 0.72)
+                                    : null,
+                              ),
+                              SliverPadding(
+                                padding: const EdgeInsets.all(16),
+                                sliver: SliverList(
+                                  delegate: SliverChildBuilderDelegate(
+                                    (context, index) => buildCategoryTile(
+                                      categoriesList[index],
+                                    ),
+                                    childCount: categoriesList.length,
+                                  ),
+                                ),
+                              ),
+                              if (sp.progressiveBlurEnabled)
+                                SliverToBoxAdapter(
+                                  child: SizedBox(
+                                    height: MediaQuery.paddingOf(
+                                      context,
+                                    ).bottom,
+                                  ),
+                                ),
                             ],
                           ),
                         ),
-                      ),
+                      ],
                     ),
-                  CustomScrollView(
-                    key: const PageStorageKey<String>('settings-master-scroll'),
-                    slivers: [
-                      CustomAppBar(
-                        title: tr('settings'),
-                        matchGradientBackground: sp.useGradientBackground,
-                      ),
-                      SliverPadding(
-                        padding: const EdgeInsets.all(16),
-                        sliver: SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) => buildCategoryTile(categoriesList[index]),
-                            childCount: categoriesList.length,
+                  ),
+                ),
+              ),
+              VerticalDivider(
+                width: 1,
+                thickness: 1,
+                color: cs.outlineVariant.withAlpha(50),
+              ),
+              Expanded(
+                flex: 4,
+                child: Scaffold(
+                  backgroundColor: sp.useGradientBackground
+                      ? Colors.transparent
+                      : cs.surface,
+                  body: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (sp.useGradientBackground)
+                        Positioned.fill(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                stops: const [0, 0.38, 0.72, 1],
+                                colors: [
+                                  cs.schemePageGradientTopColor,
+                                  cs.schemePageGradientMidColor,
+                                  cs.surface,
+                                  cs.surface,
+                                ],
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                      if (sp.progressiveBlurEnabled)
-                        SliverToBoxAdapter(
-                          child: SizedBox(height: MediaQuery.paddingOf(context).bottom),
+                      CustomScrollView(
+                        key: ValueKey(
+                          'settings-detail-${selectedCategoryObj['key']}',
                         ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          VerticalDivider(
-            width: 1,
-            thickness: 1,
-            color: cs.outlineVariant.withAlpha(50),
-          ),
-          Expanded(
-            flex: 4,
-            child: Scaffold(
-              backgroundColor: sp.useGradientBackground ? Colors.transparent : cs.surface,
-              body: Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (sp.useGradientBackground)
-                    Positioned.fill(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            stops: const [0, 0.38, 0.72, 1],
-                            colors: [
-                              cs.schemePageGradientTopColor,
-                              cs.schemePageGradientMidColor,
-                              cs.surface,
-                              cs.surface,
-                            ],
+                        slivers: [
+                          // No top app bar in the detail pane: it carried no
+                          // title, so it only added a blank frosted strip. The
+                          // status-bar inset is preserved with SliverSafeArea so
+                          // the content doesn't slide under the system bar.
+                          SliverSafeArea(
+                            top: true,
+                            bottom: false,
+                            sliver: SliverPadding(
+                              padding: const EdgeInsets.all(16),
+                              sliver: SliverToBoxAdapter(
+                                child: selectedCategoryObj['widget'] as Widget,
+                              ),
+                            ),
                           ),
-                        ),
+                          if (sp.progressiveBlurEnabled)
+                            SliverToBoxAdapter(
+                              child: SizedBox(
+                                height: MediaQuery.paddingOf(context).bottom,
+                              ),
+                            ),
+                        ],
                       ),
-                    ),
-                  CustomScrollView(
-                    key: ValueKey('settings-detail-${selectedCategoryObj['key']}'),
-                    slivers: [
-                      CustomAppBar(
-                        title: '',
-                        matchGradientBackground: sp.useGradientBackground,
-                      ),
-                      SliverPadding(
-                        padding: const EdgeInsets.all(16),
-                        sliver: SliverToBoxAdapter(
-                          child: selectedCategoryObj['widget'] as Widget,
-                        ),
-                      ),
-                      if (sp.progressiveBlurEnabled)
-                        SliverToBoxAdapter(
-                          child: SizedBox(height: MediaQuery.paddingOf(context).bottom),
-                        ),
                     ],
                   ),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
         ],
       );
@@ -723,7 +786,7 @@ class _SettingsPageState extends State<SettingsPage> {
                             ),
                             aboutSectionHeader(),
                             settingsCard([
-                              _AboutSectionContent(colorScheme: cs),
+                              AboutSectionContent(colorScheme: cs),
                             ]),
                           ],
                         ),
@@ -738,6 +801,19 @@ class _SettingsPageState extends State<SettingsPage> {
         ],
       ),
     );
+  }
+}
+
+class _NoScrollbarBehavior extends MaterialScrollBehavior {
+  const _NoScrollbarBehavior();
+
+  @override
+  Widget buildScrollbar(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) {
+    return child;
   }
 }
 
@@ -1655,8 +1731,8 @@ class _CategoriesSection extends StatelessWidget {
   }
 }
 
-class _AboutSectionContent extends StatelessWidget {
-  const _AboutSectionContent({required this.colorScheme});
+class AboutSectionContent extends StatelessWidget {
+  const AboutSectionContent({super.key, required this.colorScheme});
 
   final ColorScheme colorScheme;
 
@@ -1755,7 +1831,8 @@ class _AboutSectionContent extends StatelessWidget {
                       child: FilledButton.tonalIcon(
                         style: _aboutSecondaryButtonStyle(colorScheme),
                         onPressed: () => _openAboutUrl(_aboutWikiUrl),
-                        onLongPress: () => _copyAboutUrl(context, _aboutWikiUrl),
+                        onLongPress: () =>
+                            _copyAboutUrl(context, _aboutWikiUrl),
                         icon: const Icon(Icons.open_in_new_rounded),
                         label: Text(tr('aboutOpenWiki')),
                       ),
@@ -1764,7 +1841,8 @@ class _AboutSectionContent extends StatelessWidget {
                     Expanded(
                       child: FilledButton.tonalIcon(
                         style: _aboutSecondaryButtonStyle(colorScheme),
-                        onPressed: () => _shareAboutUrl(sp.sourceUrl, 'ObtainX'),
+                        onPressed: () =>
+                            _shareAboutUrl(sp.sourceUrl, 'ObtainX'),
                         onLongPress: () => _copyAboutUrl(context, sp.sourceUrl),
                         icon: const Icon(Icons.share_rounded),
                         label: Text(tr('share')),
@@ -1824,10 +1902,7 @@ class _AboutSectionContent extends StatelessWidget {
               icon: Icon(Icons.bug_report_outlined, color: colorScheme.primary),
               tooltip: tr('appLogs'),
               padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(
-                width: 40,
-                height: 40,
-              ),
+              constraints: const BoxConstraints.tightFor(width: 40, height: 40),
               style: IconButton.styleFrom(
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),

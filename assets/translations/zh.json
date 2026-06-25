@@ -98,7 +98,7 @@
     "author": "作者",
     "upToDateApps": "无需更新的应用",
     "nonInstalledApps": "未安装的应用",
-    "importExport": "导入/导出",
+    "importExport": "备份",
     "settings": "设置",
     "exportedTo": "已导出至 {}",
     "obtainiumExport": "导出 ObtainX",

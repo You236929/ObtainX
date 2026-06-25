@@ -15,6 +15,7 @@ class CustomAppBar extends StatefulWidget {
     this.searchWidget,
     this.titleStyle,
     this.matchGradientBackground = false,
+    this.progressiveBlurOverlayColor,
   });
 
   final String title;
@@ -36,6 +37,9 @@ class CustomAppBar extends StatefulWidget {
 
   /// Whether the non-blurred app bar should sample the page gradient behind it.
   final bool matchGradientBackground;
+
+  /// Optional tint override for progressive blur.
+  final Color? progressiveBlurOverlayColor;
 
   @override
   State<CustomAppBar> createState() => _CustomAppBarState();
@@ -146,7 +150,8 @@ class _CustomAppBarState extends State<CustomAppBar> {
     Widget? headerBackground;
     if (blurEnabled) {
       headerBackground = _buildBlur(
-        colorScheme.schemeProgressiveBlurOverlayTint,
+        widget.progressiveBlurOverlayColor ??
+            colorScheme.schemeProgressiveBlurOverlayTint,
       );
     } else if (widget.matchGradientBackground) {
       headerBackground = _buildGradientBackground(context, colorScheme);
@@ -197,18 +202,20 @@ class _CustomAppBarState extends State<CustomAppBar> {
               // mechanical. Switching to [Curves.fastEaseInToSlowEaseOut]
               // matches the M3-emphasized motion curve we use elsewhere
               // for page transitions.
-              AnimatedSize(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.fastEaseInToSlowEaseOut,
-                alignment: AlignmentDirectional.centerStart,
-                child: AnimatedDefaultTextStyle(
+              if (widget.title.isNotEmpty) ...[
+                AnimatedSize(
                   duration: const Duration(milliseconds: 200),
                   curve: Curves.fastEaseInToSlowEaseOut,
-                  style: resolvedCompactTitle,
-                  child: Text(widget.title),
+                  alignment: AlignmentDirectional.centerStart,
+                  child: AnimatedDefaultTextStyle(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.fastEaseInToSlowEaseOut,
+                    style: resolvedCompactTitle,
+                    child: Text(widget.title),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
+                const SizedBox(width: 10),
+              ],
               Expanded(child: widget.searchWidget!),
             ],
           ),
@@ -233,30 +240,30 @@ class _CustomAppBarState extends State<CustomAppBar> {
     final Widget? flexibleSpace = widget.title.isEmpty
         ? headerBackground
         : (headerBackground != null
-            ? Stack(
-                fit: StackFit.expand,
-                children: [
-                  headerBackground,
-                  FlexibleSpaceBar(
-                    titlePadding: expandingTitlePadding,
-                    title: Text(
-                      widget.title,
-                      style: Theme.of(context).textTheme.titleLarge!.copyWith(
-                        color: colorScheme.onSurface,
+              ? Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    headerBackground,
+                    FlexibleSpaceBar(
+                      titlePadding: expandingTitlePadding,
+                      title: Text(
+                        widget.title,
+                        style: Theme.of(context).textTheme.titleLarge!.copyWith(
+                          color: colorScheme.onSurface,
+                        ),
                       ),
                     ),
+                  ],
+                )
+              : FlexibleSpaceBar(
+                  titlePadding: expandingTitlePadding,
+                  title: Text(
+                    widget.title,
+                    style: Theme.of(context).textTheme.titleLarge!.copyWith(
+                      color: colorScheme.onSurface,
+                    ),
                   ),
-                ],
-              )
-            : FlexibleSpaceBar(
-                titlePadding: expandingTitlePadding,
-                title: Text(
-                  widget.title,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleLarge!.copyWith(color: colorScheme.onSurface),
-                ),
-              ));
+                ));
 
     return SliverAppBar(
       pinned: true,
