@@ -2224,9 +2224,24 @@ class AppsPageState extends State<AppsPage> {
     _changingSearchField = false;
   }
 
+  void _saveCollapsedGroups(List<String> keys, {required bool add}) {
+    final sp = context.read<SettingsProvider>();
+    final current = sp.prefs?.getStringList('collapsedGroups')?.toSet() ?? {};
+    if (add) {
+      current.addAll(keys);
+    } else {
+      current.removeAll(keys);
+    }
+    sp.prefs?.setStringList('collapsedGroups', current.toList());
+  }
+
   @override
   void initState() {
     super.initState();
+    final sp = context.read<SettingsProvider>();
+    _collapsedGroups.addAll(
+      sp.prefs?.getStringList('collapsedGroups') ?? const <String>[],
+    );
     scrollController = ScrollController();
     _searchController = TextEditingController();
     _searchController.addListener(() {
@@ -3220,25 +3235,26 @@ class AppsPageState extends State<AppsPage> {
     final listedAppTypes = _listedAppTypesCache;
 
     List<String> getActiveGroupKeys() {
+      final folderPrefix = widget.folderId != null ? 'folder_${widget.folderId}_' : '';
       final List<String> keys = [];
       if (effectiveGroupBy == AppsListGroupBy.category) {
         for (final category in listedCategories) {
-          keys.add('cat:${category ?? '__null__'}');
+          keys.add('${folderPrefix}cat:${category ?? '__null__'}');
         }
       } else if (effectiveGroupBy == AppsListGroupBy.source) {
         for (final source in listedSources) {
-          keys.add('src:$source');
+          keys.add('${folderPrefix}src:$source');
         }
       } else if (effectiveGroupBy == AppsListGroupBy.appType) {
         for (final type in listedAppTypes) {
-          keys.add('appType:${type.name}');
+          keys.add('${folderPrefix}appType:${type.name}');
         }
       }
       if (showNonInstalledGroupSection) {
-        keys.add('__nonInstalled__');
+        keys.add('${folderPrefix}__nonInstalled__');
       }
       if (showUpdatesGroupSection) {
-        keys.add('__updates__');
+        keys.add('${folderPrefix}__updates__');
       }
       return keys;
     }
@@ -3553,7 +3569,8 @@ class AppsPageState extends State<AppsPage> {
     }
 
     getCategoryCollapsibleTile(int index) {
-      final catKey = 'cat:${listedCategories[index] ?? '__null__'}';
+      final folderPrefix = widget.folderId != null ? 'folder_${widget.folderId}_' : '';
+      final catKey = '${folderPrefix}cat:${listedCategories[index] ?? '__null__'}';
       final isExpanded = !_collapsedGroups.contains(catKey);
       final controller = _groupControllers.putIfAbsent(
         catKey,
@@ -3598,6 +3615,7 @@ class AppsPageState extends State<AppsPage> {
                   } else {
                     _collapsedGroups.add(catKey);
                   }
+                  _saveCollapsedGroups([catKey], add: !expanded);
                 }),
                 title: Text(
                   capFirstChar(listedCategories[index] ?? tr('noCategory')),
@@ -3620,7 +3638,8 @@ class AppsPageState extends State<AppsPage> {
     }
 
     getNonInstalledCollapsibleTile() {
-      const nonInstalledKey = '__nonInstalled__';
+      final folderPrefix = widget.folderId != null ? 'folder_${widget.folderId}_' : '';
+      final nonInstalledKey = '${folderPrefix}__nonInstalled__';
       final isExpanded = !_collapsedGroups.contains(nonInstalledKey);
       final controller = _groupControllers.putIfAbsent(
         nonInstalledKey,
@@ -3650,7 +3669,7 @@ class AppsPageState extends State<AppsPage> {
               data: theme.copyWith(dividerColor: Colors.transparent),
               child: ExpansionTile(
                 controller: controller,
-                key: const PageStorageKey(nonInstalledKey),
+                key: PageStorageKey(nonInstalledKey),
                 shape: _appsExpansionTileExpandedShape(appsListGroupCardRadius),
                 collapsedShape: _appsExpansionTileCollapsedShape(
                   appsListGroupCardRadius,
@@ -3662,6 +3681,7 @@ class AppsPageState extends State<AppsPage> {
                   } else {
                     _collapsedGroups.add(nonInstalledKey);
                   }
+                  _saveCollapsedGroups([nonInstalledKey], add: !expanded);
                 }),
                 title: Text(
                   tr('notInstalled'),
@@ -3685,7 +3705,8 @@ class AppsPageState extends State<AppsPage> {
 
     getSourceCollapsibleTile(int index) {
       final sourceKey = listedSources[index];
-      final groupKey = 'src:$sourceKey';
+      final folderPrefix = widget.folderId != null ? 'folder_${widget.folderId}_' : '';
+      final groupKey = '${folderPrefix}src:$sourceKey';
       final isExpanded = !_collapsedGroups.contains(groupKey);
       final controller = _groupControllers.putIfAbsent(
         groupKey,
@@ -3748,6 +3769,7 @@ class AppsPageState extends State<AppsPage> {
                   } else {
                     _collapsedGroups.add(groupKey);
                   }
+                  _saveCollapsedGroups([groupKey], add: !expanded);
                 }),
                 title: Text(
                   sourceTitle,
@@ -3813,6 +3835,7 @@ class AppsPageState extends State<AppsPage> {
                   } else {
                     _collapsedGroups.add(groupKey);
                   }
+                  _saveCollapsedGroups([groupKey], add: !expanded);
                 }),
                 title: Text(
                   title,
@@ -3835,7 +3858,8 @@ class AppsPageState extends State<AppsPage> {
     }
 
     getAppTypeCollapsibleTile(AppTypeGroup type) {
-      final String groupKey = 'appType:${type.name}';
+      final folderPrefix = widget.folderId != null ? 'folder_${widget.folderId}_' : '';
+      final String groupKey = '${folderPrefix}appType:${type.name}';
       final matchingIndices = _appTypeGroupListedIndices[type] ?? const <int>[];
       final String title = switch (type) {
         AppTypeGroup.user => tr('appTypeUser'),
@@ -3850,8 +3874,9 @@ class AppsPageState extends State<AppsPage> {
     }
 
     getUpdatesCollapsibleTile() {
+      final folderPrefix = widget.folderId != null ? 'folder_${widget.folderId}_' : '';
       return buildCollapsibleTile(
-        groupKey: '__updates__',
+        groupKey: '${folderPrefix}__updates__',
         title: tr('updatesGroup'),
         matchingIndices: _updatesGroupListedIndices,
       );
@@ -4947,7 +4972,7 @@ class AppsPageState extends State<AppsPage> {
                                             _groupControllers[key]?.collapse();
                                           }
                                         } else {
-                                          _collapsedGroups.clear();
+                                           _collapsedGroups.removeAll(activeGroupKeys);
                                           for (final key in activeGroupKeys) {
                                             _groupControllers[key]?.expand();
                                           }

@@ -3,6 +3,7 @@ import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:obtainium/app_distribution.dart';
 import 'package:obtainium/pages/home.dart';
 import 'package:obtainium/theme/app_segmented_button_theme.dart';
 import 'package:obtainium/theme/app_theme_accent.dart';
@@ -60,7 +61,6 @@ List<MapEntry<Locale, String>> supportedLocales = const [
 ];
 const fallbackLocale = Locale('en');
 const localeDir = 'assets/translations';
-var fdroid = false;
 
 final globalNavigatorKey = GlobalKey<NavigatorState>();
 final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -443,7 +443,7 @@ class _ObtainiumState extends State<Obtainium> {
       if (isFirstRun) {
         logs.add('This is the first ever run of ObtainX.');
         // If this is the first run, add ObtainX to the Apps list
-        if (!fdroid) {
+        if (!AppDistribution.fdroid) {
           getInstalledInfo(obtainiumId, includeOwnDebugBuild: true)
               .then((value) {
                 if (value?.versionName != null) {
@@ -519,7 +519,8 @@ class _ObtainiumState extends State<Obtainium> {
             useGradient: useGradient,
             shadingIntensity: settingsProvider.shadingIntensity,
           );
-          if (settingsProvider.appAccentColorSource != AppAccentColorSource.materialYou) {
+          if (settingsProvider.appAccentColorSource !=
+              AppAccentColorSource.materialYou) {
             lightColorScheme = lightColorScheme.boostContainersForSeedThemes(
               darkTheme: false,
             );
