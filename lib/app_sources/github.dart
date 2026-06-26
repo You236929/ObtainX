@@ -856,6 +856,7 @@ class GitHub extends AppSource {
             'url': a['url'] ?? '',
             'browser_download_url': a['downloadUrl'] ?? '',
             'size': a['size'],
+            'updated_at': a['updatedAt'],
           });
         }
       }
@@ -867,6 +868,7 @@ class GitHub extends AppSource {
       'draft': gqlRelease['isDraft'] ?? false,
       'body': gqlRelease['description'] ?? '',
       'published_at': gqlRelease['publishedAt'],
+      'updated_at': gqlRelease['updatedAt'],
       'assets': assets,
     };
   }
@@ -1184,6 +1186,7 @@ class GitHub extends AppSource {
           nodes {
             tagName
             publishedAt
+            updatedAt
             isPrerelease
             isDraft
             description
@@ -1192,6 +1195,7 @@ class GitHub extends AppSource {
                 name
                 downloadUrl
                 size
+                updatedAt
                 url
               }
             }
