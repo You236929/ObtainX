@@ -1181,25 +1181,27 @@ class GitHub extends AppSource {
       queryParts.add('''
       $alias: repository(owner: "${names.author}", name: "${names.name}") {
         nameWithOwner
-        latestRelease {
-          tagName
-          publishedAt
-          isPrerelease
-          isDraft
-          body
-          releaseAssets(first: 50) {
-            nodes {
-              name
-              downloadUrl
-              size
+        releases(first: 100) {
+          nodes {
+            tagName
+            publishedAt
+            isPrerelease
+            isDraft
+            description
+            releaseAssets(first: 50) {
+              nodes {
+                name
+                downloadUrl
+                size
+                url
+              }
             }
           }
         }
       }''');
     }
     var query = '{\n${queryParts.join('\n')}\n}';
-    var graphqlUrl =
-        '${await getAPIHost(additionalSettings)}/graphql';
+    var graphqlUrl = '${await getAPIHost(additionalSettings)}/graphql';
     Map<String, dynamic> postBody = {'query': query};
     try {
       var response = await sourceRequest(
@@ -1217,8 +1219,10 @@ class GitHub extends AppSource {
         var errors = responseJson['errors'] as List<dynamic>?;
         if (errors != null && errors.isNotEmpty) {
           throw ObtainiumError(
-            tr('errorWithHttpStatusCode',
-                args: [errors.first['message'] ?? 'Unknown error']),
+            tr(
+              'errorWithHttpStatusCode',
+              args: [errors.first['message'] ?? 'Unknown error'],
+            ),
           );
         }
         return {};
@@ -1230,13 +1234,27 @@ class GitHub extends AppSource {
         if (repoData == null) {
           continue;
         }
-        var release = repoData['latestRelease'] as Map<String, dynamic>?;
+        var releasesNodes = <dynamic>[];
+        if (repoData['releases'] != null &&
+            repoData['releases']['nodes'] != null) {
+          releasesNodes = repoData['releases']['nodes'] as List<dynamic>;
+        }
+        Map<String, dynamic>? release;
+        // Prefer the first non-draft, non-prerelease release
+        for (var r in releasesNodes) {
+          if (r is Map<String, dynamic>) {
+            if (r['isDraft'] != true && r['isPrerelease'] != true) {
+              release = r;
+              break;
+            }
+          }
+        }
+        // Fall back to first release if all are draft/prerelease
+        if (release == null && releasesNodes.isNotEmpty) {
+          release = releasesNodes.first as Map<String, dynamic>;
+        }
         if (release == null) {
-          results[url] = APKDetails(
-            tr('noReleaseFound'),
-            [],
-            getAppNames(url),
-          );
+          results[url] = APKDetails(tr('noReleaseFound'), [], getAppNames(url));
           continue;
         }
         var apkUrls = <MapEntry<String, String>>[];
@@ -1252,7 +1270,7 @@ class GitHub extends AppSource {
             apkUrls.add(MapEntry(assetName, downloadUrl));
           }
         }
-        String? changeLog = release['body'] as String?;
+        String? changeLog = release['description'] as String?;
         results[url] = APKDetails(
           release['tagName'] as String? ?? '',
           apkUrls,
