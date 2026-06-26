@@ -30,7 +30,6 @@ import 'package:obtainium/providers/source_provider.dart';
 import 'package:obtainium/store_source_icons.dart';
 import 'package:obtainium/services/bulk_import_service.dart';
 import 'package:obtainium/services/bulk_scan_cache.dart';
-import 'package:obtainium/widgets/progressive_top_edge_overlay.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:provider/provider.dart';
@@ -414,7 +413,9 @@ class _AppPageState extends State<AppPage> {
   }
 
   void _handleBottomActionBarSizeChanged(Size size) {
-    if (!mounted || _bottomActionBarHeight == size.height) return;
+    if (!mounted) return;
+    if (size.height == 0) return;
+    if (_bottomActionBarHeight == size.height) return;
     setState(() {
       _bottomActionBarHeight = size.height;
     });
@@ -3896,8 +3897,12 @@ class _AppPageState extends State<AppPage> {
     Widget getBottomActionBar(BuildContext themeContext) {
       final bool gestureNavigationActive =
           MediaQuery.systemGestureInsetsOf(themeContext).bottom > 0;
+      final bool isLandscapeEmbedded = widget.isEmbedded &&
+          MediaQuery.of(themeContext).orientation == Orientation.landscape;
       Widget actionBarContent = Padding(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+        padding: isLandscapeEmbedded
+            ? const EdgeInsets.fromLTRB(16, 6, 16, 6)
+            : const EdgeInsets.fromLTRB(16, 10, 16, 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -4087,6 +4092,18 @@ class _AppPageState extends State<AppPage> {
           ],
         ),
       );
+      if (isLandscapeEmbedded) {
+        actionBarContent = IconButtonTheme(
+          data: IconButtonThemeData(
+            style: ButtonStyle(
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              minimumSize: WidgetStateProperty.all(const Size(36, 36)),
+              padding: WidgetStateProperty.all(const EdgeInsets.all(4)),
+            ),
+          ),
+          child: actionBarContent,
+        );
+      }
       if (gestureNavigationActive) {
         actionBarContent = SafeArea(top: false, child: actionBarContent);
       }
@@ -4095,7 +4112,9 @@ class _AppPageState extends State<AppPage> {
           color: Theme.of(themeContext).brightness == Brightness.dark
               ? Theme.of(themeContext).colorScheme.surfaceContainerHigh
               : Theme.of(themeContext).colorScheme.surfaceContainerHighest,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          borderRadius: isLandscapeEmbedded
+              ? const BorderRadius.vertical(top: Radius.circular(16))
+              : const BorderRadius.vertical(top: Radius.circular(24)),
           border: Border(
             top: BorderSide(
               color: Theme.of(themeContext).brightness == Brightness.dark
@@ -4354,8 +4373,7 @@ class _AppPageState extends State<AppPage> {
                               ),
                             ],
                           ),
-                          if (settingsProvider.progressiveBlurEnabled && !widget.isEmbedded)
-                            buildTopProgressiveOverlay(themedPageContext, settingsProvider) ?? const SizedBox.shrink(),
+
                         ],
                       ),
                 onRefresh: () async {
@@ -4365,14 +4383,104 @@ class _AppPageState extends State<AppPage> {
                   }
                 },
               ),
-              bottomNavigationBar: _MeasureSize(
-                onChange: _handleBottomActionBarSizeChanged,
-                child: getBottomActionBar(themedPageContext),
-              ),
+              bottomNavigationBar: widget.isEmbedded
+                  ? _ScrollLinkedAppPageFooter(
+                      scrollController: _appPageScrollController,
+                      child: _MeasureSize(
+                        onChange: _handleBottomActionBarSizeChanged,
+                        child: getBottomActionBar(themedPageContext),
+                      ),
+                    )
+                  : _MeasureSize(
+                      onChange: _handleBottomActionBarSizeChanged,
+                      child: getBottomActionBar(themedPageContext),
+                    ),
             ),
           );
         },
       ),
+    );
+  }
+}
+
+class _ScrollLinkedAppPageFooter extends StatefulWidget {
+  const _ScrollLinkedAppPageFooter({
+    required this.scrollController,
+    required this.child,
+  });
+
+  final ScrollController scrollController;
+  final Widget child;
+
+  @override
+  State<_ScrollLinkedAppPageFooter> createState() =>
+      _ScrollLinkedAppPageFooterState();
+}
+
+class _ScrollLinkedAppPageFooterState extends State<_ScrollLinkedAppPageFooter> {
+  bool _footerExpanded = true;
+  double _previousOffset = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ScrollLinkedAppPageFooter oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.scrollController != widget.scrollController) {
+      oldWidget.scrollController.removeListener(_onScroll);
+      widget.scrollController.addListener(_onScroll);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.scrollController.removeListener(_onScroll);
+    super.dispose();
+  }
+
+  void _onScroll() {
+    final ScrollController controller = widget.scrollController;
+    if (!controller.hasClients) {
+      return;
+    }
+    final double currentOffset = controller.offset;
+    final double delta = currentOffset - _previousOffset;
+    _previousOffset = currentOffset;
+    if (currentOffset <= 24) {
+      if (!_footerExpanded) {
+        setState(() {
+          _footerExpanded = true;
+        });
+      }
+      return;
+    }
+    const double scrollSensitivity = 10;
+    if (delta > scrollSensitivity) {
+      if (_footerExpanded) {
+        setState(() {
+          _footerExpanded = false;
+        });
+      }
+    } else if (delta < -scrollSensitivity) {
+      if (!_footerExpanded) {
+        setState(() {
+          _footerExpanded = true;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSlide(
+      offset: _footerExpanded ? Offset.zero : const Offset(0, 1.0),
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.fastOutSlowIn,
+      child: widget.child,
     );
   }
 }

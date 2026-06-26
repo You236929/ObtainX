@@ -1645,16 +1645,16 @@ class AppsProvider with ChangeNotifier {
         apkDir = cacheDirs!.first;
         iconsCacheDir = Directory('${cacheDirs.first.path}/icons');
         if (!await iconsCacheDir.exists()) {
-          await iconsCacheDir.create();
+          await iconsCacheDir.create(recursive: true);
         }
       } else {
         apkDir = Directory('${appStorageRoot.path}/apks');
         if (!await apkDir.exists()) {
-          await apkDir.create();
+          await apkDir.create(recursive: true);
         }
         iconsCacheDir = Directory('${appStorageRoot.path}/icons');
         if (!await iconsCacheDir.exists()) {
-          await iconsCacheDir.create();
+          await iconsCacheDir.create(recursive: true);
         }
       }
       await _migrateUserIconsFromLegacyCacheDir();
@@ -3281,7 +3281,7 @@ class AppsProvider with ChangeNotifier {
       '${(await getAppStorageDir()).path}/app_data',
     );
     if (!appsDir.existsSync()) {
-      appsDir.createSync();
+      appsDir.createSync(recursive: true);
     }
     return appsDir;
   }
@@ -5320,7 +5320,12 @@ Future<void> bgUpdateCheck(String taskId, Map<String, dynamic>? params) async {
 
   LogsProvider logs = LogsProvider();
   NotificationsProvider notificationsProvider = NotificationsProvider();
-  AppsProvider appsProvider = AppsProvider(isBg: true);
+  SettingsProvider settingsProvider = SettingsProvider();
+  await settingsProvider.initializeSettings();
+  AppsProvider appsProvider = AppsProvider(
+    isBg: true,
+    sharedSettings: settingsProvider,
+  );
   await appsProvider.loadApps();
 
   int maxAttempts = 4;
