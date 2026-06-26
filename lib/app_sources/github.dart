@@ -1207,6 +1207,7 @@ class GitHub extends AppSource {
     if (infos.isEmpty) {
       return {};
     }
+    final settingsProvider = await _reqSettings();
     var uniqueUrls = <String>{};
     var urlToAlias = <String, String>{};
     var queryParts = <String>[];
@@ -1294,12 +1295,16 @@ class GitHub extends AppSource {
           urlToReleasesCache[info.url] = cached;
         }
         var releases = List<dynamic>.from(cached);
+        var sourceConfigSettingValues = await getSourceConfigValues(
+          info.additionalSettings,
+          settingsProvider,
+        );
         List<String> outTitleCandidates = <String>[];
         dynamic targetRelease = _findTargetRelease(
           releases,
           info.url,
           info.additionalSettings,
-          <String, String>{},
+          sourceConfigSettingValues,
           outTitleCandidates,
         );
         if (targetRelease == null) {
