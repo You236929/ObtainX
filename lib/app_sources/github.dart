@@ -1202,19 +1202,22 @@ class GitHub extends AppSource {
 
   @override
   Future<Map<String, APKDetails>> batchGetLatestAPKDetails(
-    Map<String, Map<String, dynamic>> urlToSettings,
+    List<BatchGetAPKInfo> infos,
   ) async {
-    if (urlToSettings.isEmpty) {
+    if (infos.isEmpty) {
       return {};
     }
-    var standardUrls = urlToSettings.keys.toList();
+    var uniqueUrls = <String>{};
     var urlToAlias = <String, String>{};
     var queryParts = <String>[];
-    for (int i = 0; i < standardUrls.length; i++) {
-      var url = standardUrls[i];
-      var names = getAppNames(url);
-      var alias = 'r$i';
-      urlToAlias[url] = alias;
+    var aliasCounter = 0;
+    for (var info in infos) {
+      if (uniqueUrls.contains(info.url)) continue;
+      uniqueUrls.add(info.url);
+      var names = getAppNames(info.url);
+      var alias = 'r$aliasCounter';
+      aliasCounter++;
+      urlToAlias[info.url] = alias;
       queryParts.add('''
       $alias: repository(owner: "${names.author}", name: "${names.name}") {
         nameWithOwner
@@ -1239,8 +1242,11 @@ class GitHub extends AppSource {
         }
       }''');
     }
+    if (urlToAlias.isEmpty) {
+      return {};
+    }
     var query = '{\n${queryParts.join('\n')}\n}';
-    var defaultSettings = urlToSettings.values.first;
+    var defaultSettings = infos.first.additionalSettings;
     var graphqlUrl = '${await getAPIHost(defaultSettings)}/graphql';
     Map<String, dynamic> postBody = {'query': query};
     try {
@@ -1268,36 +1274,45 @@ class GitHub extends AppSource {
         return {};
       }
       Map<String, APKDetails> results = {};
-      for (var entry in urlToSettings.entries) {
-        var url = entry.key;
-        var appSettings = entry.value;
-        var alias = urlToAlias[url]!;
+      var urlToReleasesCache = <String, List<dynamic>>{};
+      for (var info in infos) {
+        var alias = urlToAlias[info.url];
+        if (alias == null) continue;
         var repoData = data[alias] as Map<String, dynamic>?;
-        if (repoData == null) {
-          continue;
+        if (repoData == null) continue;
+        List<dynamic> cached = urlToReleasesCache[info.url] ?? <dynamic>[];
+        if (cached.isEmpty) {
+          var releasesNodes = <dynamic>[];
+          if (repoData['releases'] != null &&
+              repoData['releases']['nodes'] != null) {
+            releasesNodes = repoData['releases']['nodes'] as List<dynamic>;
+          }
+          cached = releasesNodes
+              .whereType<Map<String, dynamic>>()
+              .map(_normalizeGraphQLRelease)
+              .toList();
+          urlToReleasesCache[info.url] = cached;
         }
-        var releasesNodes = <dynamic>[];
-        if (repoData['releases'] != null &&
-            repoData['releases']['nodes'] != null) {
-          releasesNodes = repoData['releases']['nodes'] as List<dynamic>;
-        }
-        var releases = releasesNodes
-            .whereType<Map<String, dynamic>>()
-            .map(_normalizeGraphQLRelease)
-            .toList();
+        var releases = List<dynamic>.from(cached);
         List<String> outTitleCandidates = <String>[];
         dynamic targetRelease = _findTargetRelease(
           releases,
-          url,
-          appSettings,
+          info.url,
+          info.additionalSettings,
           <String, String>{},
           outTitleCandidates,
         );
         if (targetRelease == null) {
-          results[url] = APKDetails(tr('noReleaseFound'), [], getAppNames(url));
+          results[info.appId] = APKDetails(
+            tr('noReleaseFound'),
+            [],
+            getAppNames(info.url),
+          );
           continue;
         }
-        final String versionStringSource = getVersionStringSource(appSettings);
+        final String versionStringSource = getVersionStringSource(
+          info.additionalSettings,
+        );
         String? selectedVersionSource;
         if (versionStringSource == versionStringSourceAssetName) {
           final apkUrls =
@@ -1311,7 +1326,7 @@ class GitHub extends AppSource {
         } else if (versionStringSource == versionStringSourceReleaseDate) {
           selectedVersionSource = _getReleaseDateFromRelease(
             targetRelease,
-            appSettings['useLatestAssetDateAsReleaseDate'] == true,
+            info.additionalSettings['useLatestAssetDateAsReleaseDate'] == true,
           )?.toUtc().toIso8601String();
         }
         final String version =
@@ -1329,10 +1344,10 @@ class GitHub extends AppSource {
             ? sizeByName[apkUrls.last.key]
             : null;
         String? changeLog = targetRelease['body'] as String?;
-        results[url] = APKDetails(
+        results[info.appId] = APKDetails(
           version,
           apkUrls,
-          getAppNames(url),
+          getAppNames(info.url),
           releaseDate: targetRelease['published_at'] != null
               ? DateTime.tryParse(targetRelease['published_at'] as String)
               : null,

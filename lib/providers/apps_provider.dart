@@ -4731,8 +4731,7 @@ class AppsProvider with ChangeNotifier {
                   ? groupAppIds.length
                   : i + chunkSize,
             );
-            var urlToAppId = <String, String>{};
-            var urlToSettings = <String, Map<String, dynamic>>{};
+            var batchInfos = <BatchGetAPKInfo>[];
             for (var appId in chunk) {
               var app = apps[appId]!.app;
               var s = sourceProvider.getSource(
@@ -4740,25 +4739,37 @@ class AppsProvider with ChangeNotifier {
                 overrideSource: app.overrideSource,
               );
               var stdUrl = s.standardizeUrl(app.url);
-              urlToAppId[stdUrl] = appId;
-              urlToSettings[stdUrl] = Map<String, dynamic>.from(
-                app.additionalSettings,
+              batchInfos.add(
+                BatchGetAPKInfo(
+                  appId: appId,
+                  url: stdUrl,
+                  additionalSettings: Map<String, dynamic>.from(
+                    app.additionalSettings,
+                  ),
+                ),
               );
             }
             try {
               var batchResults = await source.batchGetLatestAPKDetails(
-                urlToSettings,
+                batchInfos,
               );
-              for (var entry in batchResults.entries) {
-                var appId = urlToAppId[entry.key];
-                if (appId == null) continue;
+              for (var info in batchInfos) {
+                var result = batchResults[info.appId];
+                if (result == null) {
+                  errors.add(
+                    info.appId,
+                    ObtainiumError(tr('noReleaseFound')),
+                    appName: apps[info.appId]?.name,
+                  );
+                  continue;
+                }
                 try {
                   var newApp = await checkUpdate(
-                    appId,
+                    info.appId,
                     notifyListenersAfterSave: false,
                     autoExportAfterSave: false,
                     prefetchedInstalledInfo: prefetchedInstalledInfo,
-                    prefetchedAPKDetails: entry.value,
+                    prefetchedAPKDetails: result,
                   );
                   appSaveCompleted = true;
                   final now = DateTime.now();
@@ -4776,21 +4787,14 @@ class AppsProvider with ChangeNotifier {
                     rethrow;
                   }
                   if (error is RepositoryRenamedError) {
-                    await updatePendingRepoRename(appId, error.newUrl);
+                    await updatePendingRepoRename(info.appId, error.newUrl);
                   } else {
-                    errors.add(appId, error, appName: apps[appId]?.name);
+                    errors.add(
+                      info.appId,
+                      error,
+                      appName: apps[info.appId]?.name,
+                    );
                   }
-                }
-              }
-              // Handle URLs not returned by batch
-              for (var url in urlToSettings.keys) {
-                if (!batchResults.containsKey(url)) {
-                  var missingAppId = urlToAppId[url]!;
-                  errors.add(
-                    missingAppId,
-                    ObtainiumError(tr('noReleaseFound')),
-                    appName: apps[missingAppId]?.name,
-                  );
                 }
               }
             } catch (error) {

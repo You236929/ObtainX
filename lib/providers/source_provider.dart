@@ -121,6 +121,18 @@ bool looksLikeAndroidPackageId(String value) {
   ).hasMatch(value.trim());
 }
 
+class BatchGetAPKInfo {
+  final String appId;
+  final String url;
+  final Map<String, dynamic> additionalSettings;
+
+  BatchGetAPKInfo({
+    required this.appId,
+    required this.url,
+    required this.additionalSettings,
+  });
+}
+
 class APKDetails {
   late String version;
   late List<MapEntry<String, String>> apkUrls;
@@ -1041,7 +1053,7 @@ abstract class AppSource {
   }
 
   Future<Map<String, APKDetails>> batchGetLatestAPKDetails(
-    Map<String, Map<String, dynamic>> urlToSettings,
+    List<BatchGetAPKInfo> infos,
   ) {
     throw UnsupportedError('$name does not support batch update checking');
   }
