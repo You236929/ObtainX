@@ -4,6 +4,7 @@ import 'dart:convert';
 
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:obtainium/app_sources/github.dart';
 import 'package:obtainium/main.dart';
@@ -21,6 +22,32 @@ String obtainiumTempId = 'bikram-agarwal_ObtainX_${GitHub().hosts[0]}';
 String obtainiumId = 'dev.bikram.obtainx';
 String obtainiumUrl = 'https://github.com/bikram-agarwal/ObtainX';
 Color obtainiumThemeColor = const Color(0xFF6438B5);
+
+// Cached mirror of [SettingsProvider.tactileFeedbackEnabled]. Haptic feedback fires
+// from deep widget trees and providers alike, so the guarded helpers below read this
+// cached flag instead of requiring a SettingsProvider instance at every call site.
+// Kept in sync by SettingsProvider.initializeSettings and the setter.
+bool _tactileFeedbackEnabled = true;
+
+void hapticSelection() {
+  if (_tactileFeedbackEnabled) HapticFeedback.selectionClick();
+}
+
+void hapticLightImpact() {
+  if (_tactileFeedbackEnabled) HapticFeedback.lightImpact();
+}
+
+void hapticMediumImpact() {
+  if (_tactileFeedbackEnabled) HapticFeedback.mediumImpact();
+}
+
+void hapticHeavyImpact() {
+  if (_tactileFeedbackEnabled) HapticFeedback.heavyImpact();
+}
+
+void hapticVibrate() {
+  if (_tactileFeedbackEnabled) HapticFeedback.vibrate();
+}
 
 enum ThemeSettings { system, light, dark }
 
@@ -90,6 +117,32 @@ class SettingsProvider with ChangeNotifier {
     isTV =
         info.systemFeatures.contains('android.hardware.type.television') ||
         info.systemFeatures.contains('android.software.leanback');
+    _tactileFeedbackEnabled = prefs?.getBool('tactileFeedbackEnabled') ?? true;
+    notifyListeners();
+  }
+
+  bool get tactileFeedbackEnabled =>
+      prefs?.getBool('tactileFeedbackEnabled') ?? true;
+
+  set tactileFeedbackEnabled(bool val) {
+    prefs?.setBool('tactileFeedbackEnabled', val);
+    _tactileFeedbackEnabled = val;
+    notifyListeners();
+  }
+
+  bool get includePrereleasesByDefault =>
+      prefs?.getBool('includePrereleasesByDefault') ?? false;
+
+  set includePrereleasesByDefault(bool val) {
+    prefs?.setBool('includePrereleasesByDefault', val);
+    notifyListeners();
+  }
+
+  bool get showAppDowngradeError =>
+      prefs?.getBool('showAppDowngradeError') ?? true;
+
+  set showAppDowngradeError(bool val) {
+    prefs?.setBool('showAppDowngradeError', val);
     notifyListeners();
   }
 

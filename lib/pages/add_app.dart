@@ -2,7 +2,6 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:expressive_loading_indicator/expressive_loading_indicator.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
-import 'package:flutter/services.dart';
 import 'package:obtainium/app_sources/github.dart';
 import 'package:obtainium/layout_breakpoints.dart';
 import 'package:obtainium/components/app_page_section_title.dart';
@@ -611,7 +610,7 @@ class AddAppPageState extends State<AddAppPage> {
     VoidCallback? urlAddAction() {
       if (urlAddDisabled()) return null;
       return () {
-        HapticFeedback.selectionClick();
+        hapticSelection();
         addApp();
       };
     }
@@ -623,6 +622,16 @@ class AddAppPageState extends State<AddAppPage> {
             ? pickedSource!.sourceConfigSettingFormItems.map((e) => [e])
             : []),
       ]);
+      // Pre-check the per-app "Include prereleases" switch for newly-added apps
+      // when the global default is on. Only affects defaults at add-time; saved
+      // values for existing apps still take precedence in GeneratedForm.
+      if (settingsProvider.includePrereleasesByDefault) {
+        for (final GeneratedFormItem item in items.expand((row) => row)) {
+          if (item is GeneratedFormSwitch && item.key == 'includePrereleases') {
+            item.defaultValue = true;
+          }
+        }
+      }
       if (pickedSource is GitHub) {
         final bool canVerifyGitHubBuild = (pickedSource as GitHub)
             .canVerifyAttestations(additionalSettings, settingsProvider);
@@ -787,7 +796,7 @@ class AddAppPageState extends State<AddAppPage> {
               textInputAction: TextInputAction.go,
               onSubmitted: (_) {
                 if (!addDisabled) {
-                  HapticFeedback.selectionClick();
+                  hapticSelection();
                   addApp();
                 }
               },
@@ -1224,7 +1233,7 @@ class AddAppPageState extends State<AddAppPage> {
                     : () {
                         _searchSomeSourcesFocusNode.unfocus();
                         FocusManager.instance.primaryFocus?.unfocus();
-                        HapticFeedback.selectionClick();
+                        hapticSelection();
                         runInlineSearch(
                           appsProvider: appsProvider,
                           settingsProvider: settingsProvider,
@@ -1257,7 +1266,7 @@ class AddAppPageState extends State<AddAppPage> {
               onSubmitted: (_) {
                 if (!(searchQuery.isEmpty || doingSomething)) {
                   _searchSomeSourcesFocusNode.unfocus();
-                  HapticFeedback.selectionClick();
+                  hapticSelection();
                   runInlineSearch(
                     appsProvider: appsProvider,
                     settingsProvider: settingsProvider,

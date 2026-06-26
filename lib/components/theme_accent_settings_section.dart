@@ -298,7 +298,7 @@ class _CustomColorSliderPanelState extends State<CustomColorSliderPanel> {
   }
 
   void _rejectHexInput() {
-    HapticFeedback.vibrate();
+    hapticVibrate();
     SystemSound.play(SystemSoundType.alert);
   }
 

@@ -2749,7 +2749,7 @@ class AppsPageState extends State<AppsPage> {
     }
 
     refresh() {
-      HapticFeedback.lightImpact();
+      hapticLightImpact();
       setState(() {
         refreshingSince = DateTime.now();
         // Note: [_appListIconWarmFutures] is intentionally NOT cleared here.
@@ -3947,7 +3947,7 @@ class AppsPageState extends State<AppsPage> {
                   trackOnlyUpdateIdsAllOrSelected.isEmpty)
           ? null
           : () {
-              HapticFeedback.heavyImpact();
+              hapticHeavyImpact();
               List<GeneratedFormItem> formItems = [];
               if (existingUpdateIdsAllOrSelected.isNotEmpty) {
                 formItems.add(
@@ -4129,7 +4129,7 @@ class AppsPageState extends State<AppsPage> {
               ),
               TextButton(
                 onPressed: () {
-                  HapticFeedback.selectionClick();
+                  hapticSelection();
                   appsProvider.saveApps(
                     selectedApps.map((a) {
                       if (a.installedVersion != null &&

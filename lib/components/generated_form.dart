@@ -814,7 +814,7 @@ class _CategoryHexInputFormatter extends TextInputFormatter {
         ? nextText.substring(1)
         : nextText;
     if (cleanText.length > 6 || !_validHex.hasMatch(cleanText)) {
-      HapticFeedback.vibrate();
+      hapticVibrate();
       SystemSound.play(SystemSoundType.alert);
       return oldValue;
     }

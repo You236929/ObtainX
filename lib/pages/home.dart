@@ -245,7 +245,7 @@ class _HomePageState extends State<HomePage> {
       shadowColor: transparent ? Colors.transparent : null,
       destinations: destinations,
       onDestinationSelected: (int index) async {
-        HapticFeedback.selectionClick();
+        hapticSelection();
         switchToPage(index);
       },
       selectedIndex: selectedIndex,
@@ -430,7 +430,7 @@ class _HomePageState extends State<HomePage> {
                       NavigationRail(
                         selectedIndex: homeNavSelectedIndex,
                         onDestinationSelected: (int index) async {
-                          HapticFeedback.selectionClick();
+                          hapticSelection();
                           switchToPage(index);
                         },
                         labelType: NavigationRailLabelType.all,

@@ -48,6 +48,7 @@ class GitHub extends AppSource {
     showReleaseCommitShaAsVersionToggle = true;
     this.hostChanged = hostChanged;
     allowIncludeZips = true;
+    allowIncludeTarballs = true;
 
     sourceConfigSettingFormItems = [
       GeneratedFormTextField(
@@ -738,6 +739,7 @@ class GitHub extends AppSource {
     String sortMethod =
         additionalSettings['sortMethodChoice'] ?? 'smartname-datefallback';
     bool includeZips = additionalSettings['includeZips'] == true;
+    bool includeTarballs = additionalSettings['includeTarballs'] == true;
     dynamic latestRelease;
     if (verifyLatestTag) {
       var temp = requestUrl.split('?');
@@ -772,9 +774,13 @@ class GitHub extends AppSource {
       var hasGHReqPrefix = prefix.isNotEmpty;
       findReleaseAssetUrls(dynamic release) =>
           (release['assets'] as List<dynamic>?)?.map((e) {
-            var ext = e['name'].toString().toLowerCase().split('.').last;
+            var name = e['name'].toString();
             var url =
-                !isInstallableExt(ext, includeZips: includeZips) ||
+                !isInstallable(
+                      name,
+                      includeZips: includeZips,
+                      includeTarballs: includeTarballs,
+                    ) ||
                     hasGHReqPrefix
                 ? (e['browser_download_url'] ?? e['url'])
                 : (e['url'] ?? e['browser_download_url']);
@@ -943,11 +949,12 @@ class GitHub extends AppSource {
             .map((e) => e['final_url'] as MapEntry<String, String>)
             .toList();
         var apkAssetsWithUrls = allAssetsWithUrls.where((element) {
-          var ext = (element['final_url'] as MapEntry<String, String>).key
-              .toLowerCase()
-              .split('.')
-              .last;
-          return isInstallableExt(ext, includeZips: includeZips);
+          var name = (element['final_url'] as MapEntry<String, String>).key;
+          return isInstallable(
+            name,
+            includeZips: includeZips,
+            includeTarballs: includeTarballs,
+          );
         }).toList();
 
         var filteredApkUrls = filterApks(

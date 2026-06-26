@@ -75,6 +75,18 @@ bool _isInstalledVersionPseudo(AppInMemory appInMemory) {
   );
 }
 
+/// The real OS-reported installed version (versionName, or versionCode when the
+/// app uses useVersionCodeAsOSVersion). Null when nothing is installed. Surfaced
+/// on the app page only when the displayed version is a pseudo-version, so the
+/// user can still see what's actually installed.
+String? _realOsInstalledVersion(AppInMemory appInMemory) {
+  final installedInfo = appInMemory.installedInfo;
+  if (installedInfo == null) return null;
+  return appInMemory.app.additionalSettings['useVersionCodeAsOSVersion'] == true
+      ? installedInfo.versionCode.toString()
+      : installedInfo.versionName;
+}
+
 /// Optional debug logger — guarded by the consolidated [apkMirrorSizeDebug]
 /// flag so it short-circuits in release builds.
 void _logApkMirrorSizeDebugFromAppPage(String message) {
@@ -755,10 +767,18 @@ class _AppPageState extends State<AppPage> {
   }
 
   Future<void> _pickEditIcon(AppsProvider appsProvider) async {
-    final FilePickerResult? result = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ['png'],
-    );
+    final FilePickerResult? result;
+    try {
+      result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['png'],
+      );
+    } catch (e) {
+      if (mounted) {
+        _showPageError(ObtainiumError(tr('noFilePickerAvailable')), context);
+      }
+      return;
+    }
     if (!mounted) return;
     if (result == null || result.files.isEmpty) return;
     final PlatformFile picked = result.files.single;
@@ -2026,6 +2046,7 @@ class _AppPageState extends State<AppPage> {
       String label,
       String value, {
       bool pseudoVersion = false,
+      String? osInstalledVersion,
     }) {
       return Padding(
         padding: const EdgeInsets.only(bottom: 6),
@@ -2079,6 +2100,17 @@ class _AppPageState extends State<AppPage> {
                           color: Theme.of(ctx).colorScheme.onSurfaceVariant,
                           fontWeight: FontWeight.w500,
                         ),
+                      ),
+                    ),
+                  if (pseudoVersion &&
+                      osInstalledVersion != null &&
+                      osInstalledVersion.isNotEmpty)
+                    SelectableText(
+                      '${tr('osInstalledVersion')}: $osInstalledVersion',
+                      style: Theme.of(ctx).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                        fontFamily: 'monospace',
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                 ],
@@ -2565,6 +2597,9 @@ class _AppPageState extends State<AppPage> {
               tr('installed'),
               app?.app.installedVersion ?? '',
               pseudoVersion: app != null && _isInstalledVersionPseudo(app),
+              osInstalledVersion: app == null
+                  ? null
+                  : _realOsInstalledVersion(app),
             ),
           );
         } else {
@@ -3518,7 +3553,7 @@ class _AppPageState extends State<AppPage> {
               ),
               TextButton(
                 onPressed: () {
-                  HapticFeedback.selectionClick();
+                  hapticSelection();
                   final App? updatedApp = app?.app.deepCopy();
                   if (updatedApp != null) {
                     updatedApp.installedVersion = updatedApp.latestVersion;
@@ -3762,7 +3797,7 @@ class _AppPageState extends State<AppPage> {
           final successMessage = installedVersionIsNull
               ? tr('installed')
               : tr('appsUpdated');
-          HapticFeedback.heavyImpact();
+          hapticHeavyImpact();
           final res = await appsProvider.downloadAndInstallLatestApps(
             app?.app.id != null ? [app!.app.id] : [],
             context,

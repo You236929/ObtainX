@@ -23,6 +23,7 @@ import 'package:obtainium/app_sources/fdroidrepo.dart';
 import 'package:obtainium/app_sources/github.dart';
 import 'package:obtainium/app_sources/gitlab.dart';
 import 'package:obtainium/app_sources/huaweiappgallery.dart';
+import 'package:obtainium/app_sources/itchio.dart';
 import 'package:obtainium/app_sources/izzyondroid.dart';
 import 'package:obtainium/app_sources/html.dart';
 import 'package:obtainium/app_sources/jenkins.dart';
@@ -945,6 +946,7 @@ abstract class AppSource {
   List<String> excludeCommonSettingKeys = [];
   bool urlsAlwaysHaveExtension = false;
   bool allowIncludeZips = false;
+  bool allowIncludeTarballs = false;
 
   /// Transient per-check context: the app as it was known before this update
   /// check, set by [SourceProvider.getApp] right before [getLatestAPKDetails].
@@ -1283,6 +1285,30 @@ abstract class AppSource {
       ]);
     }
 
+    if (allowIncludeTarballs) {
+      moreConditionalItems.addAll([
+        [
+          GeneratedFormSwitch(
+            'includeTarballs',
+            label: tr('includeTarballs'),
+            defaultValue: false,
+          ),
+        ],
+        [
+          GeneratedFormTextField(
+            'tarballedApkFilterRegEx',
+            label: tr('tarballedApkFilterRegEx'),
+            required: false,
+            additionalValidators: [
+              (value) {
+                return regExValidator(value);
+              },
+            ],
+          ),
+        ],
+      ]);
+    }
+
     if (versionDetectionDisallowed) {
       for (final GeneratedFormItem item in agnosticItems.expand((row) => row)) {
         if (item.key == 'versionDetection' ||
@@ -1515,6 +1541,7 @@ class SourceProvider {
         () => FDroidRepo(),
         () => IzzyOnDroid(),
         () => SourceHut(),
+        () => ItchIO(),
         () => APKPure(),
         () => Aptoide(),
         () => Uptodown(),

@@ -21,7 +21,6 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, listEquals;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:http/io_client.dart';
 import 'package:obtainium/app_sources/apkmirror.dart' show apkMirrorSizeDebug;
 import 'package:obtainium/app_sources/direct_apk_link.dart';
@@ -47,6 +46,7 @@ import 'package:obtainium/providers/source_provider.dart';
 import 'package:http/http.dart';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:flutter_archive/flutter_archive.dart';
+import 'package:archive/archive.dart' as archive;
 import 'package:obtainium/providers/installer_provider.dart' as installer;
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_storage/shared_storage.dart' as saf;
@@ -1919,17 +1919,26 @@ class AppsProvider with ChangeNotifier {
       PackageInfo? newInfo;
       var isAPK = isApk(downloadedFile.path);
       var isXAPK = isXapk(downloadedFile.path);
+      var isTar = isTarball(downloadedFile.path);
       Directory? extractedDir;
       if (isAPK) {
         newInfo = await pm.getPackageArchiveInfo(
           archiveFilePath: downloadedFile.path,
         );
       } else {
-        // Assume XAPK or ZIP
+        // Assume XAPK/ZIP (zip-based) or a tarball (.tar.gz/.tgz/.tar.bz2/.tar.xz).
         String apkDirPath = '${downloadedFile.path}-dir';
-        await unzipFile(downloadedFile.path, '${downloadedFile.path}-dir');
+        if (isTar) {
+          await extractTarballFile(downloadedFile.path, apkDirPath);
+        } else {
+          await unzipFile(downloadedFile.path, apkDirPath);
+        }
         extractedDir = Directory(apkDirPath);
-        var apks = extractedDir.listSync().where((e) => isApk(e.path)).toList();
+        // Tarballs often nest APKs inside a top-level directory, so recurse for them.
+        var apks = extractedDir
+            .listSync(recursive: isTar)
+            .where((e) => isApk(e.path))
+            .toList();
 
         FileSystemEntity? temp;
         apks.removeWhere((element) {
@@ -1943,11 +1952,18 @@ class AppsProvider with ChangeNotifier {
           apks = [temp!, ...apks];
         }
 
-        if (app.additionalSettings['zippedApkFilterRegEx']?.isNotEmpty ==
-            true) {
-          var reg = RegExp(app.additionalSettings['zippedApkFilterRegEx']);
+        var filterRegEx = isTar
+            ? app.additionalSettings['tarballedApkFilterRegEx']
+            : app.additionalSettings['zippedApkFilterRegEx'];
+        if (filterRegEx?.isNotEmpty == true) {
+          var reg = RegExp(filterRegEx);
           apks.removeWhere((apk) {
-            var shouldDelete = !reg.hasMatch(apk.uri.pathSegments.last);
+            // Tarballs nest, so filter on the path relative to the extract dir;
+            // zips keep the historical filename-only match.
+            var target = isTar
+                ? apk.path.substring(extractedDir!.path.length + 1)
+                : apk.uri.pathSegments.last;
+            var shouldDelete = !reg.hasMatch(target);
             if (shouldDelete) {
               apk.delete();
             }
@@ -2125,6 +2141,49 @@ class AppsProvider with ChangeNotifier {
       zipFile: File(filePath),
       destinationDir: Directory(destinationPath),
     );
+  }
+
+  Future<void> extractTarballFile(
+    String filePath,
+    String destinationPath,
+  ) async {
+    final bytes = await File(filePath).readAsBytes();
+    List<int> decompressed;
+    // Detect compression by magic bytes (the file extension may be wrong after download).
+    if (bytes.length >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b) {
+      // gzip
+      decompressed = const archive.GZipDecoder().decodeBytes(bytes);
+    } else if (bytes.length >= 3 &&
+        bytes[0] == 0x42 &&
+        bytes[1] == 0x5a &&
+        bytes[2] == 0x68) {
+      // bzip2 ('BZh')
+      decompressed = archive.BZip2Decoder().decodeBytes(bytes);
+    } else if (bytes.length >= 6 &&
+        bytes[0] == 0xfd &&
+        bytes[1] == 0x37 &&
+        bytes[2] == 0x7a &&
+        bytes[3] == 0x58 &&
+        bytes[4] == 0x5a &&
+        bytes[5] == 0x00) {
+      // xz
+      decompressed = archive.XZDecoder().decodeBytes(bytes);
+    } else {
+      // Assume uncompressed tar
+      decompressed = bytes;
+    }
+    final tarArchive = archive.TarDecoder().decodeBytes(decompressed);
+    final destDir = Directory(destinationPath);
+    if (!destDir.existsSync()) {
+      destDir.createSync(recursive: true);
+    }
+    for (final file in tarArchive.files) {
+      if (file.isFile) {
+        final outFile = File('${destDir.path}/${file.name}');
+        outFile.createSync(recursive: true);
+        outFile.writeAsBytesSync(file.content as List<int>);
+      }
+    }
   }
 
   Uri? _documentUriFromSafPluginResult(dynamic pluginResult) {
@@ -2525,7 +2584,8 @@ class AppsProvider with ChangeNotifier {
       if (appInfo != null &&
           newInfo.versionCode! < appInfo.versionCode! &&
           settingsProvider.installerMode == 'stock' &&
-          !(await canDowngradeApps())) {
+          !(await canDowngradeApps()) &&
+          settingsProvider.showAppDowngradeError) {
         throw DowngradeError(appInfo.versionCode!, newInfo.versionCode!);
       }
       if (needsBGWorkaround) {
@@ -5239,7 +5299,7 @@ class _AppFilePickerState extends State<AppFilePicker> {
         ),
         TextButton(
           onPressed: () {
-            HapticFeedback.selectionClick();
+            hapticSelection();
             Navigator.of(context).pop(fileUrl);
           },
           child: Text(tr('continue')),
@@ -5287,7 +5347,7 @@ class _APKOriginWarningDialogState extends State<APKOriginWarningDialog> {
         ),
         TextButton(
           onPressed: () {
-            HapticFeedback.selectionClick();
+            hapticSelection();
             Navigator.of(context).pop(true);
           },
           child: Text(tr('continue')),
@@ -5505,9 +5565,24 @@ Future<void> bgUpdateCheck(String taskId, Map<String, dynamic>? params) async {
       }
     }
 
-    // Send the update notification
+    // Send the update notification(s) — keep track-only apps (watched but not
+    // installed by ObtainX) in their own notification so users can tell them apart
+    // from updates ObtainX can install.
     if (toNotify.isNotEmpty) {
-      notificationsProvider.notify(UpdateNotification(toNotify));
+      final installableUpdates = toNotify
+          .where((a) => a.additionalSettings['trackOnly'] != true)
+          .toList();
+      final trackOnlyUpdates = toNotify
+          .where((a) => a.additionalSettings['trackOnly'] == true)
+          .toList();
+      if (installableUpdates.isNotEmpty) {
+        notificationsProvider.notify(UpdateNotification(installableUpdates));
+      }
+      if (trackOnlyUpdates.isNotEmpty) {
+        notificationsProvider.notify(
+          TrackOnlyUpdateNotification(trackOnlyUpdates),
+        );
+      }
     }
 
     // Send the error notifications (grouped by error string)

@@ -1,7 +1,7 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:obtainium/components/category_action_chip.dart';
+import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/components/generated_form.dart';
 
 enum BulkCategoryCoverageState { all, some, none }
@@ -281,7 +281,7 @@ class _BulkCategoryEditorSheetState extends State<BulkCategoryEditorSheet> {
     final existingCoverage = _coverage.where(
       (item) => bulkCategoryKey(item.category) == key,
     );
-    HapticFeedback.selectionClick();
+    hapticSelection();
     setState(() {
       if (existingCoverage.isEmpty) {
         _extraAddedCategories.add(category);
@@ -352,7 +352,7 @@ class _BulkCategoryEditorSheetState extends State<BulkCategoryEditorSheet> {
                         color: Color(_categoryColor(item.category)),
                         intent: intent,
                         onPressed: () {
-                          HapticFeedback.selectionClick();
+                          hapticSelection();
                           setState(() {
                             _categoryIntents[key] = nextBulkCategoryIntent(
                               item.state,
@@ -369,7 +369,7 @@ class _BulkCategoryEditorSheetState extends State<BulkCategoryEditorSheet> {
             _CreateCategoryPullTab(
               expanded: _createExpanded,
               onPressed: () {
-                HapticFeedback.selectionClick();
+                hapticSelection();
                 setState(() {
                   _createExpanded = !_createExpanded;
                 });

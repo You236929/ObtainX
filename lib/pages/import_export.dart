@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:easy_localization/easy_localization.dart' hide TextDirection;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
-import 'package:flutter/services.dart';
 import 'package:progress_indicator_m3e/progress_indicator_m3e.dart';
 import 'package:obtainium/app_sources/fdroidrepo.dart';
 import 'package:obtainium/components/app_dropdown_field.dart';
@@ -166,7 +165,7 @@ class _ImportExportPageState extends State<ImportExportPage> {
     }
 
     runObtainiumExport({bool pickOnly = false}) async {
-      HapticFeedback.selectionClick();
+      hapticSelection();
       appsProvider
           .export(
             pickOnly:
@@ -214,12 +213,17 @@ class _ImportExportPageState extends State<ImportExportPage> {
           ? await settingsProvider.getExportDir(requireAccess: false)
           : null;
       if (Platform.isAndroid) {
-        final List<Uri>? selectedUris = await saf.openDocument(
-          initialUri: exportDir,
-          grantWritePermission: false,
-          persistablePermission: false,
-          mimeType: '*/*',
-        );
+        final List<Uri>? selectedUris;
+        try {
+          selectedUris = await saf.openDocument(
+            initialUri: exportDir,
+            grantWritePermission: false,
+            persistablePermission: false,
+            mimeType: '*/*',
+          );
+        } catch (e) {
+          throw ObtainiumError(tr('noFilePickerAvailable'));
+        }
         if (selectedUris == null || selectedUris.isEmpty) {
           return null;
         }
@@ -232,10 +236,15 @@ class _ImportExportPageState extends State<ImportExportPage> {
         return selectedBackupData;
       }
 
-      final result = await FilePicker.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['json'],
-      );
+      final FilePickerResult? result;
+      try {
+        result = await FilePicker.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: ['json'],
+        );
+      } catch (e) {
+        throw ObtainiumError(tr('noFilePickerAvailable'));
+      }
       if (result == null) {
         return null;
       }
@@ -243,7 +252,7 @@ class _ImportExportPageState extends State<ImportExportPage> {
     }
 
     runObtainiumImport() async {
-      HapticFeedback.selectionClick();
+      hapticSelection();
       var importStarted = false;
       try {
         final String? backupData = await pickBackupDataFromSystemPicker();
@@ -267,33 +276,40 @@ class _ImportExportPageState extends State<ImportExportPage> {
       }
     }
 
-    runUrlImport() {
-      FilePicker.pickFiles().then((result) async {
-        if (result != null) {
-          // Async read so picking a large URL-list dump doesn't freeze the UI.
-          final String fileContents = await File(
-            result.files.single.path!,
-          ).readAsString();
-          if (!context.mounted) return;
-          urlListImport(
-            overrideInitValid: true,
-            initValue: RegExp('https?://[^"]+')
-                .allMatches(fileContents)
-                .map((e) => e.input.substring(e.start, e.end))
-                .toSet()
-                .toList()
-                .where((url) {
-                  try {
-                    sourceProvider.getSource(url);
-                    return true;
-                  } catch (e) {
-                    return false;
-                  }
-                })
-                .join('\n'),
-          );
+    runUrlImport() async {
+      final FilePickerResult? result;
+      try {
+        result = await FilePicker.pickFiles();
+      } catch (e) {
+        if (context.mounted) {
+          showError(ObtainiumError(tr('noFilePickerAvailable')), context);
         }
-      });
+        return;
+      }
+      if (result != null) {
+        // Async read so picking a large URL-list dump doesn't freeze the UI.
+        final String fileContents = await File(
+          result.files.single.path!,
+        ).readAsString();
+        if (!context.mounted) return;
+        urlListImport(
+          overrideInitValid: true,
+          initValue: RegExp('https?://[^"]+')
+              .allMatches(fileContents)
+              .map((e) => e.input.substring(e.start, e.end))
+              .toSet()
+              .toList()
+              .where((url) {
+                try {
+                  sourceProvider.getSource(url);
+                  return true;
+                } catch (e) {
+                  return false;
+                }
+              })
+              .join('\n'),
+        );
+      }
     }
 
     runSourceSearch(AppSource source) {
@@ -536,7 +552,7 @@ class _ImportExportPageState extends State<ImportExportPage> {
         onLongPress: onReset == null
             ? null
             : () {
-                HapticFeedback.mediumImpact();
+                hapticMediumImpact();
                 onReset();
               },
         child: child,

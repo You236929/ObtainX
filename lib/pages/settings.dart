@@ -100,7 +100,8 @@ class _SettingsPageState extends State<SettingsPage> {
     'sourceSpecific',
     'themes',
     'appearance',
-    'gestures',
+    'warnings',
+    'interaction',
     'categories',
   ];
 
@@ -161,7 +162,8 @@ class _SettingsPageState extends State<SettingsPage> {
         'sourceSpecific',
       'themes',
       'appearance',
-      'gestures',
+      'warnings',
+      'interaction',
       'categories',
     ];
     final bool allSettingsSectionsExpanded = visibleSettingsSectionKeys.every(
@@ -385,10 +387,16 @@ class _SettingsPageState extends State<SettingsPage> {
         widget: _AppearanceSection(androidInfo: _androidInfo),
       ),
       _SettingsCategory(
-        key: 'gestures',
-        title: tr('gestures'),
-        icon: Icons.swipe_rounded,
-        widget: const _GesturesSection(),
+        key: 'warnings',
+        title: tr('warnings'),
+        icon: Icons.warning_amber_rounded,
+        widget: const _WarningsSection(),
+      ),
+      _SettingsCategory(
+        key: 'interaction',
+        title: tr('interaction'),
+        icon: Icons.touch_app_rounded,
+        widget: const _InteractionSection(),
       ),
       _SettingsCategory(
         key: 'categories',
@@ -740,15 +748,25 @@ class _SettingsPageState extends State<SettingsPage> {
                               'appearance',
                               _AppearanceSection(androidInfo: _androidInfo),
                             ),
-                            // ── Gestures ─────────────────────────────────
+                            // ── Warnings ─────────────────────────────────
                             sectionHeader(
-                              tr('gestures'),
-                              Icons.swipe_rounded,
-                              'gestures',
+                              tr('warnings'),
+                              Icons.warning_amber_rounded,
+                              'warnings',
                             ),
                             collapsibleCard(
-                              'gestures',
-                              const _GesturesSection(),
+                              'warnings',
+                              const _WarningsSection(),
+                            ),
+                            // ── Interaction ──────────────────────────────
+                            sectionHeader(
+                              tr('interaction'),
+                              Icons.touch_app_rounded,
+                              'interaction',
+                            ),
+                            collapsibleCard(
+                              'interaction',
+                              const _InteractionSection(),
                             ),
                             // ── Categories ───────────────────────────────
                             sectionHeader(
@@ -844,6 +862,7 @@ class _UpdatesSection extends StatelessWidget {
     sp.beforeNewInstallsShareToAppVerifier,
     sp.installerMode,
     sp.shizukuPretendToBeGooglePlay,
+    sp.includePrereleasesByDefault,
   );
 
   @override
@@ -940,6 +959,11 @@ class _UpdatesSection extends StatelessWidget {
         title: Text(tr('checkUpdateOnDetailPage')),
         value: sp.checkUpdateOnDetailPage,
         onChanged: (bool value) => sp.checkUpdateOnDetailPage = value,
+      ),
+      SwitchListTile(
+        title: Text(tr('includePrereleasesByDefault')),
+        value: sp.includePrereleasesByDefault,
+        onChanged: (bool value) => sp.includePrereleasesByDefault = value,
       ),
       SwitchListTile(
         title: Text(tr('onlyCheckInstalledOrTrackOnlyApps')),
@@ -1300,8 +1324,6 @@ class _AppearanceSection extends StatelessWidget {
     sp.appUiScale,
     sp.cardCornerScale,
     sp.showAppWebpage,
-    sp.hideTrackOnlyWarning,
-    sp.hideAPKOriginWarning,
     sp.disablePageTransitions,
     sp.reversePageTransitions,
     sp.highlightTouchTargets,
@@ -1347,16 +1369,6 @@ class _AppearanceSection extends StatelessWidget {
           title: Text(tr('showWebInAppView')),
           value: sp.showAppWebpage,
           onChanged: (value) => sp.showAppWebpage = value,
-        ),
-        SwitchListTile(
-          title: Text(tr('dontShowTrackOnlyWarnings')),
-          value: sp.hideTrackOnlyWarning,
-          onChanged: (value) => sp.hideTrackOnlyWarning = value,
-        ),
-        SwitchListTile(
-          title: Text(tr('dontShowAPKOriginWarnings')),
-          value: sp.hideAPKOriginWarning,
-          onChanged: (value) => sp.hideAPKOriginWarning = value,
         ),
         SwitchListTile(
           title: Text(tr('disablePageTransitions')),
@@ -1605,15 +1617,67 @@ class _CardCornerScaleSliderState extends State<_CardCornerScaleSlider> {
 }
 
 /// Gestures section — swipe action dropdowns.
-class _GesturesSection extends StatelessWidget {
-  const _GesturesSection();
+/// Warnings section — visibility of operation warnings/prompts. All toggles are
+/// positive ("Show …", ON = visible). Track-only/APK-origin/battery wrap inverted
+/// hideX prefs; downgrade uses showAppDowngradeError directly.
+class _WarningsSection extends StatelessWidget {
+  const _WarningsSection();
 
-  static int _gesturesSettingsHash(SettingsProvider sp) =>
-      Object.hash(sp.rightSwipeAction, sp.leftSwipeAction);
+  static int _warningsSettingsHash(SettingsProvider sp) => Object.hash(
+    sp.hideBatteryOptimizationWarning,
+    sp.hideTrackOnlyWarning,
+    sp.hideAPKOriginWarning,
+    sp.showAppDowngradeError,
+  );
 
   @override
   Widget build(BuildContext context) {
-    context.select<SettingsProvider, int>(_gesturesSettingsHash);
+    context.select<SettingsProvider, int>(_warningsSettingsHash);
+    final SettingsProvider sp = context.read<SettingsProvider>();
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return m3eExpressiveSettingsCard(
+      context: context,
+      colorScheme: cs,
+      items: [
+        SwitchListTile(
+          title: Text(tr('showBatteryOptimizationPrompt')),
+          // Bound to the existing hideBatteryOptimizationWarning (inverted) so the
+          // launch dialog's "don't show again" and this toggle stay in sync.
+          value: !sp.hideBatteryOptimizationWarning,
+          onChanged: (value) => sp.hideBatteryOptimizationWarning = !value,
+        ),
+        SwitchListTile(
+          title: Text(tr('showTrackOnlyWarnings')),
+          value: !sp.hideTrackOnlyWarning,
+          onChanged: (value) => sp.hideTrackOnlyWarning = !value,
+        ),
+        SwitchListTile(
+          title: Text(tr('showAPKOriginWarnings')),
+          value: !sp.hideAPKOriginWarning,
+          onChanged: (value) => sp.hideAPKOriginWarning = !value,
+        ),
+        SwitchListTile(
+          title: Text(tr('showAppDowngradeError')),
+          value: sp.showAppDowngradeError,
+          onChanged: (value) => sp.showAppDowngradeError = value,
+        ),
+      ],
+    );
+  }
+}
+
+class _InteractionSection extends StatelessWidget {
+  const _InteractionSection();
+
+  static int _interactionSettingsHash(SettingsProvider sp) => Object.hash(
+    sp.rightSwipeAction,
+    sp.leftSwipeAction,
+    sp.tactileFeedbackEnabled,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    context.select<SettingsProvider, int>(_interactionSettingsHash);
     final SettingsProvider sp = context.read<SettingsProvider>();
     final ColorScheme cs = Theme.of(context).colorScheme;
 
@@ -1647,6 +1711,11 @@ class _GesturesSection extends StatelessWidget {
       context: context,
       colorScheme: cs,
       items: [
+        SwitchListTile(
+          title: Text(tr('tactileFeedbackEnabled')),
+          value: sp.tactileFeedbackEnabled,
+          onChanged: (value) => sp.tactileFeedbackEnabled = value,
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: Column(
