@@ -1044,9 +1044,7 @@ abstract class AppSource {
     List<String> standardUrls,
     Map<String, dynamic> additionalSettings,
   ) {
-    throw UnsupportedError(
-      '$name does not support batch update checking',
-    );
+    throw UnsupportedError('$name does not support batch update checking');
   }
 
   // Different Sources may need different kinds of additional data for Apps
@@ -1693,10 +1691,7 @@ class SourceProvider {
       apk = prefetchedAPKDetails;
     } else {
       source.previouslyCheckedApp = currentApp;
-      apk = await source.getLatestAPKDetails(
-        standardUrl,
-        additionalSettings,
-      );
+      apk = await source.getLatestAPKDetails(standardUrl, additionalSettings);
     }
     final String? rawApkNamesFromSource = encodeRawAssistLines(
       apk.apkUrls.map((MapEntry<String, String> entry) => entry.key),
