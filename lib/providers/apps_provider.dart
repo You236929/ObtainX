@@ -4623,7 +4623,6 @@ class AppsProvider with ChangeNotifier {
                 settingsProvider.onlyCheckInstalledOrTrackOnlyApps,
           );
         }
-        var nextAppIndex = 0;
         var appSaveCompleted = false;
         var lastProgressNotificationAt = DateTime.fromMicrosecondsSinceEpoch(0);
         const progressNotificationInterval = Duration(milliseconds: 250);
@@ -4702,6 +4701,7 @@ class AppsProvider with ChangeNotifier {
               await processSingleApp(groupAppIds[ci]);
             }
           }
+
           final wc = groupAppIds.length < maxParallelUpdateChecks
               ? groupAppIds.length
               : maxParallelUpdateChecks;
@@ -4746,7 +4746,7 @@ class AppsProvider with ChangeNotifier {
             try {
               var batchResults = await source.batchGetLatestAPKDetails(
                 standardUrls,
-                sourceProvider.getDefaultValuesFromFormItems(
+                getDefaultValuesFromFormItems(
                   source.combinedAppSpecificSettingFormItems,
                 ),
               );
@@ -4772,8 +4772,7 @@ class AppsProvider with ChangeNotifier {
                     updates.add(newApp);
                   }
                 } catch (error) {
-                  if ((error is RateLimitError ||
-                          error is SocketException) &&
+                  if ((error is RateLimitError || error is SocketException) &&
                       throwErrorsForRetry) {
                     rethrow;
                   }
@@ -4790,9 +4789,7 @@ class AppsProvider with ChangeNotifier {
                   var missingAppId = urlToAppId[url]!;
                   errors.add(
                     missingAppId,
-                    ObtainiumError(
-                      tr('noReleaseFound'),
-                    ),
+                    ObtainiumError(tr('noReleaseFound')),
                     appName: apps[missingAppId]?.name,
                   );
                 }
