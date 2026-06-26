@@ -48,6 +48,8 @@ class GitHub extends AppSource {
     showReleaseCommitShaAsVersionToggle = true;
     this.hostChanged = hostChanged;
     allowIncludeZips = true;
+    supportsBatchUpdate = true;
+    batchUpdateChunkSize = 20;
 
     sourceConfigSettingFormItems = [
       GeneratedFormTextField(
@@ -1159,6 +1161,116 @@ class GitHub extends AppSource {
         rateLimitErrorCheck(res);
       },
     );
+  }
+
+  @override
+  Future<Map<String, APKDetails>> batchGetLatestAPKDetails(
+    List<String> standardUrls,
+    Map<String, dynamic> additionalSettings,
+  ) async {
+    if (standardUrls.isEmpty) {
+      return {};
+    }
+    var urlToAlias = <String, String>{};
+    var queryParts = <String>[];
+    for (int i = 0; i < standardUrls.length; i++) {
+      var url = standardUrls[i];
+      var names = getAppNames(url);
+      var alias = 'r$i';
+      urlToAlias[url] = alias;
+      queryParts.add('''
+      $alias: repository(owner: "${names.author}", name: "${names.name}") {
+        nameWithOwner
+        latestRelease {
+          tagName
+          publishedAt
+          isPrerelease
+          isDraft
+          body
+          releaseAssets(first: 50) {
+            nodes {
+              name
+              downloadUrl
+              size
+            }
+          }
+        }
+      }''');
+    }
+    var query = '{\n${queryParts.join('\n')}\n}';
+    var graphqlUrl =
+        '${await getAPIHost(additionalSettings)}/graphql';
+    Map<String, dynamic> postBody = {'query': query};
+    try {
+      var response = await sourceRequest(
+        graphqlUrl,
+        additionalSettings,
+        postBody: postBody,
+      );
+      if (response.statusCode != 200) {
+        rateLimitErrorCheck(response);
+        throw getObtainiumHttpError(response);
+      }
+      var responseJson = jsonDecode(response.body) as Map<String, dynamic>;
+      var data = responseJson['data'] as Map<String, dynamic>?;
+      if (data == null) {
+        var errors = responseJson['errors'] as List<dynamic>?;
+        if (errors != null && errors.isNotEmpty) {
+          throw ObtainiumError(
+            tr('errorWithHttpStatusCode',
+                args: [errors.first['message'] ?? 'Unknown error']),
+          );
+        }
+        return {};
+      }
+      Map<String, APKDetails> results = {};
+      for (var url in standardUrls) {
+        var alias = urlToAlias[url]!;
+        var repoData = data[alias] as Map<String, dynamic>?;
+        if (repoData == null) {
+          continue;
+        }
+        var release = repoData['latestRelease'] as Map<String, dynamic>?;
+        if (release == null) {
+          results[url] = APKDetails(
+            tr('noReleaseFound'),
+            [],
+            getAppNames(url),
+          );
+          continue;
+        }
+        var apkUrls = <MapEntry<String, String>>[];
+        List<dynamic> assets = [];
+        if (release['releaseAssets'] != null &&
+            release['releaseAssets']['nodes'] != null) {
+          assets = release['releaseAssets']['nodes'] as List<dynamic>;
+        }
+        for (var asset in assets) {
+          var assetName = asset['name'] as String? ?? '';
+          var downloadUrl = asset['downloadUrl'] as String? ?? '';
+          if (assetName.isNotEmpty && downloadUrl.isNotEmpty) {
+            apkUrls.add(MapEntry(assetName, downloadUrl));
+          }
+        }
+        String? changeLog = release['body'] as String?;
+        results[url] = APKDetails(
+          release['tagName'] as String? ?? '',
+          apkUrls,
+          getAppNames(url),
+          releaseDate: release['publishedAt'] != null
+              ? DateTime.tryParse(release['publishedAt'] as String)
+              : null,
+          changeLog: (changeLog != null && changeLog.isNotEmpty)
+              ? changeLog
+              : null,
+        );
+      }
+      return results;
+    } on ObtainiumError {
+      rethrow;
+    } catch (e) {
+      throw ObtainiumError(e.toString());
+    }
   }
 
   AppNames getAppNames(String standardUrl) {

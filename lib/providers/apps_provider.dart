@@ -4474,6 +4474,7 @@ class AppsProvider with ChangeNotifier {
     bool notifyListenersAfterSave = true,
     bool autoExportAfterSave = true,
     Map<String, PackageInfo>? prefetchedInstalledInfo,
+    APKDetails? prefetchedAPKDetails,
   }) async {
     App? currentApp = apps[appId]!.app;
     // Pause update checks until the user resolves a pending repo rename.
@@ -4489,6 +4490,7 @@ class AppsProvider with ChangeNotifier {
       currentApp.url,
       Map<String, dynamic>.from(currentApp.additionalSettings),
       currentApp: currentApp,
+      prefetchedAPKDetails: prefetchedAPKDetails,
     );
     final App? latestAppBeforeSave = apps[appId]?.app;
     if (latestAppBeforeSave == null) {
@@ -4627,9 +4629,6 @@ class AppsProvider with ChangeNotifier {
         const progressNotificationInterval = Duration(milliseconds: 250);
         final maxParallelUpdateChecks =
             await _maxParallelUpdateChecksForDevice();
-        final workerCount = appIds.length < maxParallelUpdateChecks
-            ? appIds.length
-            : maxParallelUpdateChecks;
         // Enumerate installed packages ONCE for the whole scan. Each per-app
         // saveApps would otherwise call getInstalledInfo(), which re-enumerates
         // every device package — O(apps × devicePackages). The snapshot still
@@ -4641,51 +4640,183 @@ class AppsProvider with ChangeNotifier {
           for (final info in allInstalledForScan)
             if (info.packageName != null) info.packageName!: info,
         };
+        // Group apps by source type for batch update scheduling
+        var sourceProvider = SourceProvider();
+        var batchGroups = <String, List<String>>{};
+        var singleGroups = <String, List<String>>{};
+        for (var appId in appIds) {
+          var app = apps[appId]!.app;
+          var source = sourceProvider.getSourceTemplate(
+            app.url,
+            overrideSource: app.overrideSource,
+          );
+          var sourceName = source.runtimeType.toString();
+          if (source.supportsBatchUpdate) {
+            batchGroups.putIfAbsent(sourceName, () => []);
+            batchGroups[sourceName]!.add(appId);
+          } else {
+            singleGroups.putIfAbsent(sourceName, () => []);
+            singleGroups[sourceName]!.add(appId);
+          }
+        }
 
-        Future<void> runUpdateCheckWorker() async {
-          while (true) {
-            final currentAppIndex = nextAppIndex;
-            if (currentAppIndex >= appIds.length) {
-              return;
+        Future<void> processSingleApp(String appId) async {
+          App? newApp;
+          try {
+            newApp = await checkUpdate(
+              appId,
+              notifyListenersAfterSave: false,
+              autoExportAfterSave: false,
+              prefetchedInstalledInfo: prefetchedInstalledInfo,
+            );
+            appSaveCompleted = true;
+            final now = DateTime.now();
+            if (now.difference(lastProgressNotificationAt) >=
+                progressNotificationInterval) {
+              lastProgressNotificationAt = now;
+              notifyListeners();
             }
-            nextAppIndex += 1;
-            final appId = appIds[currentAppIndex];
-            App? newApp;
-            try {
-              newApp = await checkUpdate(
-                appId,
-                notifyListenersAfterSave: false,
-                autoExportAfterSave: false,
-                prefetchedInstalledInfo: prefetchedInstalledInfo,
+          } catch (error) {
+            if ((error is RateLimitError || error is SocketException) &&
+                throwErrorsForRetry) {
+              rethrow;
+            }
+            if (error is RepositoryRenamedError) {
+              await updatePendingRepoRename(appId, error.newUrl);
+            } else {
+              errors.add(appId, error, appName: apps[appId]?.name);
+            }
+          }
+          if (newApp != null) {
+            updates.add(newApp);
+          }
+        }
+
+        Future<void> processSingleGroup(List<String> groupAppIds) async {
+          var localIndex = 0;
+          Future<void> worker() async {
+            while (true) {
+              final ci = localIndex;
+              if (ci >= groupAppIds.length) return;
+              localIndex += 1;
+              await processSingleApp(groupAppIds[ci]);
+            }
+          }
+          final wc = groupAppIds.length < maxParallelUpdateChecks
+              ? groupAppIds.length
+              : maxParallelUpdateChecks;
+          await Future.wait(
+            List.generate(wc, (_) => worker()),
+            eagerError: true,
+          );
+        }
+
+        Future<void> processBatchGroup(
+          String sourceName,
+          List<String> groupAppIds,
+        ) async {
+          if (groupAppIds.isEmpty) return;
+          var sampleApp = apps[groupAppIds.first]!.app;
+          var source = sourceProvider.getSource(
+            sampleApp.url,
+            overrideSource: sampleApp.overrideSource,
+          );
+          var chunkSize = source.batchUpdateChunkSize > 0
+              ? source.batchUpdateChunkSize
+              : groupAppIds.length;
+          for (var i = 0; i < groupAppIds.length; i += chunkSize) {
+            var chunk = groupAppIds.sublist(
+              i,
+              i + chunkSize > groupAppIds.length
+                  ? groupAppIds.length
+                  : i + chunkSize,
+            );
+            var urlToAppId = <String, String>{};
+            var standardUrls = <String>[];
+            for (var appId in chunk) {
+              var app = apps[appId]!.app;
+              var s = sourceProvider.getSource(
+                app.url,
+                overrideSource: app.overrideSource,
               );
-              appSaveCompleted = true;
-              final now = DateTime.now();
-              if (now.difference(lastProgressNotificationAt) >=
-                  progressNotificationInterval) {
-                lastProgressNotificationAt = now;
-                notifyListeners();
+              var stdUrl = s.standardizeUrl(app.url);
+              urlToAppId[stdUrl] = appId;
+              standardUrls.add(stdUrl);
+            }
+            try {
+              var batchResults = await source.batchGetLatestAPKDetails(
+                standardUrls,
+                sourceProvider.getDefaultValuesFromFormItems(
+                  source.combinedAppSpecificSettingFormItems,
+                ),
+              );
+              for (var entry in batchResults.entries) {
+                var appId = urlToAppId[entry.key];
+                if (appId == null) continue;
+                try {
+                  var newApp = await checkUpdate(
+                    appId,
+                    notifyListenersAfterSave: false,
+                    autoExportAfterSave: false,
+                    prefetchedInstalledInfo: prefetchedInstalledInfo,
+                    prefetchedAPKDetails: entry.value,
+                  );
+                  appSaveCompleted = true;
+                  final now = DateTime.now();
+                  if (now.difference(lastProgressNotificationAt) >=
+                      progressNotificationInterval) {
+                    lastProgressNotificationAt = now;
+                    notifyListeners();
+                  }
+                  if (newApp != null) {
+                    updates.add(newApp);
+                  }
+                } catch (error) {
+                  if ((error is RateLimitError ||
+                          error is SocketException) &&
+                      throwErrorsForRetry) {
+                    rethrow;
+                  }
+                  if (error is RepositoryRenamedError) {
+                    await updatePendingRepoRename(appId, error.newUrl);
+                  } else {
+                    errors.add(appId, error, appName: apps[appId]?.name);
+                  }
+                }
+              }
+              // Handle URLs not returned by batch
+              for (var url in standardUrls) {
+                if (!batchResults.containsKey(url)) {
+                  var missingAppId = urlToAppId[url]!;
+                  errors.add(
+                    missingAppId,
+                    ObtainiumError(
+                      tr('noReleaseFound'),
+                    ),
+                    appName: apps[missingAppId]?.name,
+                  );
+                }
               }
             } catch (error) {
               if ((error is RateLimitError || error is SocketException) &&
                   throwErrorsForRetry) {
                 rethrow;
               }
-              if (error is RepositoryRenamedError) {
-                await updatePendingRepoRename(appId, error.newUrl);
-              } else {
+              for (var appId in chunk) {
                 errors.add(appId, error, appName: apps[appId]?.name);
               }
-            }
-            if (newApp != null) {
-              updates.add(newApp);
             }
           }
         }
 
-        await Future.wait(
-          List.generate(workerCount, (unusedIndex) => runUpdateCheckWorker()),
-          eagerError: true,
-        );
+        var futures = <Future>[];
+        for (var entry in batchGroups.entries) {
+          futures.add(processBatchGroup(entry.key, entry.value));
+        }
+        for (var entry in singleGroups.entries) {
+          futures.add(processSingleGroup(entry.value));
+        }
+        await Future.wait(futures, eagerError: true);
         if (appSaveCompleted) {
           notifyListeners();
           export(isAuto: true);
