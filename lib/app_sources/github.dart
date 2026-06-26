@@ -762,6 +762,42 @@ class GitHub extends AppSource {
       if (targetRelease == null) {
         throw NoReleasesError();
       }
+      final String versionStringSource = getVersionStringSource(
+        additionalSettings,
+      );
+      String? selectedVersionSource;
+      if (versionStringSource == versionStringSourceAssetName) {
+        final apkUrls =
+            targetRelease['apkUrls'] as List<MapEntry<String, String>>;
+        if (apkUrls.isEmpty) {
+          throw NoVersionError();
+        }
+        selectedVersionSource = apkUrls.last.key;
+      } else if (versionStringSource == versionStringSourceReleaseTitle) {
+        selectedVersionSource =
+            targetRelease['name'] ?? targetRelease['tag_name'];
+      } else if (versionStringSource == versionStringSourceReleaseDate) {
+        selectedVersionSource = _getReleaseDateFromRelease(
+          targetRelease,
+          additionalSettings['useLatestAssetDateAsReleaseDate'] == true,
+        )?.toUtc().toIso8601String();
+        if (selectedVersionSource == null) {
+          throw NoVersionError();
+        }
+      } else if (versionStringSource == versionStringSourceReleaseCommitSha) {
+        selectedVersionSource = await getReleaseCommitSha(
+          targetRelease,
+          standardUrl,
+          additionalSettings,
+        );
+        if (selectedVersionSource == null) {
+          throw NoVersionError();
+        }
+      }
+      targetRelease['version'] =
+          selectedVersionSource ??
+          targetRelease['tag_name'] ??
+          targetRelease['name'];
       String? version = targetRelease['version'];
 
       DateTime? releaseDate = _getReleaseDateFromRelease(
@@ -1261,19 +1297,40 @@ class GitHub extends AppSource {
           results[url] = APKDetails(tr('noReleaseFound'), [], getAppNames(url));
           continue;
         }
-        var apkUrls = <MapEntry<String, String>>[];
-        if (targetRelease['assets'] != null) {
-          for (var asset in targetRelease['assets'] as List<dynamic>) {
-            var assetName = asset['name'] as String? ?? '';
-            var downloadUrl = asset['browser_download_url'] as String? ?? '';
-            if (assetName.isNotEmpty && downloadUrl.isNotEmpty) {
-              apkUrls.add(MapEntry(assetName, downloadUrl));
-            }
+        final String versionStringSource = getVersionStringSource(appSettings);
+        String? selectedVersionSource;
+        if (versionStringSource == versionStringSourceAssetName) {
+          final apkUrls =
+              targetRelease['apkUrls'] as List<MapEntry<String, String>>;
+          if (apkUrls.isNotEmpty) {
+            selectedVersionSource = apkUrls.last.key;
           }
+        } else if (versionStringSource == versionStringSourceReleaseTitle) {
+          selectedVersionSource =
+              targetRelease['name'] ?? targetRelease['tag_name'];
+        } else if (versionStringSource == versionStringSourceReleaseDate) {
+          selectedVersionSource = _getReleaseDateFromRelease(
+            targetRelease,
+            appSettings['useLatestAssetDateAsReleaseDate'] == true,
+          )?.toUtc().toIso8601String();
         }
+        final String version =
+            selectedVersionSource ?? targetRelease['tag_name'] as String? ?? '';
+        final apkUrls =
+            targetRelease['apkUrls'] as List<MapEntry<String, String>>;
+        final filteredAssets =
+            (targetRelease['filteredAssets'] as List<dynamic>?) ?? [];
+        final Map<String, int> sizeByName = {
+          for (final e in filteredAssets)
+            if (e['name'] != null && e['size'] != null)
+              e['name'] as String: (e['size'] as num).toInt(),
+        };
+        final int? apkSizeBytes = apkUrls.isNotEmpty
+            ? sizeByName[apkUrls.last.key]
+            : null;
         String? changeLog = targetRelease['body'] as String?;
         results[url] = APKDetails(
-          targetRelease['tag_name'] as String? ?? '',
+          version,
           apkUrls,
           getAppNames(url),
           releaseDate: targetRelease['published_at'] != null
@@ -1282,6 +1339,10 @@ class GitHub extends AppSource {
           changeLog: (changeLog != null && changeLog.isNotEmpty)
               ? changeLog
               : null,
+          allAssetUrls:
+              targetRelease['allAssetUrls'] as List<MapEntry<String, String>>,
+          rawReleaseTitleCandidates: outTitleCandidates,
+          apkSizeBytes: apkSizeBytes,
         );
       }
       return results;
