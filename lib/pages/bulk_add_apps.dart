@@ -10,6 +10,10 @@ class BulkAddAppsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const BulkAddWidget(standalone: true);
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final bool isLargeScreen = screenWidth >= 720 ||
+        (screenWidth >= 600 &&
+            MediaQuery.of(context).orientation == Orientation.landscape);
+    return BulkAddWidget(standalone: true, isLargeScreen: isLargeScreen);
   }
 }

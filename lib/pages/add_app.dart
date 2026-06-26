@@ -67,11 +67,58 @@ class AddAppPageState extends State<AddAppPage> {
       (_bulkWidgetKey.currentState?.isAdding ?? false);
 
   Future<bool> confirmCancelBulkScanForNavigation() async {
-    if (_mode != _AddMode.fromDevice) return true;
-    return _bulkWidgetKey.currentState?.confirmCancelScanForNavigation(
-          context,
-        ) ??
-        true;
+    if (_mode == _AddMode.fromDevice) {
+      final bool canNavigate = await _bulkWidgetKey.currentState
+              ?.confirmCancelScanForNavigation(context) ??
+          true;
+      if (canNavigate) {
+        _resetAllInputStates();
+      }
+      return canNavigate;
+    }
+
+    final bool isUrlDirty = _mode == _AddMode.byUrl && userInput.trim().isNotEmpty;
+    final bool isSearchDirty = _mode == _AddMode.search &&
+        (searchQuery.trim().isNotEmpty ||
+            _searchHasSearched ||
+            _searchResults.isNotEmpty);
+
+    if (isUrlDirty || isSearchDirty) {
+      final String titleKey = isUrlDirty
+          ? 'discardUnsavedChangesQuestion'
+          : 'resetSearchQuestion';
+      final String explanationKey = isUrlDirty
+          ? 'discardUnsavedChangesUrlExplanation'
+          : 'discardUnsavedChangesSearchExplanation';
+
+      final bool? discard = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext dialogContext) {
+          return AlertDialog(
+            title: Text(tr(titleKey)),
+            content: Text(tr(explanationKey)),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: Text(tr('cancel')),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: Text(tr('continue')),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (discard == true) {
+        _resetAllInputStates();
+        return true;
+      }
+      return false;
+    }
+
+    return true;
   }
 
   /// Called by [HomePageState] when the user presses back while this tab is
@@ -94,6 +141,7 @@ class AddAppPageState extends State<AddAppPage> {
   // ─── Search mode state ─────────────────────────────────────────────────
   bool searching = false;
   String searchQuery = '';
+  static final Map<String, Map<String, MapEntry<String, List<String>>>> _searchCache = {};
   // Searchable-source names the user has selected (null = not yet initialised)
   Set<String>? _searchSelectedStores;
   // Interleaved search results: key=URL/identifier, value=(sourceName, subtitleLines)
@@ -229,6 +277,21 @@ class AddAppPageState extends State<AddAppPage> {
     inferAppIdIfOptional = true;
     pickedCategories = [];
     _urlFieldController.clear();
+  }
+
+  void _resetAllInputStates() {
+    setState(() {
+      _resetUrlModeInput();
+      searching = false;
+      searchQuery = '';
+      _searchResults = {};
+      _searchHasSearched = false;
+      _searchResultFilter = '';
+      _byUrlOpenedFromSearchPick = false;
+      _searchSomeSourcesController.clear();
+      _searchResultFilterController.clear();
+      _mode = _AddMode.byUrl;
+    });
   }
 
   @override
@@ -927,6 +990,19 @@ class AddAppPageState extends State<AddAppPage> {
       _searchSomeSourcesFocusNode.unfocus();
       FocusManager.instance.primaryFocus?.unfocus();
       _searchResultFilterController.clear();
+
+      final String normalizedQuery = searchQuery.trim().toLowerCase();
+      if (_searchCache.containsKey(normalizedQuery)) {
+        setState(() {
+          _searchResults = Map.from(_searchCache[normalizedQuery]!);
+          _searchHasSearched = true;
+          _byUrlOpenedFromSearchPick = false;
+          _searchResultFilter = '';
+          searching = false;
+        });
+        return;
+      }
+
       setState(() {
         searching = true;
         _byUrlOpenedFromSearchPick = false;
@@ -1033,6 +1109,7 @@ class AddAppPageState extends State<AddAppPage> {
         setState(() {
           _searchResults = res;
           _searchHasSearched = true;
+          _searchCache[normalizedQuery] = res;
         });
       } catch (e) {
         if (!context.mounted) return;
@@ -1378,6 +1455,298 @@ class AddAppPageState extends State<AddAppPage> {
       );
     }
 
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final bool isLargeScreen = screenWidth >= 720 ||
+        (screenWidth >= 600 &&
+            MediaQuery.of(context).orientation == Orientation.landscape);
+
+    Widget buildModeTile(_AddMode modeObj, String title, IconData icon) {
+      final ColorScheme cs = Theme.of(context).colorScheme;
+      final bool selected = _mode == modeObj;
+
+      final Color containerColor = selected
+          ? cs.secondaryContainer
+          : cs.surfaceContainerHigh;
+      final Color contentColor = selected
+          ? cs.onSecondaryContainer
+          : cs.onSurface;
+
+      final Color iconBoxColor = selected
+          ? cs.primary.withValues(alpha: 0.16)
+          : cs.primaryContainer.withValues(alpha: 0.48);
+
+      final Color iconColor = selected ? cs.primary : cs.onSurfaceVariant;
+      final Color chevronColor = cs.onSurfaceVariant;
+
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8.0),
+        child: Container(
+          decoration: BoxDecoration(
+            color: containerColor,
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: Material(
+            type: MaterialType.transparency,
+            child: InkWell(
+              onTap: () async {
+                if (modeObj == _mode) return;
+                if (!await confirmCancelBulkScanForNavigation()) {
+                  return;
+                }
+                setState(() {
+                  _byUrlOpenedFromSearchPick = false;
+                  _mode = modeObj;
+                });
+              },
+              borderRadius: BorderRadius.circular(28),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: iconBoxColor,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(icon, color: iconColor, size: 18),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: TextStyle(
+                          fontWeight: selected
+                              ? FontWeight.w600
+                              : FontWeight.w500,
+                          color: contentColor,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      color: chevronColor,
+                      size: 20,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (isLargeScreen) {
+      return Scaffold(
+        backgroundColor: addScheme.surface,
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (settingsProvider.useGradientBackground)
+              buildGradientBackground(),
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: Scaffold(
+                    backgroundColor: settingsProvider.useGradientBackground
+                        ? Colors.transparent
+                        : addScheme.surface,
+                    body: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SizedBox(
+                          height: MediaQuery.paddingOf(context).top + kToolbarHeight,
+                          child: Padding(
+                            padding: EdgeInsetsDirectional.only(
+                              start: 20,
+                              top: MediaQuery.paddingOf(context).top,
+                              end: 20,
+                            ),
+                            child: Align(
+                              alignment: AlignmentDirectional.centerStart,
+                              child: Text(
+                                tr('addApp'),
+                                style: Theme.of(context).textTheme.titleLarge!.copyWith(
+                                  color: addScheme.onSurface,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              buildModeTile(
+                                _AddMode.byUrl,
+                                tr('addByUrl'),
+                                Icons.link_rounded,
+                              ),
+                              buildModeTile(
+                                _AddMode.search,
+                                tr('addBySearch'),
+                                Icons.search_rounded,
+                              ),
+                              buildModeTile(
+                                _AddMode.fromDevice,
+                                tr('addFromDevice'),
+                                Icons.phone_android_rounded,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                VerticalDivider(
+                  width: 1,
+                  thickness: 1,
+                  color: addScheme.outlineVariant.withAlpha(50),
+                ),
+                Expanded(
+                  flex: 4,
+                  child: Scaffold(
+                    backgroundColor: settingsProvider.useGradientBackground
+                        ? Colors.transparent
+                        : addScheme.surface,
+                    body: Builder(
+                      builder: (context) {
+                        if (_mode == _AddMode.fromDevice) {
+                          return SafeArea(
+                            top: true,
+                            bottom: false,
+                            child: BulkAddWidget(
+                              key: _bulkWidgetKey,
+                              isLargeScreen: isLargeScreen,
+                              onComplete: () => setState(() {
+                                _byUrlOpenedFromSearchPick = false;
+                                _mode = _AddMode.byUrl;
+                              }),
+                            ),
+                          );
+                        }
+
+                        return CustomScrollView(
+                          key: PageStorageKey<String>(
+                            'add-app-detail-${_mode.name}-scroll',
+                          ),
+                          slivers: [
+                            SliverSafeArea(
+                              top: true,
+                              bottom: false,
+                              sliver: SliverPadding(
+                                padding: const EdgeInsets.all(16),
+                                sliver: SliverToBoxAdapter(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      if (_mode == _AddMode.byUrl) ...[
+                                        const SizedBox(height: 8),
+                                        getUrlInputRow(),
+                                        const SizedBox(height: 16),
+                                        if (pickedSource != null)
+                                          getHTMLSourceOverrideDropdown(),
+                                        if (pickedSource != null)
+                                          FutureBuilder(
+                                            builder: (ctx, val) {
+                                              return val.data != null &&
+                                                      val.data!.isNotEmpty
+                                                  ? Text(
+                                                      val.data!,
+                                                      style: Theme.of(
+                                                        context,
+                                                      ).textTheme.bodySmall,
+                                                    )
+                                                  : const SizedBox();
+                                            },
+                                            future: pickedSource
+                                                ?.getSourceNote(),
+                                          ),
+                                        if (pickedSource != null)
+                                          getAdditionalOptsCol(),
+                                      ],
+                                      if (_mode == _AddMode.search) ...[
+                                        const SizedBox(height: 8),
+                                        getSearchBarRow(),
+                                        const SizedBox(height: 12),
+                                        Text(
+                                          tr('storesToSearch'),
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .labelMedium
+                                              ?.copyWith(
+                                                color: Theme.of(
+                                                  context,
+                                                ).colorScheme.onSurfaceVariant,
+                                              ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        getSearchStoreChips(),
+                                        getSearchResultsList(),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            if (settingsProvider.progressiveBlurEnabled)
+                              SliverToBoxAdapter(
+                                child: SizedBox(height: bottomChromeClearance),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            Align(
+              alignment: Alignment.bottomRight,
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  _fabHorizontalMargin,
+                  0,
+                  _fabHorizontalMargin,
+                  appVaultFabBottomPadding,
+                ),
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween<double>(end: showBottomActionFab ? 1 : 0),
+                  duration: const Duration(milliseconds: 320),
+                  curve: Curves.easeInOutCubicEmphasized,
+                  builder: (context, animationValue, child) {
+                    return IgnorePointer(
+                      ignoring: !showBottomActionFab,
+                      child: Opacity(opacity: animationValue, child: child),
+                    );
+                  },
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 180),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    transitionBuilder: (child, animation) {
+                      return FadeTransition(opacity: animation, child: child);
+                    },
+                    child: buildBottomActionFab(),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     // Device mode uses a plain Column so the BulkAddWidget always gets a clean
     // bounded height via Expanded, with no outer CustomScrollView that could
     // steal scroll gestures or push content off-screen.
@@ -1415,6 +1784,7 @@ class AddAppPageState extends State<AddAppPage> {
                 Expanded(
                   child: BulkAddWidget(
                     key: _bulkWidgetKey,
+                    isLargeScreen: isLargeScreen,
                     onComplete: () => setState(() {
                       _byUrlOpenedFromSearchPick = false;
                       _mode = _AddMode.byUrl;

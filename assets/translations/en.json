@@ -750,5 +750,9 @@
     "unverifiedBuild": "Unverified Build",
     "verificationNoData": "No Verification Data",
     "verificationCantCheck": "Can't Check",
-    "security": "Security"
+    "security": "Security",
+    "discardUnsavedChangesQuestion": "Discard changes?",
+    "resetSearchQuestion": "Reset search?",
+    "discardUnsavedChangesUrlExplanation": "This app is not added to your list yet. Switching tabs will discard it. Continue?",
+    "discardUnsavedChangesSearchExplanation": "Switching tabs will reset this search page. Continue?"
 }
