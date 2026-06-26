@@ -1166,12 +1166,12 @@ class GitHub extends AppSource {
 
   @override
   Future<Map<String, APKDetails>> batchGetLatestAPKDetails(
-    List<String> standardUrls,
-    Map<String, dynamic> additionalSettings,
+    Map<String, Map<String, dynamic>> urlToSettings,
   ) async {
-    if (standardUrls.isEmpty) {
+    if (urlToSettings.isEmpty) {
       return {};
     }
+    var standardUrls = urlToSettings.keys.toList();
     var urlToAlias = <String, String>{};
     var queryParts = <String>[];
     for (int i = 0; i < standardUrls.length; i++) {
@@ -1204,12 +1204,13 @@ class GitHub extends AppSource {
       }''');
     }
     var query = '{\n${queryParts.join('\n')}\n}';
-    var graphqlUrl = '${await getAPIHost(additionalSettings)}/graphql';
+    var defaultSettings = urlToSettings.values.first;
+    var graphqlUrl = '${await getAPIHost(defaultSettings)}/graphql';
     Map<String, dynamic> postBody = {'query': query};
     try {
       var response = await sourceRequest(
         graphqlUrl,
-        additionalSettings,
+        defaultSettings,
         postBody: postBody,
       );
       if (response.statusCode != 200) {
@@ -1231,7 +1232,9 @@ class GitHub extends AppSource {
         return {};
       }
       Map<String, APKDetails> results = {};
-      for (var url in standardUrls) {
+      for (var entry in urlToSettings.entries) {
+        var url = entry.key;
+        var appSettings = entry.value;
         var alias = urlToAlias[url]!;
         var repoData = data[alias] as Map<String, dynamic>?;
         if (repoData == null) {
@@ -1250,7 +1253,7 @@ class GitHub extends AppSource {
         dynamic targetRelease = _findTargetRelease(
           releases,
           url,
-          additionalSettings,
+          appSettings,
           <String, String>{},
           outTitleCandidates,
         );

@@ -4732,7 +4732,7 @@ class AppsProvider with ChangeNotifier {
                   : i + chunkSize,
             );
             var urlToAppId = <String, String>{};
-            var standardUrls = <String>[];
+            var urlToSettings = <String, Map<String, dynamic>>{};
             for (var appId in chunk) {
               var app = apps[appId]!.app;
               var s = sourceProvider.getSource(
@@ -4741,14 +4741,13 @@ class AppsProvider with ChangeNotifier {
               );
               var stdUrl = s.standardizeUrl(app.url);
               urlToAppId[stdUrl] = appId;
-              standardUrls.add(stdUrl);
+              urlToSettings[stdUrl] = Map<String, dynamic>.from(
+                app.additionalSettings,
+              );
             }
             try {
               var batchResults = await source.batchGetLatestAPKDetails(
-                standardUrls,
-                getDefaultValuesFromFormItems(
-                  source.combinedAppSpecificSettingFormItems,
-                ),
+                urlToSettings,
               );
               for (var entry in batchResults.entries) {
                 var appId = urlToAppId[entry.key];
@@ -4784,7 +4783,7 @@ class AppsProvider with ChangeNotifier {
                 }
               }
               // Handle URLs not returned by batch
-              for (var url in standardUrls) {
+              for (var url in urlToSettings.keys) {
                 if (!batchResults.containsKey(url)) {
                   var missingAppId = urlToAppId[url]!;
                   errors.add(

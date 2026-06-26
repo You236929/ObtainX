@@ -1041,8 +1041,7 @@ abstract class AppSource {
   }
 
   Future<Map<String, APKDetails>> batchGetLatestAPKDetails(
-    List<String> standardUrls,
-    Map<String, dynamic> additionalSettings,
+    Map<String, Map<String, dynamic>> urlToSettings,
   ) {
     throw UnsupportedError('$name does not support batch update checking');
   }
