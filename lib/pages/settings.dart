@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:obtainium/layout_breakpoints.dart';
 import 'package:obtainium/widgets/help_hint_icon.dart';
 import 'package:obtainium/components/app_dropdown_field.dart';
 import 'package:obtainium/components/custom_app_bar.dart';
@@ -60,6 +61,21 @@ class SettingsPage extends StatefulWidget {
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
+}
+
+/// One entry in the large-screen settings master list (and its detail pane).
+class _SettingsCategory {
+  const _SettingsCategory({
+    required this.key,
+    required this.title,
+    required this.icon,
+    required this.widget,
+  });
+
+  final String key;
+  final String title;
+  final IconData icon;
+  final Widget widget;
 }
 
 class _SettingsPageState extends State<SettingsPage> {
@@ -338,60 +354,60 @@ class _SettingsPageState extends State<SettingsPage> {
     }
 
     final double screenWidth = MediaQuery.of(context).size.width;
-    final bool isLargeScreen = screenWidth >= 720;
+    final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint;
 
-    final List<Map<String, dynamic>> categoriesList = [
-      {
-        'key': 'updates',
-        'title': tr('updates'),
-        'icon': Icons.update_rounded,
-        'widget': _UpdatesSection(cs: cs, androidInfo: _androidInfo),
-      },
+    final List<_SettingsCategory> categoriesList = [
+      _SettingsCategory(
+        key: 'updates',
+        title: tr('updates'),
+        icon: Icons.update_rounded,
+        widget: _UpdatesSection(cs: cs, androidInfo: _androidInfo),
+      ),
       if (sourceProvider.sources.any(
         (s) => s.sourceConfigSettingFormItems.isNotEmpty,
       ))
-        {
-          'key': 'sourceSpecific',
-          'title': tr('sourceSpecific'),
-          'icon': Icons.dns_rounded,
-          'widget': const _SourceSpecificSection(),
-        },
-      {
-        'key': 'themes',
-        'title': tr('settingsThemesSection'),
-        'icon': Icons.palette_rounded,
-        'widget': _ThemesSettingsSection(androidInfoFuture: _androidInfo),
-      },
-      {
-        'key': 'appearance',
-        'title': tr('appearance'),
-        'icon': Icons.tune_rounded,
-        'widget': _AppearanceSection(androidInfo: _androidInfo),
-      },
-      {
-        'key': 'gestures',
-        'title': tr('gestures'),
-        'icon': Icons.swipe_rounded,
-        'widget': const _GesturesSection(),
-      },
-      {
-        'key': 'categories',
-        'title': tr('categories'),
-        'icon': Icons.label_rounded,
-        'widget': const _CategoriesSection(),
-      },
-      {
-        'key': 'about',
-        'title': tr('about'),
-        'icon': Icons.info_rounded,
-        'widget': settingsCard([AboutSectionContent(colorScheme: cs)]),
-      },
+        _SettingsCategory(
+          key: 'sourceSpecific',
+          title: tr('sourceSpecific'),
+          icon: Icons.dns_rounded,
+          widget: const _SourceSpecificSection(),
+        ),
+      _SettingsCategory(
+        key: 'themes',
+        title: tr('settingsThemesSection'),
+        icon: Icons.palette_rounded,
+        widget: _ThemesSettingsSection(androidInfoFuture: _androidInfo),
+      ),
+      _SettingsCategory(
+        key: 'appearance',
+        title: tr('appearance'),
+        icon: Icons.tune_rounded,
+        widget: _AppearanceSection(androidInfo: _androidInfo),
+      ),
+      _SettingsCategory(
+        key: 'gestures',
+        title: tr('gestures'),
+        icon: Icons.swipe_rounded,
+        widget: const _GesturesSection(),
+      ),
+      _SettingsCategory(
+        key: 'categories',
+        title: tr('categories'),
+        icon: Icons.label_rounded,
+        widget: const _CategoriesSection(),
+      ),
+      _SettingsCategory(
+        key: 'about',
+        title: tr('about'),
+        icon: Icons.info_rounded,
+        widget: settingsCard([AboutSectionContent(colorScheme: cs)]),
+      ),
     ];
 
-    Widget buildCategoryTile(Map<String, dynamic> categoryObj) {
-      final String key = categoryObj['key'] as String;
-      final String title = categoryObj['title'] as String;
-      final IconData icon = categoryObj['icon'] as IconData;
+    Widget buildCategoryTile(_SettingsCategory categoryObj) {
+      final String key = categoryObj.key;
+      final String title = categoryObj.title;
+      final IconData icon = categoryObj.icon;
       final bool selected = _selectedCategory == key;
 
       final Color containerColor = selected
@@ -469,12 +485,12 @@ class _SettingsPageState extends State<SettingsPage> {
     }
 
     if (isLargeScreen) {
-      _selectedCategory ??= categoriesList.first['key'] as String;
-      if (!categoriesList.any((c) => c['key'] == _selectedCategory)) {
-        _selectedCategory = categoriesList.first['key'] as String;
+      _selectedCategory ??= categoriesList.first.key;
+      if (!categoriesList.any((c) => c.key == _selectedCategory)) {
+        _selectedCategory = categoriesList.first.key;
       }
       final selectedCategoryObj = categoriesList.firstWhere(
-        (c) => c['key'] == _selectedCategory,
+        (c) => c.key == _selectedCategory,
         orElse: () => categoriesList.first,
       );
 
@@ -493,17 +509,7 @@ class _SettingsPageState extends State<SettingsPage> {
             child: sp.useGradientBackground
                 ? DecoratedBox(
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        stops: const [0, 0.38, 0.72, 1],
-                        colors: [
-                          cs.schemePageGradientTopColor,
-                          cs.schemePageGradientMidColor,
-                          cs.surface,
-                          cs.surface,
-                        ],
-                      ),
+                      gradient: cs.schemePageBackgroundGradient,
                     ),
                   )
                 : ColoredBox(color: cs.surface),
@@ -534,17 +540,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           Positioned.fill(
                             child: DecoratedBox(
                               decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  stops: const [0, 0.38, 0.72, 1],
-                                  colors: [
-                                    cs.schemePageGradientTopColor,
-                                    cs.schemePageGradientMidColor,
-                                    cs.surface,
-                                    cs.surface,
-                                  ],
-                                ),
+                                gradient: cs.schemePageBackgroundGradient,
                               ),
                             ),
                           ),
@@ -608,23 +604,13 @@ class _SettingsPageState extends State<SettingsPage> {
                         Positioned.fill(
                           child: DecoratedBox(
                             decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                stops: const [0, 0.38, 0.72, 1],
-                                colors: [
-                                  cs.schemePageGradientTopColor,
-                                  cs.schemePageGradientMidColor,
-                                  cs.surface,
-                                  cs.surface,
-                                ],
-                              ),
+                              gradient: cs.schemePageBackgroundGradient,
                             ),
                           ),
                         ),
                       CustomScrollView(
                         key: ValueKey(
-                          'settings-detail-${selectedCategoryObj['key']}',
+                          'settings-detail-${selectedCategoryObj.key}',
                         ),
                         slivers: [
                           // No top app bar in the detail pane: it carried no
@@ -637,7 +623,7 @@ class _SettingsPageState extends State<SettingsPage> {
                             sliver: SliverPadding(
                               padding: const EdgeInsets.all(16),
                               sliver: SliverToBoxAdapter(
-                                child: selectedCategoryObj['widget'] as Widget,
+                                child: selectedCategoryObj.widget,
                               ),
                             ),
                           ),
@@ -668,17 +654,7 @@ class _SettingsPageState extends State<SettingsPage> {
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    stops: const [0, 0.38, 0.72, 1],
-                    colors: [
-                      cs.schemePageGradientTopColor,
-                      cs.schemePageGradientMidColor,
-                      cs.surface,
-                      cs.surface,
-                    ],
-                  ),
+                  gradient: cs.schemePageBackgroundGradient,
                 ),
               ),
             ),
@@ -1741,7 +1717,7 @@ class AboutSectionContent extends StatelessWidget {
     final SettingsProvider sp = context.read<SettingsProvider>();
     final TextTheme textTheme = Theme.of(context).textTheme;
     final double screenWidth = MediaQuery.of(context).size.width;
-    final bool isLargeScreen = screenWidth >= 720;
+    final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint;
 
     return Stack(
       children: [

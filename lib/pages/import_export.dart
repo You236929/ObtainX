@@ -655,17 +655,7 @@ class _ImportExportPageState extends State<ImportExportPage> {
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    stops: const [0, 0.38, 0.72, 1],
-                    colors: [
-                      impScheme.schemePageGradientTopColor,
-                      impScheme.schemePageGradientMidColor,
-                      impScheme.surface,
-                      impScheme.surface,
-                    ],
-                  ),
+                  gradient: impScheme.schemePageBackgroundGradient,
                 ),
               ),
             ),

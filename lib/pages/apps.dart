@@ -7,12 +7,17 @@ import 'package:expressive_loading_indicator/expressive_loading_indicator.dart';
 import 'package:expressive_refresh/expressive_refresh.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart'
-    show ScrollCacheExtent, RenderSliverMainAxisGroup, SliverPhysicalParentData, RenderSliver;
+    show
+        ScrollCacheExtent,
+        RenderSliverMainAxisGroup,
+        SliverPhysicalParentData,
+        RenderSliver;
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:progress_indicator_m3e/progress_indicator_m3e.dart';
 import 'package:obtainium/components/bulk_category_editor.dart';
 import 'package:obtainium/components/category_action_chip.dart';
+import 'package:obtainium/layout_breakpoints.dart';
 import 'package:obtainium/components/custom_app_bar.dart';
 import 'package:obtainium/components/generated_form.dart';
 import 'package:obtainium/components/generated_form_modal.dart';
@@ -92,34 +97,6 @@ Color _appsListGroupHeaderColor(ColorScheme scheme) {
   return header;
 }
 
-/// Collapsed group card; expanded header row uses inner radius on bottom edge.
-RoundedRectangleBorder _appsExpansionTileCollapsedShape(double cardRadius) {
-  return RoundedRectangleBorder(
-    borderRadius: BorderRadius.all(Radius.circular(cardRadius)),
-  );
-}
-
-RoundedRectangleBorder _appsExpansionTileExpandedShape(double cardRadius) {
-  return RoundedRectangleBorder(
-    borderRadius: BorderRadius.only(
-      topLeft: Radius.circular(cardRadius),
-      topRight: Radius.circular(cardRadius),
-      bottomLeft: const Radius.circular(kM3eInnerRadius),
-      bottomRight: const Radius.circular(kM3eInnerRadius),
-    ),
-  );
-}
-
-RoundedRectangleBorder _appsExpansionGroupMaterialShape(
-  ColorScheme scheme,
-  double cardRadius,
-) {
-  return RoundedRectangleBorder(
-    borderRadius: BorderRadius.circular(cardRadius),
-    side: m3ePureBlackOutlineSide(scheme, alpha: 0.22),
-  );
-}
-
 class _AppsGroupHeaderDelegate extends SliverPersistentHeaderDelegate {
   final String title;
   final int count;
@@ -186,7 +163,9 @@ class _AppsGroupHeaderDelegate extends SliverPersistentHeaderDelegate {
                 onTap: onTap,
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                 leading: Icon(
-                  isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                  isExpanded
+                      ? Icons.keyboard_arrow_up
+                      : Icons.keyboard_arrow_down,
                   color: colorScheme.onSurfaceVariant,
                 ),
                 title: Text(
@@ -232,7 +211,10 @@ class _ZOrderSliverMainAxisGroup extends SliverMainAxisGroup {
   }
 
   @override
-  void updateRenderObject(BuildContext context, covariant _RenderZOrderSliverMainAxisGroup renderObject) {
+  void updateRenderObject(
+    BuildContext context,
+    covariant _RenderZOrderSliverMainAxisGroup renderObject,
+  ) {
     renderObject.cardRadius = cardRadius;
   }
 }
@@ -240,9 +222,7 @@ class _ZOrderSliverMainAxisGroup extends SliverMainAxisGroup {
 class _RenderZOrderSliverMainAxisGroup extends RenderSliverMainAxisGroup {
   double cardRadius;
 
-  _RenderZOrderSliverMainAxisGroup({
-    required this.cardRadius,
-  });
+  _RenderZOrderSliverMainAxisGroup({required this.cardRadius});
 
   @override
   void paint(PaintingContext context, Offset offset) {
@@ -259,7 +239,8 @@ class _RenderZOrderSliverMainAxisGroup extends RenderSliverMainAxisGroup {
     double headerTop = 0.0;
     if (children.isNotEmpty) {
       final RenderSliver first = children[0];
-      final SliverPhysicalParentData firstParentData = first.parentData! as SliverPhysicalParentData;
+      final SliverPhysicalParentData firstParentData =
+          first.parentData! as SliverPhysicalParentData;
       // Visual top of the header card within the group's coordinate space (adding 6.0 for top padding).
       headerTop = firstParentData.paintOffset.dy + 6.0;
     }
@@ -268,8 +249,9 @@ class _RenderZOrderSliverMainAxisGroup extends RenderSliverMainAxisGroup {
     for (int i = 1; i < children.length; i++) {
       final RenderSliver child = children[i];
       if (child.geometry?.visible == true) {
-        final SliverPhysicalParentData childParentData = child.parentData! as SliverPhysicalParentData;
-        
+        final SliverPhysicalParentData childParentData =
+            child.parentData! as SliverPhysicalParentData;
+
         final Rect bounds = Rect.fromLTRB(
           12.0,
           headerTop,
@@ -283,15 +265,12 @@ class _RenderZOrderSliverMainAxisGroup extends RenderSliverMainAxisGroup {
           topRight: Radius.circular(cardRadius),
         );
 
-        context.pushClipRRect(
-          needsCompositing,
-          offset,
-          bounds,
-          clipRRect,
-          (PaintingContext context, Offset offset) {
-            context.paintChild(child, offset + childParentData.paintOffset);
-          },
-        );
+        context.pushClipRRect(needsCompositing, offset, bounds, clipRRect, (
+          PaintingContext context,
+          Offset offset,
+        ) {
+          context.paintChild(child, offset + childParentData.paintOffset);
+        });
       }
     }
 
@@ -299,32 +278,12 @@ class _RenderZOrderSliverMainAxisGroup extends RenderSliverMainAxisGroup {
     if (children.isNotEmpty) {
       final RenderSliver first = children[0];
       if (first.geometry?.visible == true) {
-        final SliverPhysicalParentData childParentData = first.parentData! as SliverPhysicalParentData;
+        final SliverPhysicalParentData childParentData =
+            first.parentData! as SliverPhysicalParentData;
         context.paintChild(first, offset + childParentData.paintOffset);
       }
     }
   }
-}
-
-Widget _appsGroupedExpansionListBody({
-  required ColorScheme scheme,
-  required List<Widget> tiles,
-}) {
-  return ClipRRect(
-    borderRadius: const BorderRadius.vertical(
-      top: Radius.circular(kM3eInnerRadius),
-    ),
-    child: ColoredBox(
-      color: m3eGroupedListBackdropFill(scheme),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: kM3eHeaderToFirstCardGap),
-          ...tiles,
-        ],
-      ),
-    ),
-  );
 }
 
 // Android ApplicationInfo flag constants used for app type classification.
@@ -587,7 +546,7 @@ class _AppListItem extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final double screenWidth = MediaQuery.of(context).size.width;
-    final bool isLargeScreen = screenWidth >= 720;
+    final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint;
     final bool hideVersionAndChangelog =
         isLargeScreen &&
         MediaQuery.of(context).orientation == Orientation.portrait;
@@ -2518,10 +2477,13 @@ class AppsPageState extends State<AppsPage> {
         isDense: true,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(30)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        suffix: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            GestureDetector(
+        suffixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+        suffixIcon: Padding(
+          padding: const EdgeInsetsDirectional.only(end: 10),
+          child: Align(
+            alignment: Alignment.center,
+            widthFactor: 1,
+            child: GestureDetector(
               onTap: showFilterSheet,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
@@ -2557,7 +2519,7 @@ class AppsPageState extends State<AppsPage> {
                 ),
               ),
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -3129,14 +3091,29 @@ class AppsPageState extends State<AppsPage> {
     var listedApps = _listedAppsCache;
 
     final double screenWidth = MediaQuery.of(context).size.width;
-    final bool isLargeScreen = screenWidth >= 720;
+    final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint;
 
+    // The two-panel layout needs an effective selection, but mutating
+    // [selectedAppId] during build is a Flutter anti-pattern. Derive it locally
+    // for this frame, then reconcile the persisted field after the frame so
+    // taps and later reads stay consistent.
+    String? effectiveSelectedAppId = selectedAppId;
     if (isLargeScreen) {
-      if (selectedAppId == null && listedApps.isNotEmpty) {
-        selectedAppId = listedApps.first.app.id;
-      } else if (selectedAppId != null &&
-          !listedApps.any((sa) => sa.app.id == selectedAppId)) {
-        selectedAppId = listedApps.isNotEmpty ? listedApps.first.app.id : null;
+      if (effectiveSelectedAppId == null && listedApps.isNotEmpty) {
+        effectiveSelectedAppId = listedApps.first.app.id;
+      } else if (effectiveSelectedAppId != null &&
+          !listedApps.any((sa) => sa.app.id == effectiveSelectedAppId)) {
+        effectiveSelectedAppId = listedApps.isNotEmpty
+            ? listedApps.first.app.id
+            : null;
+      }
+      if (effectiveSelectedAppId != selectedAppId) {
+        final String? reconciled = effectiveSelectedAppId;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && selectedAppId != reconciled) {
+            setState(() => selectedAppId = reconciled);
+          }
+        });
       }
     }
 
@@ -3628,7 +3605,7 @@ class AppsPageState extends State<AppsPage> {
           : null;
 
       final double screenWidth = MediaQuery.of(context).size.width;
-      final bool isLargeScreen = screenWidth >= 720;
+      final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint;
 
       // Builds the row visual given the callback that should fire when the
       // user taps a non-selected row. Used by both the OpenContainer path
@@ -3650,7 +3627,7 @@ class AppsPageState extends State<AppsPage> {
           isSelected:
               selectedAppIds.contains(appId) ||
               (isLargeScreen &&
-                  selectedAppId == appId &&
+                  effectiveSelectedAppId == appId &&
                   selectedAppIds.isEmpty),
           showCheckmark: selectedAppIds.contains(appId),
           areDownloadsRunning: downloadsRunning,
@@ -3840,9 +3817,18 @@ class AppsPageState extends State<AppsPage> {
                     bottom: Radius.circular(appsListGroupCardRadius),
                   ),
                   border: Border(
-                    left: m3ePureBlackOutlineSide(theme.colorScheme, alpha: 0.22),
-                    right: m3ePureBlackOutlineSide(theme.colorScheme, alpha: 0.22),
-                    bottom: m3ePureBlackOutlineSide(theme.colorScheme, alpha: 0.22),
+                    left: m3ePureBlackOutlineSide(
+                      theme.colorScheme,
+                      alpha: 0.22,
+                    ),
+                    right: m3ePureBlackOutlineSide(
+                      theme.colorScheme,
+                      alpha: 0.22,
+                    ),
+                    bottom: m3ePureBlackOutlineSide(
+                      theme.colorScheme,
+                      alpha: 0.22,
+                    ),
                   ),
                 ),
                 sliver: SliverPadding(
@@ -4183,6 +4169,63 @@ class AppsPageState extends State<AppsPage> {
       Navigator.of(context).pop();
     }
 
+    // Shared bulk-action bodies, used by both the phone "more options" dialog
+    // and the large-screen action pane. They intentionally do not dismiss any
+    // surface — the phone dialog pops at its own call sites; the pane stays.
+    downloadSelectedAppAssets() {
+      appsProvider
+          .downloadAppAssets(
+            selectedApps.map((e) => e.id).toList(),
+            globalNavigatorKey.currentContext ?? context,
+          )
+          .catchError((e) {
+            showError(e, globalNavigatorKey.currentContext ?? context);
+            return <String>[];
+          });
+    }
+
+    shareSelectedAppUrls() {
+      String urls = '';
+      for (var a in selectedApps) {
+        urls += '${a.url}\n';
+      }
+      urls = urls.substring(0, urls.length - 1);
+      SharePlus.instance.share(
+        ShareParams(text: urls, subject: 'ObtainX - ${tr('appsString')}'),
+      );
+    }
+
+    shareSelectedAppConfigLinks() {
+      String urls = '';
+      for (var a in selectedApps) {
+        urls +=
+            'https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/${Uri.encodeComponent(jsonEncode({'id': a.id, 'url': a.url, 'author': a.author, 'name': a.name, 'preferredApkIndex': a.preferredApkIndex, 'additionalSettings': jsonEncode(a.additionalSettings), 'overrideSource': a.overrideSource}))}\n\n';
+      }
+      SharePlus.instance.share(
+        ShareParams(text: urls, subject: 'ObtainX - ${tr('appsString')}'),
+      );
+    }
+
+    exportSelectedApps() {
+      var encoder = const JsonEncoder.withIndent("    ");
+      var exportJSON = encoder.convert(
+        appsProvider.generateExportJSON(
+          appIds: selectedApps.map((e) => e.id).toList(),
+          overrideExportSettings: 0,
+        ),
+      );
+      String fn =
+          '${tr('obtainiumExportHyphenatedLowercase')}-${DateTime.now().toIso8601String().replaceAll(':', '-')}-count-${selectedApps.length}';
+      XFile f = XFile.fromData(
+        Uint8List.fromList(utf8.encode(exportJSON)),
+        mimeType: 'application/json',
+        name: fn,
+      );
+      SharePlus.instance.share(
+        ShareParams(files: [f], fileNameOverrides: ['$fn.json']),
+      );
+    }
+
     showMoreOptionsDialog() {
       return showDialog(
         context: context,
@@ -4214,17 +4257,7 @@ class AppsPageState extends State<AppsPage> {
                   const Divider(),
                   TextButton(
                     onPressed: () {
-                      String urls = '';
-                      for (var a in selectedApps) {
-                        urls += '${a.url}\n';
-                      }
-                      urls = urls.substring(0, urls.length - 1);
-                      SharePlus.instance.share(
-                        ShareParams(
-                          text: urls,
-                          subject: 'ObtainX - ${tr('appsString')}',
-                        ),
-                      );
+                      shareSelectedAppUrls();
                       Navigator.of(context).pop();
                     },
                     child: Text(
@@ -4236,19 +4269,7 @@ class AppsPageState extends State<AppsPage> {
                   TextButton(
                     onPressed: selectedAppIds.isEmpty
                         ? null
-                        : () {
-                            String urls = '';
-                            for (var a in selectedApps) {
-                              urls +=
-                                  'https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/${Uri.encodeComponent(jsonEncode({'id': a.id, 'url': a.url, 'author': a.author, 'name': a.name, 'preferredApkIndex': a.preferredApkIndex, 'additionalSettings': jsonEncode(a.additionalSettings), 'overrideSource': a.overrideSource}))}\n\n';
-                            }
-                            SharePlus.instance.share(
-                              ShareParams(
-                                text: urls,
-                                subject: 'ObtainX - ${tr('appsString')}',
-                              ),
-                            );
-                          },
+                        : shareSelectedAppConfigLinks,
                     child: Text(
                       tr('shareAppConfigLinks'),
                       textAlign: TextAlign.center,
@@ -4258,28 +4279,7 @@ class AppsPageState extends State<AppsPage> {
                   TextButton(
                     onPressed: selectedAppIds.isEmpty
                         ? null
-                        : () {
-                            var encoder = const JsonEncoder.withIndent("    ");
-                            var exportJSON = encoder.convert(
-                              appsProvider.generateExportJSON(
-                                appIds: selectedApps.map((e) => e.id).toList(),
-                                overrideExportSettings: 0,
-                              ),
-                            );
-                            String fn =
-                                '${tr('obtainiumExportHyphenatedLowercase')}-${DateTime.now().toIso8601String().replaceAll(':', '-')}-count-${selectedApps.length}';
-                            XFile f = XFile.fromData(
-                              Uint8List.fromList(utf8.encode(exportJSON)),
-                              mimeType: 'application/json',
-                              name: fn,
-                            );
-                            SharePlus.instance.share(
-                              ShareParams(
-                                files: [f],
-                                fileNameOverrides: ['$fn.json'],
-                              ),
-                            );
-                          },
+                        : exportSelectedApps,
                     child: Text(
                       '${tr('share')} - ${tr('obtainiumExport')}',
                       textAlign: TextAlign.center,
@@ -4288,18 +4288,7 @@ class AppsPageState extends State<AppsPage> {
                   const Divider(),
                   TextButton(
                     onPressed: () {
-                      appsProvider
-                          .downloadAppAssets(
-                            selectedApps.map((e) => e.id).toList(),
-                            globalNavigatorKey.currentContext ?? context,
-                          )
-                          .catchError(
-                            // ignore: invalid_return_type_for_catch_error
-                            (e) => showError(
-                              e,
-                              globalNavigatorKey.currentContext ?? context,
-                            ),
-                          );
+                      downloadSelectedAppAssets();
                       Navigator.of(context).pop();
                     },
                     child: Text(
@@ -4855,41 +4844,33 @@ class AppsPageState extends State<AppsPage> {
             if (!isInUpdatesGroup(listedApps[i])) i,
         ];
         final flatSliverList = SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) {
-              return flatListAppRow(
-                nonUpdatesIndices[index],
-                index,
-                nonUpdatesIndices.length,
-                spacerBeforeFirstRow: pinUpdatesEnabled && index == 0,
-                spacerAfterLastRow: !pinUpdatesEnabled && index == nonUpdatesIndices.length - 1,
-              );
-            },
-            childCount: nonUpdatesIndices.length,
-          ),
+          delegate: SliverChildBuilderDelegate((context, index) {
+            return flatListAppRow(
+              nonUpdatesIndices[index],
+              index,
+              nonUpdatesIndices.length,
+              spacerBeforeFirstRow: pinUpdatesEnabled && index == 0,
+              spacerAfterLastRow:
+                  !pinUpdatesEnabled && index == nonUpdatesIndices.length - 1,
+            );
+          }, childCount: nonUpdatesIndices.length),
         );
 
         if (pinUpdatesEnabled) {
-          return [
-            getUpdatesCollapsibleTile(),
-            flatSliverList,
-          ];
+          return [getUpdatesCollapsibleTile(), flatSliverList];
         } else {
-          return [
-            flatSliverList,
-            getUpdatesCollapsibleTile(),
-          ];
+          return [flatSliverList, getUpdatesCollapsibleTile()];
         }
       }
 
       return [
         SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (BuildContext context, int index) {
-              return flatListAppRow(index, index, listedApps.length);
-            },
-            childCount: listedApps.length,
-          ),
+          delegate: SliverChildBuilderDelegate((
+            BuildContext context,
+            int index,
+          ) {
+            return flatListAppRow(index, index, listedApps.length);
+          }, childCount: listedApps.length),
         ),
       ];
     }
@@ -4952,21 +4933,9 @@ class AppsPageState extends State<AppsPage> {
                           Positioned.fill(
                             child: DecoratedBox(
                               decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  stops: const [0, 0.38, 0.72, 1],
-                                  colors: [
-                                    Theme.of(
-                                      context,
-                                    ).colorScheme.schemePageGradientTopColor,
-                                    Theme.of(
-                                      context,
-                                    ).colorScheme.schemePageGradientMidColor,
-                                    Theme.of(context).colorScheme.surface,
-                                    Theme.of(context).colorScheme.surface,
-                                  ],
-                                ),
+                                gradient: Theme.of(
+                                  context,
+                                ).colorScheme.schemePageBackgroundGradient,
                               ),
                             ),
                           ),
@@ -5228,21 +5197,9 @@ class AppsPageState extends State<AppsPage> {
                 child: settingsProvider.useGradientBackground
                     ? DecoratedBox(
                         decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            stops: const [0, 0.38, 0.72, 1],
-                            colors: [
-                              Theme.of(
-                                context,
-                              ).colorScheme.schemePageGradientTopColor,
-                              Theme.of(
-                                context,
-                              ).colorScheme.schemePageGradientMidColor,
-                              Theme.of(context).colorScheme.surface,
-                              Theme.of(context).colorScheme.surface,
-                            ],
-                          ),
+                          gradient: Theme.of(
+                            context,
+                          ).colorScheme.schemePageBackgroundGradient,
                         ),
                       )
                     : ColoredBox(color: Theme.of(context).colorScheme.surface),
@@ -5321,19 +5278,8 @@ class AppsPageState extends State<AppsPage> {
                                       Positioned.fill(
                                         child: DecoratedBox(
                                           decoration: BoxDecoration(
-                                            gradient: LinearGradient(
-                                              begin: Alignment.topCenter,
-                                              end: Alignment.bottomCenter,
-                                              stops: const [0, 0.38, 0.72, 1],
-                                              colors: [
-                                                scheme
-                                                    .schemePageGradientTopColor,
-                                                scheme
-                                                    .schemePageGradientMidColor,
-                                                scheme.surface,
-                                                scheme.surface,
-                                              ],
-                                            ),
+                                            gradient: scheme
+                                                .schemePageBackgroundGradient,
                                           ),
                                         ),
                                       ),
@@ -5507,28 +5453,8 @@ class AppsPageState extends State<AppsPage> {
                                                   const SizedBox(height: 12),
                                                   ElevatedButton.icon(
                                                     style: buttonStyle,
-                                                    onPressed: () {
-                                                      appsProvider
-                                                          .downloadAppAssets(
-                                                            selectedApps
-                                                                .map(
-                                                                  (e) => e.id,
-                                                                )
-                                                                .toList(),
-                                                            globalNavigatorKey
-                                                                    .currentContext ??
-                                                                context,
-                                                          )
-                                                          .catchError((e) {
-                                                            showError(
-                                                              e,
-                                                              globalNavigatorKey
-                                                                      .currentContext ??
-                                                                  context,
-                                                            );
-                                                            return <String>[];
-                                                          });
-                                                    },
+                                                    onPressed:
+                                                        downloadSelectedAppAssets,
                                                     icon: const Icon(
                                                       Icons
                                                           .download_for_offline_outlined,
@@ -5594,24 +5520,8 @@ class AppsPageState extends State<AppsPage> {
                                                   const SizedBox(height: 12),
                                                   ElevatedButton.icon(
                                                     style: buttonStyle,
-                                                    onPressed: () {
-                                                      String urls = '';
-                                                      for (var a
-                                                          in selectedApps) {
-                                                        urls += '${a.url}\n';
-                                                      }
-                                                      urls = urls.substring(
-                                                        0,
-                                                        urls.length - 1,
-                                                      );
-                                                      SharePlus.instance.share(
-                                                        ShareParams(
-                                                          text: urls,
-                                                          subject:
-                                                              'ObtainX - ${tr('appsString')}',
-                                                        ),
-                                                      );
-                                                    },
+                                                    onPressed:
+                                                        shareSelectedAppUrls,
                                                     icon: const Icon(
                                                       Icons.share_outlined,
                                                     ),
@@ -5624,21 +5534,8 @@ class AppsPageState extends State<AppsPage> {
                                                   const SizedBox(height: 12),
                                                   ElevatedButton.icon(
                                                     style: buttonStyle,
-                                                    onPressed: () {
-                                                      String urls = '';
-                                                      for (var a
-                                                          in selectedApps) {
-                                                        urls +=
-                                                            'https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/${Uri.encodeComponent(jsonEncode({'id': a.id, 'url': a.url, 'author': a.author, 'name': a.name, 'preferredApkIndex': a.preferredApkIndex, 'additionalSettings': jsonEncode(a.additionalSettings), 'overrideSource': a.overrideSource}))}\n\n';
-                                                      }
-                                                      SharePlus.instance.share(
-                                                        ShareParams(
-                                                          text: urls,
-                                                          subject:
-                                                              'ObtainX - ${tr('appsString')}',
-                                                        ),
-                                                      );
-                                                    },
+                                                    onPressed:
+                                                        shareSelectedAppConfigLinks,
                                                     icon: const Icon(
                                                       Icons
                                                           .settings_suggest_outlined,
@@ -5650,46 +5547,8 @@ class AppsPageState extends State<AppsPage> {
                                                   const SizedBox(height: 12),
                                                   ElevatedButton.icon(
                                                     style: buttonStyle,
-                                                    onPressed: () {
-                                                      var encoder =
-                                                          const JsonEncoder.withIndent(
-                                                            "    ",
-                                                          );
-                                                      var exportJSON = encoder.convert(
-                                                        appsProvider
-                                                            .generateExportJSON(
-                                                              appIds:
-                                                                  selectedApps
-                                                                      .map(
-                                                                        (e) => e
-                                                                            .id,
-                                                                      )
-                                                                      .toList(),
-                                                              overrideExportSettings:
-                                                                  0,
-                                                            ),
-                                                      );
-                                                      String fn =
-                                                          '${tr('obtainiumExportHyphenatedLowercase')}-${DateTime.now().toIso8601String().replaceAll(':', '-')}-count-${selectedApps.length}';
-                                                      XFile f = XFile.fromData(
-                                                        Uint8List.fromList(
-                                                          utf8.encode(
-                                                            exportJSON,
-                                                          ),
-                                                        ),
-                                                        mimeType:
-                                                            'application/json',
-                                                        name: fn,
-                                                      );
-                                                      SharePlus.instance.share(
-                                                        ShareParams(
-                                                          files: [f],
-                                                          fileNameOverrides: [
-                                                            '$fn.json',
-                                                          ],
-                                                        ),
-                                                      );
-                                                    },
+                                                    onPressed:
+                                                        exportSelectedApps,
                                                     icon: const Icon(
                                                       Icons
                                                           .import_export_outlined,
@@ -5787,7 +5646,7 @@ class AppsPageState extends State<AppsPage> {
                               );
                             },
                           )
-                        : (selectedAppId == null
+                        : (effectiveSelectedAppId == null
                               ? Scaffold(
                                   backgroundColor:
                                       settingsProvider.useGradientBackground
@@ -5801,25 +5660,9 @@ class AppsPageState extends State<AppsPage> {
                                         Positioned.fill(
                                           child: DecoratedBox(
                                             decoration: BoxDecoration(
-                                              gradient: LinearGradient(
-                                                begin: Alignment.topCenter,
-                                                end: Alignment.bottomCenter,
-                                                stops: const [0, 0.38, 0.72, 1],
-                                                colors: [
-                                                  Theme.of(context)
-                                                      .colorScheme
-                                                      .schemePageGradientTopColor,
-                                                  Theme.of(context)
-                                                      .colorScheme
-                                                      .schemePageGradientMidColor,
-                                                  Theme.of(
-                                                    context,
-                                                  ).colorScheme.surface,
-                                                  Theme.of(
-                                                    context,
-                                                  ).colorScheme.surface,
-                                                ],
-                                              ),
+                                              gradient: Theme.of(context)
+                                                  .colorScheme
+                                                  .schemePageBackgroundGradient,
                                             ),
                                           ),
                                         ),
@@ -5845,11 +5688,13 @@ class AppsPageState extends State<AppsPage> {
                                   ),
                                 )
                               : Navigator(
-                                  key: _getDetailsNavKey(selectedAppId!),
+                                  key: _getDetailsNavKey(
+                                    effectiveSelectedAppId,
+                                  ),
                                   onGenerateRoute: (RouteSettings settings) {
                                     return MaterialPageRoute(
                                       builder: (context) => AppPage(
-                                        appId: selectedAppId!,
+                                        appId: effectiveSelectedAppId!,
                                         isEmbedded: true,
                                       ),
                                     );
@@ -5877,7 +5722,7 @@ class AppsPageState extends State<AppsPage> {
     }
 
     final double screenWidth = MediaQuery.of(context).size.width;
-    final bool isLargeScreen = screenWidth >= 720;
+    final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint;
 
     if (isLargeScreen) {
       setState(() {

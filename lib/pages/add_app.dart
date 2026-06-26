@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 import 'package:obtainium/app_sources/github.dart';
+import 'package:obtainium/layout_breakpoints.dart';
 import 'package:obtainium/components/app_page_section_title.dart';
 import 'package:obtainium/components/bulk_add_widget.dart';
 import 'package:obtainium/components/custom_app_bar.dart';
@@ -68,8 +69,10 @@ class AddAppPageState extends State<AddAppPage> {
 
   Future<bool> confirmCancelBulkScanForNavigation() async {
     if (_mode == _AddMode.fromDevice) {
-      final bool canNavigate = await _bulkWidgetKey.currentState
-              ?.confirmCancelScanForNavigation(context) ??
+      final bool canNavigate =
+          await _bulkWidgetKey.currentState?.confirmCancelScanForNavigation(
+            context,
+          ) ??
           true;
       if (canNavigate) {
         _resetAllInputStates();
@@ -77,8 +80,10 @@ class AddAppPageState extends State<AddAppPage> {
       return canNavigate;
     }
 
-    final bool isUrlDirty = _mode == _AddMode.byUrl && userInput.trim().isNotEmpty;
-    final bool isSearchDirty = _mode == _AddMode.search &&
+    final bool isUrlDirty =
+        _mode == _AddMode.byUrl && userInput.trim().isNotEmpty;
+    final bool isSearchDirty =
+        _mode == _AddMode.search &&
         (searchQuery.trim().isNotEmpty ||
             _searchHasSearched ||
             _searchResults.isNotEmpty);
@@ -727,6 +732,42 @@ class AddAppPageState extends State<AddAppPage> {
             ],
           );
         },
+      );
+    }
+
+    // Bottom-right action FAB overlay (App Vault / submit), shared by the
+    // large-screen and narrow layouts which previously inlined it identically.
+    Widget buildBottomActionFabOverlay() {
+      return Align(
+        alignment: Alignment.bottomRight,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            _fabHorizontalMargin,
+            0,
+            _fabHorizontalMargin,
+            appVaultFabBottomPadding,
+          ),
+          child: TweenAnimationBuilder<double>(
+            tween: Tween<double>(end: showBottomActionFab ? 1 : 0),
+            duration: const Duration(milliseconds: 320),
+            curve: Curves.easeInOutCubicEmphasized,
+            builder: (context, animationValue, child) {
+              return IgnorePointer(
+                ignoring: !showBottomActionFab,
+                child: Opacity(opacity: animationValue, child: child),
+              );
+            },
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) {
+                return FadeTransition(opacity: animation, child: child);
+              },
+              child: buildBottomActionFab(),
+            ),
+          ),
+        ),
       );
     }
 
@@ -1484,9 +1525,10 @@ class AddAppPageState extends State<AddAppPage> {
     }
 
     final double screenWidth = MediaQuery.of(context).size.width;
-    final bool isLargeScreen = screenWidth >= 720 ||
-        (screenWidth >= 600 &&
-            MediaQuery.of(context).orientation == Orientation.landscape);
+    final bool isLargeScreen = isLargeScreenLayout(
+      screenWidth,
+      MediaQuery.of(context).orientation,
+    );
 
     Widget buildModeTile(_AddMode modeObj, String title, IconData icon) {
       final ColorScheme cs = Theme.of(context).colorScheme;
@@ -1590,7 +1632,9 @@ class AddAppPageState extends State<AddAppPage> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         SizedBox(
-                          height: MediaQuery.paddingOf(context).top + kToolbarHeight,
+                          height:
+                              MediaQuery.paddingOf(context).top +
+                              kToolbarHeight,
                           child: Padding(
                             padding: EdgeInsetsDirectional.only(
                               start: 20,
@@ -1601,15 +1645,17 @@ class AddAppPageState extends State<AddAppPage> {
                               alignment: AlignmentDirectional.centerStart,
                               child: Text(
                                 tr('addApp'),
-                                style: Theme.of(context).textTheme.titleLarge!.copyWith(
-                                  color: addScheme.onSurface,
-                                ),
+                                style: Theme.of(context).textTheme.titleLarge!
+                                    .copyWith(color: addScheme.onSurface),
                               ),
                             ),
                           ),
                         ),
                         Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
@@ -1739,37 +1785,7 @@ class AddAppPageState extends State<AddAppPage> {
                 ),
               ],
             ),
-            Align(
-              alignment: Alignment.bottomRight,
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  _fabHorizontalMargin,
-                  0,
-                  _fabHorizontalMargin,
-                  appVaultFabBottomPadding,
-                ),
-                child: TweenAnimationBuilder<double>(
-                  tween: Tween<double>(end: showBottomActionFab ? 1 : 0),
-                  duration: const Duration(milliseconds: 320),
-                  curve: Curves.easeInOutCubicEmphasized,
-                  builder: (context, animationValue, child) {
-                    return IgnorePointer(
-                      ignoring: !showBottomActionFab,
-                      child: Opacity(opacity: animationValue, child: child),
-                    );
-                  },
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 180),
-                    switchInCurve: Curves.easeOutCubic,
-                    switchOutCurve: Curves.easeInCubic,
-                    transitionBuilder: (child, animation) {
-                      return FadeTransition(opacity: animation, child: child);
-                    },
-                    child: buildBottomActionFab(),
-                  ),
-                ),
-              ),
-            ),
+            buildBottomActionFabOverlay(),
           ],
         ),
       );
@@ -1922,37 +1938,7 @@ class AddAppPageState extends State<AddAppPage> {
                 ),
             ],
           ),
-          Align(
-            alignment: Alignment.bottomRight,
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                _fabHorizontalMargin,
-                0,
-                _fabHorizontalMargin,
-                appVaultFabBottomPadding,
-              ),
-              child: TweenAnimationBuilder<double>(
-                tween: Tween<double>(end: showBottomActionFab ? 1 : 0),
-                duration: const Duration(milliseconds: 320),
-                curve: Curves.easeInOutCubicEmphasized,
-                builder: (context, animationValue, child) {
-                  return IgnorePointer(
-                    ignoring: !showBottomActionFab,
-                    child: Opacity(opacity: animationValue, child: child),
-                  );
-                },
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 180),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  transitionBuilder: (child, animation) {
-                    return FadeTransition(opacity: animation, child: child);
-                  },
-                  child: buildBottomActionFab(),
-                ),
-              ),
-            ),
-          ),
+          buildBottomActionFabOverlay(),
         ],
       ),
     );

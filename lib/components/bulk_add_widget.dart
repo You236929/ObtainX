@@ -786,11 +786,14 @@ class BulkAddWidgetState extends State<BulkAddWidget> {
                                 }
                                 return;
                               }
-                              _searchDebounceTimer = Timer(_searchDebounceWindow, () {
-                                if (!mounted) return;
-                                if (_searchQuery == value) return;
-                                setState(() => _searchQuery = value);
-                              });
+                              _searchDebounceTimer = Timer(
+                                _searchDebounceWindow,
+                                () {
+                                  if (!mounted) return;
+                                  if (_searchQuery == value) return;
+                                  setState(() => _searchQuery = value);
+                                },
+                              );
                             },
                           ),
                         ),
@@ -811,7 +814,10 @@ class BulkAddWidgetState extends State<BulkAddWidget> {
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 6,
+                    ),
                     child: Row(
                       children: [
                         Text(
@@ -860,58 +866,55 @@ class BulkAddWidgetState extends State<BulkAddWidget> {
               SliverPadding(
                 padding: EdgeInsets.only(bottom: _bottomActionListPadding()),
                 sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final app = filtered[index];
-                      final selected = _selectedPackages.contains(
-                        app.packageName,
-                      );
-                      final tracked = alreadyTracked.contains(app.packageName);
-                      return _bulkAddAppListRow(
-                        leadingIcon: Padding(
-                          padding: const EdgeInsets.only(right: 4),
-                          child: _lazyBulkAppIcon(app.packageName),
-                        ),
-                        appName: app.name,
-                        packageName: app.packageName,
-                        checkboxValue: selected,
-                        onCheckboxChanged: (bool? value) {
-                          setState(() {
-                            if (value == true) {
-                              _selectedPackages.add(app.packageName);
-                            } else {
-                              _selectedPackages.remove(app.packageName);
-                            }
-                          });
-                        },
-                        titleSuffix: tracked
-                            ? Container(
-                                margin: const EdgeInsets.only(left: 6),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
+                  delegate: SliverChildBuilderDelegate((context, index) {
+                    final app = filtered[index];
+                    final selected = _selectedPackages.contains(
+                      app.packageName,
+                    );
+                    final tracked = alreadyTracked.contains(app.packageName);
+                    return _bulkAddAppListRow(
+                      leadingIcon: Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: _lazyBulkAppIcon(app.packageName),
+                      ),
+                      appName: app.name,
+                      packageName: app.packageName,
+                      checkboxValue: selected,
+                      onCheckboxChanged: (bool? value) {
+                        setState(() {
+                          if (value == true) {
+                            _selectedPackages.add(app.packageName);
+                          } else {
+                            _selectedPackages.remove(app.packageName);
+                          }
+                        });
+                      },
+                      titleSuffix: tracked
+                          ? Container(
+                              margin: const EdgeInsets.only(left: 6),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.secondaryContainer,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                tr('alreadyTracked'),
+                                style: TextStyle(
+                                  fontSize: 10,
                                   color: Theme.of(
                                     context,
-                                  ).colorScheme.secondaryContainer,
-                                  borderRadius: BorderRadius.circular(4),
+                                  ).colorScheme.onSecondaryContainer,
                                 ),
-                                child: Text(
-                                  tr('alreadyTracked'),
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSecondaryContainer,
-                                  ),
-                                ),
-                              )
-                            : null,
-                      );
-                    },
-                    childCount: filtered.length,
-                  ),
+                              ),
+                            )
+                          : null,
+                    );
+                  }, childCount: filtered.length),
                 ),
               ),
           ],
@@ -1531,7 +1534,9 @@ class BulkAddWidgetState extends State<BulkAddWidget> {
         _bulkBottomActionHorizontalPadding,
         24,
         _bulkBottomActionHorizontalPadding,
-        widget.isLargeScreen ? MediaQuery.paddingOf(context).bottom + 16 : _bottomActionBottomPadding(),
+        widget.isLargeScreen
+            ? MediaQuery.paddingOf(context).bottom + 16
+            : _bottomActionBottomPadding(),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -1557,8 +1562,7 @@ class BulkAddWidgetState extends State<BulkAddWidget> {
               : _addingApps
               ? FloatingActionButton.extended(
                   heroTag: 'bulkResultsCancel',
-                  onPressed: () =>
-                      setState(() => _addCancelRequested = true),
+                  onPressed: () => setState(() => _addCancelRequested = true),
                   backgroundColor: colorScheme.errorContainer,
                   foregroundColor: colorScheme.onErrorContainer,
                   icon: const Icon(Icons.stop_rounded),
@@ -1569,14 +1573,12 @@ class BulkAddWidgetState extends State<BulkAddWidget> {
                   onPressed: selectedNewFoundCount == 0
                       ? null
                       : () {
-                          final List<BulkFoundApp> selectedToAdd =
-                              newFound
-                                  .where(
-                                    (BulkFoundApp a) =>
-                                        _selectedNewFoundPackages
-                                            .contains(a.info.packageName),
-                                  )
-                                  .toList();
+                          final List<BulkFoundApp> selectedToAdd = newFound
+                              .where(
+                                (BulkFoundApp a) => _selectedNewFoundPackages
+                                    .contains(a.info.packageName),
+                              )
+                              .toList();
                           _addFoundApps(selectedToAdd);
                         },
                   icon: const Icon(Icons.save_rounded),
@@ -1589,14 +1591,13 @@ class BulkAddWidgetState extends State<BulkAddWidget> {
     );
 
     if (widget.isLargeScreen) {
-      if (_foundApps.isEmpty && _notFoundApps.isEmpty && _cancelledApps.isEmpty) {
+      if (_foundApps.isEmpty &&
+          _notFoundApps.isEmpty &&
+          _cancelledApps.isEmpty) {
         return Center(child: Text(tr('noAppsFound')));
       }
       listItems.add(bottomActions);
-      return ListView(
-        padding: EdgeInsets.zero,
-        children: listItems,
-      );
+      return ListView(padding: EdgeInsets.zero, children: listItems);
     }
 
     return Stack(
@@ -1612,12 +1613,7 @@ class BulkAddWidgetState extends State<BulkAddWidget> {
 
         // Bottom row: progress pill (when active, expanding to the left of the
         // FAB) + FAB. Both live in the same Positioned so they stay aligned.
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
-          child: bottomActions,
-        ),
+        Positioned(left: 0, right: 0, bottom: 0, child: bottomActions),
       ],
     );
   }

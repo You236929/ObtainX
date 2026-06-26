@@ -873,7 +873,9 @@ class _AppPageState extends State<AppPage> {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: showErrorDetails
+              ? CrossAxisAlignment.start
+              : CrossAxisAlignment.center,
           spacing: 12,
           children: [
             Container(
@@ -3960,7 +3962,8 @@ class _AppPageState extends State<AppPage> {
     Widget getBottomActionBar(BuildContext themeContext) {
       final bool gestureNavigationActive =
           MediaQuery.systemGestureInsetsOf(themeContext).bottom > 0;
-      final bool isLandscapeEmbedded = widget.isEmbedded &&
+      final bool isLandscapeEmbedded =
+          widget.isEmbedded &&
           MediaQuery.of(themeContext).orientation == Orientation.landscape;
       Widget actionBarContent = Padding(
         padding: isLandscapeEmbedded
@@ -4036,8 +4039,7 @@ class _AppPageState extends State<AppPage> {
                           isScrollControlled: true,
                           useSafeArea: true,
                           showDragHandle: true,
-                          backgroundColor:
-                              pageThemeForPage.colorScheme.surface,
+                          backgroundColor: pageThemeForPage.colorScheme.surface,
                           // Full width — override the M3 default that caps the
                           // sheet width on wide screens.
                           constraints: const BoxConstraints(
@@ -4307,7 +4309,8 @@ class _AppPageState extends State<AppPage> {
                       ),
                     )
                   : null,
-              backgroundColor: settingsProvider.useGradientBackground && widget.isEmbedded
+              backgroundColor:
+                  settingsProvider.useGradientBackground && widget.isEmbedded
                   ? Colors.transparent
                   : appPageDeeperSurfaceColor(
                       pageColorSchemeForPage.surface,
@@ -4367,26 +4370,20 @@ class _AppPageState extends State<AppPage> {
                     : Stack(
                         fit: StackFit.expand,
                         children: [
-                          if (settingsProvider.useGradientBackground && widget.isEmbedded)
+                          if (settingsProvider.useGradientBackground &&
+                              widget.isEmbedded)
                             Positioned.fill(
                               child: DecoratedBox(
                                 decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    stops: const [0, 0.38, 0.72, 1],
-                                    colors: [
-                                      pageColorSchemeForPage.schemePageGradientTopColor,
-                                      pageColorSchemeForPage.schemePageGradientMidColor,
-                                      pageColorSchemeForPage.surface,
-                                      pageColorSchemeForPage.surface,
-                                    ],
-                                  ),
+                                  gradient: pageColorSchemeForPage
+                                      .schemePageBackgroundGradient,
                                 ),
                               ),
                             ),
                           CustomScrollView(
-                            scrollCacheExtent: const ScrollCacheExtent.pixels(1600),
+                            scrollCacheExtent: const ScrollCacheExtent.pixels(
+                              1600,
+                            ),
                             controller: _appPageScrollController,
                             physics: const AlwaysScrollableScrollPhysics(
                               parent: ClampingScrollPhysics(),
@@ -4408,7 +4405,9 @@ class _AppPageState extends State<AppPage> {
                                           children: [
                                             if (!widget.isEmbedded)
                                               IconButton(
-                                                icon: const Icon(Icons.arrow_back),
+                                                icon: const Icon(
+                                                  Icons.arrow_back,
+                                                ),
                                                 color: pageThemeForPage
                                                     .colorScheme
                                                     .primary,
@@ -4417,9 +4416,10 @@ class _AppPageState extends State<AppPage> {
                                                     : () => Navigator.of(
                                                         themedPageContext,
                                                       ).maybePop(),
-                                                tooltip: MaterialLocalizations.of(
-                                                  themedPageContext,
-                                                ).backButtonTooltip,
+                                                tooltip:
+                                                    MaterialLocalizations.of(
+                                                      themedPageContext,
+                                                    ).backButtonTooltip,
                                               ),
                                             if (widget.isEmbedded)
                                               const SizedBox(width: 16),
@@ -4484,7 +4484,6 @@ class _AppPageState extends State<AppPage> {
                               ),
                             ],
                           ),
-
                         ],
                       ),
                 onRefresh: () async {
@@ -4528,7 +4527,8 @@ class _ScrollLinkedAppPageFooter extends StatefulWidget {
       _ScrollLinkedAppPageFooterState();
 }
 
-class _ScrollLinkedAppPageFooterState extends State<_ScrollLinkedAppPageFooter> {
+class _ScrollLinkedAppPageFooterState
+    extends State<_ScrollLinkedAppPageFooter> {
   bool _footerExpanded = true;
   double _previousOffset = 0;
 

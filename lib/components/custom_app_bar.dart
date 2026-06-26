@@ -52,7 +52,11 @@ class _CustomAppBarState extends State<CustomAppBar> {
   // drops on mid-range Android during apps-list scroll. The colour tint
   // gradient handles the "progressive" feel that the second blur used to
   // provide.
-  static const double _blurSigma = 4.0;
+  // Kept gentle on purpose: the uniform single-pass blur is just a light
+  // frost, and the progressive colour-tint gradient (opaque top → transparent
+  // bottom) carries the "progressive" feel. See ProgressiveTopEdgeOverlay for
+  // why graduated multi-pass blur is deliberately avoided (GPU cost).
+  static const double _blurSigma = 3.0;
 
   Widget _buildBlur(Color overlayColor) {
     return ScrollLinkedProgressiveBlur(
@@ -79,17 +83,7 @@ class _CustomAppBarState extends State<CustomAppBar> {
               maxHeight: pageHeight,
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    stops: const [0, 0.38, 0.72, 1],
-                    colors: [
-                      colorScheme.schemePageGradientTopColor,
-                      colorScheme.schemePageGradientMidColor,
-                      colorScheme.surface,
-                      colorScheme.surface,
-                    ],
-                  ),
+                  gradient: colorScheme.schemePageBackgroundGradient,
                 ),
                 child: SizedBox(
                   width: constraints.maxWidth,
@@ -129,9 +123,7 @@ class _CustomAppBarState extends State<CustomAppBar> {
     } else if (widget.matchGradientBackground) {
       headerBackground = _buildGradientBackground(context, colorScheme);
     } else {
-      headerBackground = ColoredBox(
-        color: colorScheme.surface,
-      );
+      headerBackground = ColoredBox(color: colorScheme.surface);
     }
 
     if (widget.searchWidget != null) {
@@ -282,35 +274,39 @@ class ScrollLinkedProgressiveBlur extends StatelessWidget {
   Widget _buildBlurContent(double opacity) {
     if (opacity <= 0.0) return const SizedBox.shrink();
 
-    return Opacity(
-      opacity: opacity,
-      child: IgnorePointer(
-        child: RepaintBoundary(
-          child: ClipRect(
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                BackdropFilter(
-                  filter: ImageFilter.blur(
-                    sigmaX: blurSigma,
-                    sigmaY: blurSigma,
-                  ),
-                  child: const SizedBox.expand(),
+    // Ramp the fade-in via the blur sigma and the tint's alpha rather than
+    // wrapping the whole thing in an Opacity. Opacity forces an offscreen
+    // saveLayer every scroll frame, and a BackdropFilter inside that layer
+    // samples the (empty) layer instead of the screen behind it — so the old
+    // approach was both costly per-frame and didn't blur the content correctly.
+    // Same end state at full scroll; just a cleaner, cheaper ramp in between.
+    final double t = opacity.clamp(0.0, 1.0);
+    return IgnorePointer(
+      child: RepaintBoundary(
+        child: ClipRect(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              BackdropFilter(
+                filter: ImageFilter.blur(
+                  sigmaX: blurSigma * t,
+                  sigmaY: blurSigma * t,
                 ),
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        overlayColor,
-                        overlayColor.withValues(alpha: 0),
-                      ],
-                    ),
+                child: const SizedBox.expand(),
+              ),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      overlayColor.withValues(alpha: overlayColor.a * t),
+                      overlayColor.withValues(alpha: 0),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

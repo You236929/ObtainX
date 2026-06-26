@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:obtainium/components/bulk_add_widget.dart';
+import 'package:obtainium/layout_breakpoints.dart';
 
 /// Standalone page wrapper around [BulkAddWidget].
 ///
@@ -11,9 +12,10 @@ class BulkAddAppsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final double screenWidth = MediaQuery.of(context).size.width;
-    final bool isLargeScreen = screenWidth >= 720 ||
-        (screenWidth >= 600 &&
-            MediaQuery.of(context).orientation == Orientation.landscape);
+    final bool isLargeScreen = isLargeScreenLayout(
+      screenWidth,
+      MediaQuery.of(context).orientation,
+    );
     return BulkAddWidget(standalone: true, isLargeScreen: isLargeScreen);
   }
 }

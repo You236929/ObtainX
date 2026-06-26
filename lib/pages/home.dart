@@ -5,6 +5,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:obtainium/components/generated_form_modal.dart';
+import 'package:obtainium/layout_breakpoints.dart';
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/pages/add_app.dart';
 import 'package:obtainium/pages/apps.dart';
@@ -374,47 +375,47 @@ class _HomePageState extends State<HomePage> {
           final ColorScheme scheme = Theme.of(context).colorScheme;
           final bool blurBottomNav = settingsProvider.progressiveBlurEnabled;
           final double screenWidth = MediaQuery.of(context).size.width;
-          final bool isLargeScreen = screenWidth >= 720;
+          final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint;
 
-          final List<NavigationDestination> homeNavDestinations = pages
-              .asMap()
-              .entries
-              .map(
-                (MapEntry<int, NavigationPageItem> entry) =>
-                    NavigationDestination(
-                      icon: entry.key == 0 && updateCount > 0
-                          ? Badge(
-                              label: Text(updateCount.toString()),
-                              child: Icon(entry.value.icon),
-                            )
-                          : Icon(entry.value.icon),
-                      label: entry.value.title,
-                    ),
-              )
-              .toList();
+          // Shared icon builder (adds the update-count badge to the first tab),
+          // and build only the destination list the current layout actually
+          // uses instead of both every frame.
+          Widget navIcon(MapEntry<int, NavigationPageItem> entry) =>
+              entry.key == 0 && updateCount > 0
+              ? Badge(
+                  label: Text(updateCount.toString()),
+                  child: Icon(entry.value.icon),
+                )
+              : Icon(entry.value.icon);
 
-          final List<NavigationRailDestination> homeNavRailDestinations = pages
-              .asMap()
-              .entries
-              .map(
-                (MapEntry<int, NavigationPageItem> entry) =>
-                    NavigationRailDestination(
-                      icon: entry.key == 0 && updateCount > 0
-                          ? Badge(
-                              label: Text(updateCount.toString()),
-                              child: Icon(entry.value.icon),
-                            )
-                          : Icon(entry.value.icon),
-                      selectedIcon: entry.key == 0 && updateCount > 0
-                          ? Badge(
-                              label: Text(updateCount.toString()),
-                              child: Icon(entry.value.icon),
-                            )
-                          : Icon(entry.value.icon),
-                      label: Text(entry.value.title),
-                    ),
-              )
-              .toList();
+          final List<NavigationDestination> homeNavDestinations = isLargeScreen
+              ? const <NavigationDestination>[]
+              : pages
+                    .asMap()
+                    .entries
+                    .map(
+                      (entry) => NavigationDestination(
+                        icon: navIcon(entry),
+                        label: entry.value.title,
+                      ),
+                    )
+                    .toList();
+
+          // NavigationRailDestination.selectedIcon defaults to [icon] when
+          // omitted, so the previous explicit duplicate isn't needed.
+          final List<NavigationRailDestination> homeNavRailDestinations =
+              isLargeScreen
+              ? pages
+                    .asMap()
+                    .entries
+                    .map(
+                      (entry) => NavigationRailDestination(
+                        icon: navIcon(entry),
+                        label: Text(entry.value.title),
+                      ),
+                    )
+                    .toList()
+              : const <NavigationRailDestination>[];
 
           final int homeNavSelectedIndex = selectedIndexHistory.isEmpty
               ? 0
@@ -463,30 +464,30 @@ class _HomePageState extends State<HomePage> {
             bottomNavigationBar: isLargeScreen
                 ? null
                 : blurBottomNav
-                    ? ClipRect(
-                        child: Stack(
-                          alignment: Alignment.bottomCenter,
-                          fit: StackFit.loose,
-                          children: [
-                            Positioned.fill(
-                              child: ProgressiveBottomEdgeBlur(
-                                overlayColor:
-                                    scheme.schemeProgressiveBlurOverlayTint,
-                              ),
-                            ),
-                            _materialHomeNavigationBar(
-                              destinations: homeNavDestinations,
-                              selectedIndex: homeNavSelectedIndex,
-                              transparent: true,
-                            ),
-                          ],
+                ? ClipRect(
+                    child: Stack(
+                      alignment: Alignment.bottomCenter,
+                      fit: StackFit.loose,
+                      children: [
+                        Positioned.fill(
+                          child: ProgressiveBottomEdgeBlur(
+                            overlayColor:
+                                scheme.schemeProgressiveBlurOverlayTint,
+                          ),
                         ),
-                      )
-                    : _materialHomeNavigationBar(
-                        destinations: homeNavDestinations,
-                        selectedIndex: homeNavSelectedIndex,
-                        transparent: false,
-                      ),
+                        _materialHomeNavigationBar(
+                          destinations: homeNavDestinations,
+                          selectedIndex: homeNavSelectedIndex,
+                          transparent: true,
+                        ),
+                      ],
+                    ),
+                  )
+                : _materialHomeNavigationBar(
+                    destinations: homeNavDestinations,
+                    selectedIndex: homeNavSelectedIndex,
+                    transparent: false,
+                  ),
           );
         },
       ),
