@@ -4721,6 +4721,8 @@ class AppsProvider with ChangeNotifier {
             sampleApp.url,
             overrideSource: sampleApp.overrideSource,
           );
+          var settingsProvider = SettingsProvider();
+          await settingsProvider.initializeSettings();
           var chunkSize = source.batchUpdateChunkSize > 0
               ? source.batchUpdateChunkSize
               : groupAppIds.length;
@@ -4739,13 +4741,18 @@ class AppsProvider with ChangeNotifier {
                 overrideSource: app.overrideSource,
               );
               var stdUrl = s.standardizeUrl(app.url);
+              var sourceConfig = await s.getSourceConfigValues(
+                app.additionalSettings,
+                settingsProvider,
+              );
               batchInfos.add(
                 BatchGetAPKInfo(
                   appId: appId,
                   url: stdUrl,
-                  additionalSettings: Map<String, dynamic>.from(
-                    app.additionalSettings,
-                  ),
+                  additionalSettings: {
+                    ...app.additionalSettings,
+                    ...sourceConfig,
+                  },
                 ),
               );
             }
