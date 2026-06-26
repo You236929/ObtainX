@@ -13,6 +13,12 @@ class FaviconCache {
 
   static final Map<String, Uint8List> _mem = {};
 
+  /// Hosts for which favicon resolution already failed (all attempts exhausted).
+  /// Prevents re-running the network requests on every widget rebuild for a
+  /// host with no resolvable favicon. Lives for the process lifetime, matching
+  /// the positive [_mem] layer.
+  static final Set<String> _negative = {};
+
   static String _fileName(String cacheKey) =>
       '${cacheKey.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_')}.ico';
 
@@ -28,6 +34,7 @@ class FaviconCache {
   static Future<Uint8List?> get(String host) async {
     final normalizedHost = host.trim().toLowerCase();
     if (normalizedHost.isEmpty) return null;
+    if (_negative.contains(normalizedHost)) return null;
 
     final directBytes = await _getFromCacheOrFetch(
       'direct_$normalizedHost',
@@ -35,12 +42,18 @@ class FaviconCache {
     );
     if (directBytes != null) return directBytes;
 
-    if (!AppDistribution.allowDuckDuckGoFavicons) return null;
+    if (AppDistribution.allowDuckDuckGoFavicons) {
+      final ddgBytes = await _getFromCacheOrFetch(
+        'duckduckgo_$normalizedHost',
+        Uri.parse('https://icons.duckduckgo.com/ip3/$normalizedHost.ico'),
+      );
+      if (ddgBytes != null) return ddgBytes;
+    }
 
-    return _getFromCacheOrFetch(
-      'duckduckgo_$normalizedHost',
-      Uri.parse('https://icons.duckduckgo.com/ip3/$normalizedHost.ico'),
-    );
+    // All resolution attempts failed; negative-cache the host so repeated
+    // widget builds don't re-run the (up to two) network requests.
+    _negative.add(normalizedHost);
+    return null;
   }
 
   static Future<Uint8List?> _getFromCacheOrFetch(

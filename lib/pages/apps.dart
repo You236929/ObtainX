@@ -2329,7 +2329,6 @@ class AppsPageState extends State<AppsPage> {
   // Groups start expanded. When the user collapses one its key goes here and
   // its child tiles are no longer built, saving widget-tree work on rebuilds.
   final Set<String> _collapsedGroups = {};
-  final Map<String, ExpansibleController> _groupControllers = {};
 
   // ── Hero keep-alive ───────────────────────────────────────────────────────
   // Removed: previously held the appId of the row whose AppPage was open so
@@ -2485,7 +2484,6 @@ class AppsPageState extends State<AppsPage> {
     scrollController.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
-    _groupControllers.clear();
     super.dispose();
   }
 
@@ -5035,18 +5033,18 @@ class AppsPageState extends State<AppsPage> {
                                           _collapsedGroups.addAll(
                                             activeGroupKeys,
                                           );
-                                          for (final key in activeGroupKeys) {
-                                            _groupControllers[key]?.collapse();
-                                          }
                                         } else {
                                           _collapsedGroups.removeAll(
                                             activeGroupKeys,
                                           );
-                                          for (final key in activeGroupKeys) {
-                                            _groupControllers[key]?.expand();
-                                          }
                                         }
                                       });
+                                      // Persist the bulk toggle so it survives a
+                                      // restart, matching the per-group header tap.
+                                      _saveCollapsedGroups(
+                                        activeGroupKeys,
+                                        add: allGroupsExpanded,
+                                      );
                                     },
                                   ),
                                 ],

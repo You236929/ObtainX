@@ -141,7 +141,14 @@ class AddAppPageState extends State<AddAppPage> {
   // ─── Search mode state ─────────────────────────────────────────────────
   bool searching = false;
   String searchQuery = '';
-  static final Map<String, Map<String, MapEntry<String, List<String>>>> _searchCache = {};
+  // Cache of past inline-search results. Instance-scoped (so it's discarded
+  // when leaving the page, rather than serving stale results across sessions)
+  // and size-bounded so it can't grow unbounded. The key includes the selected
+  // sources, and searches that prompt for per-source options are never cached
+  // (their results depend on that dialog input — see runInlineSearch).
+  final Map<String, Map<String, MapEntry<String, List<String>>>> _searchCache =
+      {};
+  static const int _searchCacheMaxEntries = 50;
   // Searchable-source names the user has selected (null = not yet initialised)
   Set<String>? _searchSelectedStores;
   // Interleaved search results: key=URL/identifier, value=(sourceName, subtitleLines)
@@ -991,10 +998,24 @@ class AddAppPageState extends State<AddAppPage> {
       FocusManager.instance.primaryFocus?.unfocus();
       _searchResultFilterController.clear();
 
-      final String normalizedQuery = searchQuery.trim().toLowerCase();
-      if (_searchCache.containsKey(normalizedQuery)) {
+      final List<AppSource> selectedSources = sourceProvider.sources
+          .where((e) => searchSelectedStores.contains(e.name))
+          .toList();
+      // Results from sources that prompt for per-search options depend on that
+      // dialog input, so such searches must not be served from / written to the
+      // cache (doing so would skip the prompt and reuse stale option values).
+      final bool cacheable = !selectedSources.any(
+        (e) => e.includeAdditionalOptsInMainSearch,
+      );
+      // Key on the query *and* the selected sources, so changing the source
+      // selection doesn't return the previous selection's results.
+      final String cacheKey =
+          '${searchQuery.trim().toLowerCase()} '
+          '${(searchSelectedStores.toList()..sort()).join(',')}';
+
+      if (cacheable && _searchCache.containsKey(cacheKey)) {
         setState(() {
-          _searchResults = Map.from(_searchCache[normalizedQuery]!);
+          _searchResults = Map.of(_searchCache[cacheKey]!);
           _searchHasSearched = true;
           _byUrlOpenedFromSearchPick = false;
           _searchResultFilter = '';
@@ -1109,7 +1130,14 @@ class AddAppPageState extends State<AddAppPage> {
         setState(() {
           _searchResults = res;
           _searchHasSearched = true;
-          _searchCache[normalizedQuery] = res;
+          if (cacheable) {
+            // Evict the oldest entry once the cache is full (insertion order).
+            if (_searchCache.length >= _searchCacheMaxEntries &&
+                !_searchCache.containsKey(cacheKey)) {
+              _searchCache.remove(_searchCache.keys.first);
+            }
+            _searchCache[cacheKey] = res;
+          }
         });
       } catch (e) {
         if (!context.mounted) return;
