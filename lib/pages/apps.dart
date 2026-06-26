@@ -6,7 +6,8 @@ import 'package:easy_localization/easy_localization.dart' hide TextDirection;
 import 'package:expressive_loading_indicator/expressive_loading_indicator.dart';
 import 'package:expressive_refresh/expressive_refresh.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show ScrollCacheExtent;
+import 'package:flutter/rendering.dart'
+    show ScrollCacheExtent, RenderSliverMainAxisGroup, SliverPhysicalParentData, RenderSliver;
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:progress_indicator_m3e/progress_indicator_m3e.dart';
@@ -117,6 +118,192 @@ RoundedRectangleBorder _appsExpansionGroupMaterialShape(
     borderRadius: BorderRadius.circular(cardRadius),
     side: m3ePureBlackOutlineSide(scheme, alpha: 0.22),
   );
+}
+
+class _AppsGroupHeaderDelegate extends SliverPersistentHeaderDelegate {
+  final String title;
+  final int count;
+  final bool isExpanded;
+  final VoidCallback onTap;
+  final double cardRadius;
+  final ColorScheme colorScheme;
+
+  _AppsGroupHeaderDelegate({
+    required this.title,
+    required this.count,
+    required this.isExpanded,
+    required this.onTap,
+    required this.cardRadius,
+    required this.colorScheme,
+  });
+
+  @override
+  double get minExtent => isExpanded ? 56.0 : 62.0;
+
+  @override
+  double get maxExtent => isExpanded ? 56.0 : 62.0;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    final theme = Theme.of(context);
+    final ShapeBorder shape = isExpanded
+        ? RoundedRectangleBorder(
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(cardRadius),
+              topRight: Radius.circular(cardRadius),
+              bottomLeft: const Radius.circular(kM3eInnerRadius),
+              bottomRight: const Radius.circular(kM3eInnerRadius),
+            ),
+            side: m3ePureBlackOutlineSide(colorScheme, alpha: 0.22),
+          )
+        : RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(cardRadius)),
+            side: m3ePureBlackOutlineSide(colorScheme, alpha: 0.22),
+          );
+
+    return Padding(
+      padding: isExpanded
+          ? const EdgeInsets.fromLTRB(12, 6, 12, 0)
+          : const EdgeInsets.fromLTRB(12, 6, 12, 6),
+      child: Material(
+        elevation: 3,
+        shadowColor: colorScheme.shadow.withAlpha(100),
+        surfaceTintColor: colorScheme.surfaceTint,
+        shape: shape,
+        color: _appsListGroupHeaderColor(colorScheme),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: SizedBox(
+            height: 50.0,
+            child: Center(
+              child: ListTile(
+                dense: true,
+                onTap: onTap,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                leading: Icon(
+                  isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+                title: Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                trailing: Text(
+                  count.toString(),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _AppsGroupHeaderDelegate oldDelegate) {
+    return oldDelegate.title != title ||
+        oldDelegate.count != count ||
+        oldDelegate.isExpanded != isExpanded ||
+        oldDelegate.cardRadius != cardRadius ||
+        oldDelegate.colorScheme != colorScheme;
+  }
+}
+
+class _ZOrderSliverMainAxisGroup extends SliverMainAxisGroup {
+  final double cardRadius;
+
+  const _ZOrderSliverMainAxisGroup({
+    super.key,
+    required super.slivers,
+    required this.cardRadius,
+  });
+
+  @override
+  RenderSliverMainAxisGroup createRenderObject(BuildContext context) {
+    return _RenderZOrderSliverMainAxisGroup(cardRadius: cardRadius);
+  }
+
+  @override
+  void updateRenderObject(BuildContext context, covariant _RenderZOrderSliverMainAxisGroup renderObject) {
+    renderObject.cardRadius = cardRadius;
+  }
+}
+
+class _RenderZOrderSliverMainAxisGroup extends RenderSliverMainAxisGroup {
+  double cardRadius;
+
+  _RenderZOrderSliverMainAxisGroup({
+    required this.cardRadius,
+  });
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    if (childCount == 0) {
+      return;
+    }
+    final List<RenderSliver> children = [];
+    RenderSliver? child = firstChild;
+    while (child != null) {
+      children.add(child);
+      child = childAfter(child);
+    }
+
+    double headerTop = 0.0;
+    if (children.isNotEmpty) {
+      final RenderSliver first = children[0];
+      final SliverPhysicalParentData firstParentData = first.parentData! as SliverPhysicalParentData;
+      // Visual top of the header card within the group's coordinate space (adding 6.0 for top padding).
+      headerTop = firstParentData.paintOffset.dy + 6.0;
+    }
+
+    // Paint all content slivers first (from index 1 to N-1)
+    for (int i = 1; i < children.length; i++) {
+      final RenderSliver child = children[i];
+      if (child.geometry?.visible == true) {
+        final SliverPhysicalParentData childParentData = child.parentData! as SliverPhysicalParentData;
+        
+        final Rect bounds = Rect.fromLTRB(
+          12.0,
+          headerTop,
+          constraints.crossAxisExtent - 12.0,
+          headerTop + constraints.remainingPaintExtent + 2000.0,
+        );
+
+        final RRect clipRRect = RRect.fromRectAndCorners(
+          bounds,
+          topLeft: Radius.circular(cardRadius),
+          topRight: Radius.circular(cardRadius),
+        );
+
+        context.pushClipRRect(
+          needsCompositing,
+          offset,
+          bounds,
+          clipRRect,
+          (PaintingContext context, Offset offset) {
+            context.paintChild(child, offset + childParentData.paintOffset);
+          },
+        );
+      }
+    }
+
+    // Paint the pinned header (index 0) last so it renders on top of the scrolling content
+    if (children.isNotEmpty) {
+      final RenderSliver first = children[0];
+      if (first.geometry?.visible == true) {
+        final SliverPhysicalParentData childParentData = first.parentData! as SliverPhysicalParentData;
+        context.paintChild(first, offset + childParentData.paintOffset);
+      }
+    }
+  }
 }
 
 Widget _appsGroupedExpansionListBody({
@@ -3609,75 +3796,87 @@ class AppsPageState extends State<AppsPage> {
       ];
     }
 
+    Widget buildCollapsibleTile({
+      required String groupKey,
+      required String title,
+      required List<int> matchingIndices,
+    }) {
+      final isExpanded = !_collapsedGroups.contains(groupKey);
+      final tiles = isExpanded
+          ? buildGroupedChildren(matchingIndices)
+          : const <Widget>[];
+      final theme = Theme.of(context);
+      return _ZOrderSliverMainAxisGroup(
+        key: PageStorageKey(groupKey),
+        cardRadius: appsListGroupCardRadius,
+        slivers: [
+          SliverPersistentHeader(
+            pinned: true,
+            delegate: _AppsGroupHeaderDelegate(
+              title: title,
+              count: matchingIndices.length,
+              isExpanded: isExpanded,
+              cardRadius: appsListGroupCardRadius,
+              colorScheme: theme.colorScheme,
+              onTap: () {
+                setState(() {
+                  if (isExpanded) {
+                    _collapsedGroups.add(groupKey);
+                  } else {
+                    _collapsedGroups.remove(groupKey);
+                  }
+                  _saveCollapsedGroups([groupKey], add: isExpanded);
+                });
+              },
+            ),
+          ),
+          if (isExpanded && tiles.isNotEmpty)
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+              sliver: DecoratedSliver(
+                decoration: BoxDecoration(
+                  color: settingsProvider.useGradientBackground
+                      ? Colors.transparent
+                      : m3eGroupedListBackdropFill(theme.colorScheme),
+                  borderRadius: BorderRadius.vertical(
+                    bottom: Radius.circular(appsListGroupCardRadius),
+                  ),
+                  border: Border(
+                    left: m3ePureBlackOutlineSide(theme.colorScheme, alpha: 0.22),
+                    right: m3ePureBlackOutlineSide(theme.colorScheme, alpha: 0.22),
+                    bottom: m3ePureBlackOutlineSide(theme.colorScheme, alpha: 0.22),
+                  ),
+                ),
+                sliver: SliverPadding(
+                  padding: const EdgeInsets.only(top: kM3eHeaderToFirstCardGap),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) => tiles[index],
+                      childCount: tiles.length,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      );
+    }
+
     getCategoryCollapsibleTile(int index) {
       final folderPrefix = widget.folderId != null
           ? 'folder_${widget.folderId}_'
           : '';
       final catKey =
           '${folderPrefix}cat:${listedCategories[index] ?? '__null__'}';
-      final isExpanded = !_collapsedGroups.contains(catKey);
-      final controller = _groupControllers.putIfAbsent(
-        catKey,
-        () => ExpansibleController(),
-      );
-
       final String categoryMapKey = listedCategories[index] ?? '__null__';
       final matchingIndices =
           _categoryGroupListedIndices[categoryMapKey] ?? const <int>[];
-      final tiles = isExpanded
-          ? buildGroupedChildren(matchingIndices)
-          : const <Widget>[];
-
       capFirstChar(String str) => str[0].toUpperCase() + str.substring(1);
-      final theme = Theme.of(context);
-      return RepaintBoundary(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-          child: Material(
-            elevation: 3,
-            shadowColor: theme.colorScheme.shadow.withAlpha(100),
-            surfaceTintColor: theme.colorScheme.surfaceTint,
-            shape: _appsExpansionGroupMaterialShape(
-              theme.colorScheme,
-              appsListGroupCardRadius,
-            ),
-            color: _appsListGroupHeaderColor(theme.colorScheme),
-            clipBehavior: Clip.antiAlias,
-            child: Theme(
-              data: theme.copyWith(dividerColor: Colors.transparent),
-              child: ExpansionTile(
-                controller: controller,
-                key: PageStorageKey(catKey),
-                shape: _appsExpansionTileExpandedShape(appsListGroupCardRadius),
-                collapsedShape: _appsExpansionTileCollapsedShape(
-                  appsListGroupCardRadius,
-                ),
-                initiallyExpanded: isExpanded,
-                onExpansionChanged: (expanded) => setState(() {
-                  if (expanded) {
-                    _collapsedGroups.remove(catKey);
-                  } else {
-                    _collapsedGroups.add(catKey);
-                  }
-                  _saveCollapsedGroups([catKey], add: !expanded);
-                }),
-                title: Text(
-                  capFirstChar(listedCategories[index] ?? tr('noCategory')),
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                controlAffinity: ListTileControlAffinity.leading,
-                trailing: Text(matchingIndices.length.toString()),
-                childrenPadding: EdgeInsets.zero,
-                children: [
-                  _appsGroupedExpansionListBody(
-                    scheme: theme.colorScheme,
-                    tiles: tiles,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
+      final title = capFirstChar(listedCategories[index] ?? tr('noCategory'));
+      return buildCollapsibleTile(
+        groupKey: catKey,
+        title: title,
+        matchingIndices: matchingIndices,
       );
     }
 
@@ -3685,67 +3884,10 @@ class AppsPageState extends State<AppsPage> {
       final folderPrefix = widget.folderId != null
           ? 'folder_${widget.folderId}_'
           : '';
-      final nonInstalledKey = '${folderPrefix}__nonInstalled__';
-      final isExpanded = !_collapsedGroups.contains(nonInstalledKey);
-      final controller = _groupControllers.putIfAbsent(
-        nonInstalledKey,
-        () => ExpansibleController(),
-      );
-
-      final matchingIndices = _nonInstalledListedIndices;
-      final tiles = isExpanded
-          ? buildGroupedChildren(matchingIndices)
-          : const <Widget>[];
-
-      final theme = Theme.of(context);
-      return RepaintBoundary(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-          child: Material(
-            elevation: 3,
-            shadowColor: theme.colorScheme.shadow.withAlpha(100),
-            surfaceTintColor: theme.colorScheme.surfaceTint,
-            shape: _appsExpansionGroupMaterialShape(
-              theme.colorScheme,
-              appsListGroupCardRadius,
-            ),
-            color: _appsListGroupHeaderColor(theme.colorScheme),
-            clipBehavior: Clip.antiAlias,
-            child: Theme(
-              data: theme.copyWith(dividerColor: Colors.transparent),
-              child: ExpansionTile(
-                controller: controller,
-                key: PageStorageKey(nonInstalledKey),
-                shape: _appsExpansionTileExpandedShape(appsListGroupCardRadius),
-                collapsedShape: _appsExpansionTileCollapsedShape(
-                  appsListGroupCardRadius,
-                ),
-                initiallyExpanded: isExpanded,
-                onExpansionChanged: (expanded) => setState(() {
-                  if (expanded) {
-                    _collapsedGroups.remove(nonInstalledKey);
-                  } else {
-                    _collapsedGroups.add(nonInstalledKey);
-                  }
-                  _saveCollapsedGroups([nonInstalledKey], add: !expanded);
-                }),
-                title: Text(
-                  tr('notInstalled'),
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                controlAffinity: ListTileControlAffinity.leading,
-                trailing: Text(matchingIndices.length.toString()),
-                childrenPadding: EdgeInsets.zero,
-                children: [
-                  _appsGroupedExpansionListBody(
-                    scheme: theme.colorScheme,
-                    tiles: tiles,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
+      return buildCollapsibleTile(
+        groupKey: '${folderPrefix}__nonInstalled__',
+        title: tr('notInstalled'),
+        matchingIndices: _nonInstalledListedIndices,
       );
     }
 
@@ -3755,17 +3897,8 @@ class AppsPageState extends State<AppsPage> {
           ? 'folder_${widget.folderId}_'
           : '';
       final groupKey = '${folderPrefix}src:$sourceKey';
-      final isExpanded = !_collapsedGroups.contains(groupKey);
-      final controller = _groupControllers.putIfAbsent(
-        groupKey,
-        () => ExpansibleController(),
-      );
-
       final matchingIndices =
           _sourceGroupListedIndices[sourceKey] ?? const <int>[];
-      final tiles = isExpanded
-          ? buildGroupedChildren(matchingIndices)
-          : const <Widget>[];
 
       final AppInMemory firstForTitle = matchingIndices.isEmpty
           ? listedApps.firstWhere(
@@ -3787,121 +3920,10 @@ class AppsPageState extends State<AppsPage> {
           )
           .name;
 
-      final theme = Theme.of(context);
-      return RepaintBoundary(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-          child: Material(
-            elevation: 3,
-            shadowColor: theme.colorScheme.shadow.withAlpha(100),
-            surfaceTintColor: theme.colorScheme.surfaceTint,
-            shape: _appsExpansionGroupMaterialShape(
-              theme.colorScheme,
-              appsListGroupCardRadius,
-            ),
-            color: _appsListGroupHeaderColor(theme.colorScheme),
-            clipBehavior: Clip.antiAlias,
-            child: Theme(
-              data: theme.copyWith(dividerColor: Colors.transparent),
-              child: ExpansionTile(
-                controller: controller,
-                key: PageStorageKey(groupKey),
-                shape: _appsExpansionTileExpandedShape(appsListGroupCardRadius),
-                collapsedShape: _appsExpansionTileCollapsedShape(
-                  appsListGroupCardRadius,
-                ),
-                initiallyExpanded: isExpanded,
-                onExpansionChanged: (expanded) => setState(() {
-                  if (expanded) {
-                    _collapsedGroups.remove(groupKey);
-                  } else {
-                    _collapsedGroups.add(groupKey);
-                  }
-                  _saveCollapsedGroups([groupKey], add: !expanded);
-                }),
-                title: Text(
-                  sourceTitle,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                controlAffinity: ListTileControlAffinity.leading,
-                trailing: Text(matchingIndices.length.toString()),
-                childrenPadding: EdgeInsets.zero,
-                children: [
-                  _appsGroupedExpansionListBody(
-                    scheme: theme.colorScheme,
-                    tiles: tiles,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    // ── Generic collapsible group tile ──────────────────────────────────────
-    Widget buildCollapsibleTile({
-      required String groupKey,
-      required String title,
-      required List<int> matchingIndices,
-    }) {
-      final isExpanded = !_collapsedGroups.contains(groupKey);
-      final controller = _groupControllers.putIfAbsent(
-        groupKey,
-        () => ExpansibleController(),
-      );
-      final tiles = isExpanded
-          ? buildGroupedChildren(matchingIndices)
-          : const <Widget>[];
-      final theme = Theme.of(context);
-      return RepaintBoundary(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-          child: Material(
-            elevation: 3,
-            shadowColor: theme.colorScheme.shadow.withAlpha(100),
-            surfaceTintColor: theme.colorScheme.surfaceTint,
-            shape: _appsExpansionGroupMaterialShape(
-              theme.colorScheme,
-              appsListGroupCardRadius,
-            ),
-            color: _appsListGroupHeaderColor(theme.colorScheme),
-            clipBehavior: Clip.antiAlias,
-            child: Theme(
-              data: theme.copyWith(dividerColor: Colors.transparent),
-              child: ExpansionTile(
-                controller: controller,
-                key: PageStorageKey(groupKey),
-                shape: _appsExpansionTileExpandedShape(appsListGroupCardRadius),
-                collapsedShape: _appsExpansionTileCollapsedShape(
-                  appsListGroupCardRadius,
-                ),
-                initiallyExpanded: isExpanded,
-                onExpansionChanged: (expanded) => setState(() {
-                  if (expanded) {
-                    _collapsedGroups.remove(groupKey);
-                  } else {
-                    _collapsedGroups.add(groupKey);
-                  }
-                  _saveCollapsedGroups([groupKey], add: !expanded);
-                }),
-                title: Text(
-                  title,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                controlAffinity: ListTileControlAffinity.leading,
-                trailing: Text(matchingIndices.length.toString()),
-                childrenPadding: EdgeInsets.zero,
-                children: [
-                  _appsGroupedExpansionListBody(
-                    scheme: theme.colorScheme,
-                    tiles: tiles,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
+      return buildCollapsibleTile(
+        groupKey: groupKey,
+        title: sourceTitle,
+        matchingIndices: matchingIndices,
       );
     }
 
@@ -4763,44 +4785,34 @@ class AppsPageState extends State<AppsPage> {
       );
     }
 
-    getDisplayedList() {
+    List<Widget> getDisplayedList() {
       final groupBy = effectiveGroupBy;
       final pinUpdatesEnabled = _effectivePinUpdates(settingsProvider);
 
-      // Builds a SliverList where the optional updates group is prepended
-      // (pinUpdatesEnabled=true) or appended (false) to [mainChildCount] items
-      // built by [mainBuilder].
-      SliverList buildGroupedSliver({
+      // Builds a list of slivers where the optional updates group is prepended
+      // (pinUpdatesEnabled=true) or appended (false) to the list of main groups.
+      List<Widget> buildGroupedSliverList({
         required int mainChildCount,
         required Widget Function(int index) mainBuilder,
       }) {
-        final totalCount =
-            mainChildCount +
-            (showNonInstalledGroupSection ? 1 : 0) +
-            (showUpdatesGroupSection ? 1 : 0);
-        return SliverList(
-          delegate: SliverChildBuilderDelegate((context, index) {
-            int i = index;
-            // Updates group pinned to top.
-            if (showUpdatesGroupSection && pinUpdatesEnabled) {
-              if (i == 0) return getUpdatesCollapsibleTile();
-              i--;
-            }
-            // Main groups.
-            if (i < mainChildCount) return mainBuilder(i);
-            i -= mainChildCount;
-            // Non-installed group.
-            if (showNonInstalledGroupSection) {
-              if (i == 0) return getNonInstalledCollapsibleTile();
-              i--;
-            }
-            // Updates group at bottom (when not pinned).
-            if (showUpdatesGroupSection && !pinUpdatesEnabled) {
-              if (i == 0) return getUpdatesCollapsibleTile();
-            }
-            return null;
-          }, childCount: totalCount),
-        );
+        final List<Widget> list = [];
+        // Updates group pinned to top.
+        if (showUpdatesGroupSection && pinUpdatesEnabled) {
+          list.add(getUpdatesCollapsibleTile());
+        }
+        // Main groups.
+        for (int i = 0; i < mainChildCount; i++) {
+          list.add(mainBuilder(i));
+        }
+        // Non-installed group.
+        if (showNonInstalledGroupSection) {
+          list.add(getNonInstalledCollapsibleTile());
+        }
+        // Updates group at bottom (when not pinned).
+        if (showUpdatesGroupSection && !pinUpdatesEnabled) {
+          list.add(getUpdatesCollapsibleTile());
+        }
+        return list;
       }
 
       final useCategoryGroups =
@@ -4811,7 +4823,7 @@ class AppsPageState extends State<AppsPage> {
                     (listedCategories.length == 1 &&
                         listedCategories[0] == null)));
       if (useCategoryGroups) {
-        return buildGroupedSliver(
+        return buildGroupedSliverList(
           mainChildCount: listedCategories.length,
           mainBuilder: (i) => getCategoryCollapsibleTile(i),
         );
@@ -4821,7 +4833,7 @@ class AppsPageState extends State<AppsPage> {
           groupBy == AppsListGroupBy.source &&
           (listedSources.isNotEmpty || showNonInstalledGroupSection);
       if (useSourceGroups) {
-        return buildGroupedSliver(
+        return buildGroupedSliverList(
           mainChildCount: listedSources.length,
           mainBuilder: (i) => getSourceCollapsibleTile(i),
         );
@@ -4831,7 +4843,7 @@ class AppsPageState extends State<AppsPage> {
           groupBy == AppsListGroupBy.appType &&
           (listedAppTypes.isNotEmpty || showNonInstalledGroupSection);
       if (useAppTypeGroups) {
-        return buildGroupedSliver(
+        return buildGroupedSliverList(
           mainChildCount: listedAppTypes.length,
           mainBuilder: (i) => getAppTypeCollapsibleTile(listedAppTypes[i]),
         );
@@ -4844,38 +4856,44 @@ class AppsPageState extends State<AppsPage> {
           for (int i = 0; i < listedApps.length; i++)
             if (!isInUpdatesGroup(listedApps[i])) i,
         ];
-        final totalCount = 1 + nonUpdatesIndices.length;
-        return SliverList(
-          delegate: SliverChildBuilderDelegate((context, index) {
-            if (pinUpdatesEnabled) {
-              if (index == 0) return getUpdatesCollapsibleTile();
-              final int runIndex = index - 1;
+        final flatSliverList = SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, index) {
               return flatListAppRow(
-                nonUpdatesIndices[runIndex],
-                runIndex,
+                nonUpdatesIndices[index],
+                index,
                 nonUpdatesIndices.length,
-                spacerBeforeFirstRow: runIndex == 0,
+                spacerBeforeFirstRow: pinUpdatesEnabled && index == 0,
+                spacerAfterLastRow: !pinUpdatesEnabled && index == nonUpdatesIndices.length - 1,
               );
-            } else {
-              if (index < nonUpdatesIndices.length) {
-                return flatListAppRow(
-                  nonUpdatesIndices[index],
-                  index,
-                  nonUpdatesIndices.length,
-                  spacerAfterLastRow: index == nonUpdatesIndices.length - 1,
-                );
-              }
-              return getUpdatesCollapsibleTile();
-            }
-          }, childCount: totalCount),
+            },
+            childCount: nonUpdatesIndices.length,
+          ),
         );
+
+        if (pinUpdatesEnabled) {
+          return [
+            getUpdatesCollapsibleTile(),
+            flatSliverList,
+          ];
+        } else {
+          return [
+            flatSliverList,
+            getUpdatesCollapsibleTile(),
+          ];
+        }
       }
 
-      return SliverList(
-        delegate: SliverChildBuilderDelegate((BuildContext context, int index) {
-          return flatListAppRow(index, index, listedApps.length);
-        }, childCount: listedApps.length),
-      );
+      return [
+        SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (BuildContext context, int index) {
+              return flatListAppRow(index, index, listedApps.length);
+            },
+            childCount: listedApps.length,
+          ),
+        ),
+      ];
     }
 
     // Back intercept priority:
@@ -5049,7 +5067,7 @@ class AppsPageState extends State<AppsPage> {
                               bottom: filterChipsBar,
                             ),
                             ...getLoadingWidgets(),
-                            getDisplayedList(),
+                            ...getDisplayedList(),
                             // Extra bottom space for folder / on-demand pages so the
                             // last item isn't clipped by the phone's rounded corners.
                             if (widget.onDemandOnlyList ||

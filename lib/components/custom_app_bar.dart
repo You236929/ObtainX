@@ -54,37 +54,10 @@ class _CustomAppBarState extends State<CustomAppBar> {
   // provide.
   static const double _blurSigma = 4.0;
 
-  /// Progressive-blur widget passed straight to [SliverAppBar.flexibleSpace]
-  /// (not [FlexibleSpaceBar.background]) so it never fades during collapse.
-  /// Wrapped in [RepaintBoundary] to isolate the blur layer's composition
-  /// from neighbouring widgets' dirty rects.
   Widget _buildBlur(Color overlayColor) {
-    return IgnorePointer(
-      child: RepaintBoundary(
-        child: ClipRect(
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              BackdropFilter(
-                filter: ImageFilter.blur(
-                  sigmaX: _blurSigma,
-                  sigmaY: _blurSigma,
-                ),
-                child: const SizedBox.expand(),
-              ),
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [overlayColor, overlayColor.withValues(alpha: 0)],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return ScrollLinkedProgressiveBlur(
+      overlayColor: overlayColor,
+      blurSigma: _blurSigma,
     );
   }
 
@@ -147,7 +120,7 @@ class _CustomAppBarState extends State<CustomAppBar> {
     final bool blurEnabled = context.select<SettingsProvider, bool>(
       (settings) => settings.progressiveBlurEnabled,
     );
-    Widget? headerBackground;
+    final Widget headerBackground;
     if (blurEnabled) {
       headerBackground = _buildBlur(
         widget.progressiveBlurOverlayColor ??
@@ -155,6 +128,10 @@ class _CustomAppBarState extends State<CustomAppBar> {
       );
     } else if (widget.matchGradientBackground) {
       headerBackground = _buildGradientBackground(context, colorScheme);
+    } else {
+      headerBackground = ColoredBox(
+        color: colorScheme.surface,
+      );
     }
 
     if (widget.searchWidget != null) {
@@ -170,13 +147,9 @@ class _CustomAppBarState extends State<CustomAppBar> {
         elevation: 0,
         scrolledUnderElevation: 0,
         shadowColor: Colors.transparent,
-        backgroundColor: headerBackground != null
-            ? Colors.transparent
-            : colorScheme.surface,
-        surfaceTintColor: headerBackground != null
-            ? Colors.transparent
-            : colorScheme.surfaceTint,
-        forceMaterialTransparency: blurEnabled,
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        forceMaterialTransparency: true,
         iconTheme: IconThemeData(color: colorScheme.onSurface),
         actionsIconTheme: IconThemeData(color: colorScheme.onSurface),
         flexibleSpace: headerBackground,
@@ -237,33 +210,23 @@ class _CustomAppBarState extends State<CustomAppBar> {
           top: 16,
           bottom: 16,
         );
-    final Widget? flexibleSpace = widget.title.isEmpty
+    final Widget flexibleSpace = widget.title.isEmpty
         ? headerBackground
-        : (headerBackground != null
-              ? Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    headerBackground,
-                    FlexibleSpaceBar(
-                      titlePadding: expandingTitlePadding,
-                      title: Text(
-                        widget.title,
-                        style: Theme.of(context).textTheme.titleLarge!.copyWith(
-                          color: colorScheme.onSurface,
-                        ),
-                      ),
-                    ),
-                  ],
-                )
-              : FlexibleSpaceBar(
-                  titlePadding: expandingTitlePadding,
-                  title: Text(
-                    widget.title,
-                    style: Theme.of(context).textTheme.titleLarge!.copyWith(
-                      color: colorScheme.onSurface,
-                    ),
+        : Stack(
+            fit: StackFit.expand,
+            children: [
+              headerBackground,
+              FlexibleSpaceBar(
+                titlePadding: expandingTitlePadding,
+                title: Text(
+                  widget.title,
+                  style: Theme.of(context).textTheme.titleLarge!.copyWith(
+                    color: colorScheme.onSurface,
                   ),
-                ));
+                ),
+              ),
+            ],
+          );
 
     return SliverAppBar(
       pinned: true,
@@ -276,16 +239,81 @@ class _CustomAppBarState extends State<CustomAppBar> {
       elevation: 0,
       scrolledUnderElevation: 0,
       shadowColor: Colors.transparent,
-      backgroundColor: headerBackground != null
-          ? Colors.transparent
-          : colorScheme.surface,
-      surfaceTintColor: headerBackground != null
-          ? Colors.transparent
-          : colorScheme.surfaceTint,
-      forceMaterialTransparency: blurEnabled,
+      backgroundColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      forceMaterialTransparency: true,
       iconTheme: IconThemeData(color: colorScheme.onSurface),
       actionsIconTheme: IconThemeData(color: colorScheme.onSurface),
       flexibleSpace: flexibleSpace,
+    );
+  }
+}
+
+class ScrollLinkedProgressiveBlur extends StatelessWidget {
+  final Color overlayColor;
+  final double blurSigma;
+
+  const ScrollLinkedProgressiveBlur({
+    super.key,
+    required this.overlayColor,
+    required this.blurSigma,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scrollPosition = Scrollable.maybeOf(context)?.position;
+    if (scrollPosition == null) {
+      return _buildBlurContent(1.0);
+    }
+
+    return AnimatedBuilder(
+      animation: scrollPosition,
+      builder: (context, child) {
+        double opacity = 0.0;
+        if (scrollPosition.hasPixels) {
+          // Fades in over 36 pixels of scroll
+          opacity = (scrollPosition.pixels / 36.0).clamp(0.0, 1.0);
+        }
+        return _buildBlurContent(opacity);
+      },
+    );
+  }
+
+  Widget _buildBlurContent(double opacity) {
+    if (opacity <= 0.0) return const SizedBox.shrink();
+
+    return Opacity(
+      opacity: opacity,
+      child: IgnorePointer(
+        child: RepaintBoundary(
+          child: ClipRect(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                BackdropFilter(
+                  filter: ImageFilter.blur(
+                    sigmaX: blurSigma,
+                    sigmaY: blurSigma,
+                  ),
+                  child: const SizedBox.expand(),
+                ),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        overlayColor,
+                        overlayColor.withValues(alpha: 0),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
