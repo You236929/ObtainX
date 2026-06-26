@@ -1,4 +1,4 @@
-import 'dart:convert';
+https://github.com/You236929/ObtainX/blob/feat%2Fbatch-update/lib%2Fapp_sources%2Fgithub.dartimport 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:obtainium/app_sources/app_package_formats.dart';
@@ -899,7 +899,7 @@ class GitHub extends AppSource {
     }
     return {
       'tag_name': gqlRelease['tagName'] ?? '',
-      'name': gqlRelease['tagName'] ?? '',
+      'name': gqlRelease['name'] ?? '',
       'prerelease': gqlRelease['isPrerelease'] ?? false,
       'draft': gqlRelease['isDraft'] ?? false,
       'body': gqlRelease['description'] ?? '',
@@ -1225,6 +1225,7 @@ class GitHub extends AppSource {
         releases(first: 100) {
           nodes {
             tagName
+            name
             publishedAt
             updatedAt
             isPrerelease
