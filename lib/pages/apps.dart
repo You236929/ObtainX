@@ -15,6 +15,7 @@ import 'package:flutter/rendering.dart'
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:progress_indicator_m3e/progress_indicator_m3e.dart';
+import 'package:obtainium/components/app_bottom_sheet.dart';
 import 'package:obtainium/components/bulk_category_editor.dart';
 import 'package:obtainium/components/category_action_chip.dart';
 import 'package:obtainium/layout_breakpoints.dart';
@@ -511,6 +512,7 @@ class _AppListItem extends StatelessWidget {
     required this.categoryColors,
     required this.showAppTypeBadge,
     required this.showTrackedStoreBadge,
+    required this.showCategoriesBadge,
     required this.showCheckmark,
     this.sourceHost,
     this.itemBorderRadius,
@@ -526,6 +528,7 @@ class _AppListItem extends StatelessWidget {
   final Map<String?, int> categoryColors;
   final bool showAppTypeBadge;
   final bool showTrackedStoreBadge;
+  final bool showCategoriesBadge;
   final String? sourceHost;
   final BorderRadius? itemBorderRadius;
   final bool showCheckmark;
@@ -794,13 +797,7 @@ class _AppListItem extends StatelessWidget {
     }
 
     final int transparent = colorScheme.surface.withValues(alpha: 0).toARGB32();
-    List<double> stops = [
-      ...app.app.categories.asMap().entries.map(
-        (e) => ((e.key / (app.app.categories.length - 1)) - 0.0001),
-      ),
-      1,
-    ];
-    if (stops.length == 2) stops[0] = 0.9999;
+
     final bool pinned = app.app.pinned;
     // Pinned rows get a tonal fill (constant, persistent — pinning is a
     // set-and-forget intent). Selected rows get an outline + a subtle
@@ -926,72 +923,108 @@ class _AppListItem extends StatelessWidget {
                 ),
               ]
             : null,
-        gradient: LinearGradient(
-          stops: stops,
-          begin: const Alignment(-1, 0),
-          end: const Alignment(-0.97, 0),
-          colors: [
-            ...app.app.categories.map(
-              (e) => Color(categoryColors[e] ?? transparent).withAlpha(255),
-            ),
-            // Always transparent now (no separate pinned fill); category
-            // strip simply fades into the row's normal background.
-            Color(transparent),
-          ],
-        ),
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: ListTile(
-          tileColor: Colors.transparent,
-          // Selection no longer uses [selectedTileColor]; the visual
-          // treatment lives in the parent [Container] (outline + 1dp
-          // shadow) and on the leading icon (replaced with a checkmark
-          // when selected). Keeping the ListTile fill transparent on
-          // both states preserves the pinned-fill underneath.
-          selectedTileColor: Colors.transparent,
-          selected: isSelected,
-          onLongPress: onLongPress,
-          contentPadding: isLargeScreen
-              ? const EdgeInsets.symmetric(horizontal: 12)
-              : null,
-          leading: leadingWidget,
-          title: Row(
-            children: [
-              if (pinned)
-                Padding(
-                  padding: const EdgeInsetsDirectional.only(end: 6),
-                  child: Icon(
-                    Icons.push_pin_rounded,
-                    size: 16,
-                    color: colorScheme.primary,
-                  ),
-                ),
-              Expanded(
-                child: Text(
-                  app.name,
-                  maxLines: 1,
-                  style: TextStyle(
-                    overflow: TextOverflow.ellipsis,
-                    fontWeight: pinned ? FontWeight.w700 : FontWeight.normal,
-                  ),
+      child: Stack(
+        children: [
+          if (!showCategoriesBadge && app.app.categories.isNotEmpty)
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: 5,
+              child: IgnorePointer(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: app.app.categories.map((category) {
+                    return Expanded(
+                      child: Container(
+                        color: Color(
+                          categoryColors[category] ?? transparent,
+                        ).withAlpha(255),
+                      ),
+                    );
+                  }).toList(),
                 ),
               ),
+            ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Material(
+                color: Colors.transparent,
+                child: ListTile(
+                  tileColor: Colors.transparent,
+                  // Selection no longer uses [selectedTileColor]; the visual
+                  // treatment lives in the parent [Container] (outline + 1dp
+                  // shadow) and on the leading icon (replaced with a checkmark
+                  // when selected). Keeping the ListTile fill transparent on
+                  // both states preserves the pinned-fill underneath.
+                  selectedTileColor: Colors.transparent,
+                  selected: isSelected,
+                  onLongPress: onLongPress,
+                  contentPadding: isLargeScreen
+                      ? const EdgeInsets.symmetric(horizontal: 12)
+                      : null,
+                  leading: leadingWidget,
+                  title: Row(
+                    children: [
+                      if (pinned)
+                        Padding(
+                          padding: const EdgeInsetsDirectional.only(end: 6),
+                          child: Icon(
+                            Icons.push_pin_rounded,
+                            size: 16,
+                            color: colorScheme.primary,
+                          ),
+                        ),
+                      Expanded(
+                        child: Text(
+                          app.name,
+                          maxLines: 1,
+                          style: TextStyle(
+                            overflow: TextOverflow.ellipsis,
+                            fontWeight: pinned
+                                ? FontWeight.w700
+                                : FontWeight.normal,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  subtitle: Text(
+                    tr('byX', args: [app.author]),
+                    maxLines: 1,
+                    style: TextStyle(
+                      overflow: TextOverflow.ellipsis,
+                      fontWeight: pinned ? FontWeight.w600 : FontWeight.normal,
+                    ),
+                  ),
+                  trailing: downloadProgress != null
+                      ? buildDownloadProgressControl()
+                      : trailingRow,
+                  onTap: onTap,
+                ),
+              ),
+              if (showCategoriesBadge && app.app.categories.isNotEmpty)
+                GestureDetector(
+                  onTap: onTap,
+                  onLongPress: onLongPress,
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      left: isLargeScreen ? 12 : 16,
+                      right: isLargeScreen ? 12 : 16,
+                      bottom: 8,
+                    ),
+                    child: _CategoryChipsRow(
+                      categories: app.app.categories,
+                      categoryColors: categoryColors,
+                    ),
+                  ),
+                ),
             ],
           ),
-          subtitle: Text(
-            tr('byX', args: [app.author]),
-            maxLines: 1,
-            style: TextStyle(
-              overflow: TextOverflow.ellipsis,
-              fontWeight: pinned ? FontWeight.w600 : FontWeight.normal,
-            ),
-          ),
-          trailing: downloadProgress != null
-              ? buildDownloadProgressControl()
-              : trailingRow,
-          onTap: onTap,
-        ),
+        ],
       ),
     );
 
@@ -1435,183 +1468,140 @@ void showChangeLogDialog(
       ? _loadLinkedChangeLog(appSource, app, changesUrl)
       : null;
 
-  showModalBottomSheet<void>(
+  showAppModalSheet<void>(
     context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-    ),
     builder: (BuildContext sheetContext) {
       final ColorScheme colorScheme = Theme.of(sheetContext).colorScheme;
       final TextTheme textTheme = Theme.of(sheetContext).textTheme;
-      return DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.92,
-        minChildSize: 0.35,
-        maxChildSize: 0.92,
-        builder: (_, scrollController) {
-          Widget buildChangeLogContent(String? displayChangeLog) {
-            if (displayChangeLog == null) {
-              return const SizedBox.shrink();
-            }
-            return appSource.changeLogIfAnyIsMarkDown
-                ? Markdown(
-                    controller: scrollController,
-                    padding: EdgeInsets.fromLTRB(
-                      20,
-                      8,
-                      20,
-                      24 + MediaQuery.viewPaddingOf(sheetContext).bottom,
-                    ),
-                    styleSheet: MarkdownStyleSheet(
-                      blockquoteDecoration: BoxDecoration(
-                        color: Theme.of(sheetContext).cardColor,
-                      ),
-                    ),
-                    data: displayChangeLog,
-                    onTapLink: (text, href, title) {
-                      if (href != null) {
-                        launchUrlString(
-                          href.startsWith('http://') ||
-                                  href.startsWith('https://')
-                              ? href
-                              : '${Uri.parse(app.url).origin}/$href',
-                          mode: LaunchMode.externalApplication,
-                        );
-                      }
-                    },
-                    extensionSet: md.ExtensionSet(
-                      md.ExtensionSet.gitHubFlavored.blockSyntaxes,
-                      [
-                        md.EmojiSyntax(),
-                        ...md.ExtensionSet.gitHubFlavored.inlineSyntaxes,
-                      ],
-                    ),
-                  )
-                : SingleChildScrollView(
-                    controller: scrollController,
-                    padding: EdgeInsets.fromLTRB(
-                      20,
-                      8,
-                      20,
-                      24 + MediaQuery.viewPaddingOf(sheetContext).bottom,
-                    ),
-                    child: SelectableText(
-                      displayChangeLog,
-                      style: textTheme.bodyMedium,
-                    ),
-                  );
-          }
 
-          final Widget changeLogContent = linkedChangeLogFuture == null
-              ? buildChangeLogContent(processedChangeLog)
-              : FutureBuilder<String>(
-                  future: linkedChangeLogFuture,
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState != ConnectionState.done) {
-                      return Center(
-                        child: ExpressiveLoadingIndicator(
-                          color: colorScheme.primary,
-                          constraints: const BoxConstraints.tightFor(
-                            width: 64,
-                            height: 64,
-                          ),
-                        ),
-                      );
-                    }
-                    if (snapshot.hasError) {
-                      return SingleChildScrollView(
-                        controller: scrollController,
-                        padding: EdgeInsets.fromLTRB(
-                          20,
-                          16,
-                          20,
-                          24 + MediaQuery.viewPaddingOf(sheetContext).bottom,
-                        ),
-                        child: SelectableText(
-                          snapshot.error.toString(),
-                          style: textTheme.bodyMedium?.copyWith(
-                            color: colorScheme.error,
-                          ),
-                        ),
-                      );
-                    }
-                    return buildChangeLogContent(snapshot.data);
-                  },
-                );
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: Container(
-                  margin: const EdgeInsets.symmetric(vertical: 12),
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: colorScheme.outlineVariant,
-                    borderRadius: BorderRadius.circular(2),
+      // Non-scrolling content — the shared sheet provides the scroll view, so
+      // short changelogs hug their height and long ones scroll within the cap.
+      Widget buildChangeLogContent(String? displayChangeLog) {
+        if (displayChangeLog == null) {
+          return const SizedBox.shrink();
+        }
+        return appSource.changeLogIfAnyIsMarkDown
+            ? MarkdownBody(
+                styleSheet: MarkdownStyleSheet(
+                  blockquoteDecoration: BoxDecoration(
+                    color: Theme.of(sheetContext).cardColor,
                   ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 8, 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            tr('changes'),
-                            style: textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            app.latestVersion,
-                            style: textTheme.bodySmall?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.of(sheetContext).pop(),
-                      child: Text(tr('close')),
-                    ),
+                data: displayChangeLog,
+                onTapLink: (text, href, title) {
+                  if (href != null) {
+                    launchUrlString(
+                      href.startsWith('http://') || href.startsWith('https://')
+                          ? href
+                          : '${Uri.parse(app.url).origin}/$href',
+                      mode: LaunchMode.externalApplication,
+                    );
+                  }
+                },
+                extensionSet: md.ExtensionSet(
+                  md.ExtensionSet.gitHubFlavored.blockSyntaxes,
+                  [
+                    md.EmojiSyntax(),
+                    ...md.ExtensionSet.gitHubFlavored.inlineSyntaxes,
                   ],
                 ),
-              ),
-              if (changesUrl != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                  child: InkWell(
-                    onTap: () {
-                      launchUrlString(
-                        changesUrl,
-                        mode: LaunchMode.externalApplication,
-                      );
-                    },
-                    child: Text(
-                      changesUrl,
-                      style: textTheme.bodySmall?.copyWith(
+              )
+            : SelectableText(displayChangeLog, style: textTheme.bodyMedium);
+      }
+
+      final Widget changeLogContent = linkedChangeLogFuture == null
+          ? buildChangeLogContent(processedChangeLog)
+          : FutureBuilder<String>(
+              future: linkedChangeLogFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState != ConnectionState.done) {
+                  return SizedBox(
+                    height: 120,
+                    child: Center(
+                      child: ExpressiveLoadingIndicator(
                         color: colorScheme.primary,
-                        decoration: TextDecoration.underline,
-                        fontStyle: FontStyle.italic,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 64,
+                          height: 64,
+                        ),
                       ),
                     ),
+                  );
+                }
+                if (snapshot.hasError) {
+                  return SelectableText(
+                    snapshot.error.toString(),
+                    style: textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.error,
+                    ),
+                  );
+                }
+                return buildChangeLogContent(snapshot.data);
+              },
+            );
+
+      return AppSheetContent(
+        padding: const EdgeInsets.fromLTRB(0, 0, 0, 24),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 8, 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        tr('changes'),
+                        style: textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        app.latestVersion,
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              const Divider(height: 1),
-              Expanded(child: changeLogContent),
-            ],
-          );
-        },
+                TextButton(
+                  onPressed: () => Navigator.of(sheetContext).pop(),
+                  child: Text(tr('close')),
+                ),
+              ],
+            ),
+          ),
+          if (changesUrl != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: InkWell(
+                onTap: () {
+                  launchUrlString(
+                    changesUrl,
+                    mode: LaunchMode.externalApplication,
+                  );
+                },
+                child: Text(
+                  changesUrl,
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colorScheme.primary,
+                    decoration: TextDecoration.underline,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+            ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+            child: changeLogContent,
+          ),
+        ],
       );
     },
   );
@@ -1640,15 +1630,9 @@ Null Function()? getChangeLogFn(BuildContext context, App app) {
 }
 
 void showAppsViewOptionsSheet(BuildContext context, {String? folderId}) {
-  showModalBottomSheet<void>(
+  showAppModalSheet<void>(
     context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-    ),
     builder: (sheetContext) {
-      final bottomInset = MediaQuery.viewPaddingOf(sheetContext).bottom;
       return StatefulBuilder(
         builder: (ctx, setSheetState) {
           final settingsProvider = ctx.watch<SettingsProvider>();
@@ -1739,320 +1723,285 @@ void showAppsViewOptionsSheet(BuildContext context, {String? folderId}) {
             );
           }
 
-          final double screenHeight = MediaQuery.sizeOf(ctx).height;
-          final EdgeInsets viewPadding = MediaQuery.viewPaddingOf(ctx);
-          final double maxSheetHeight = screenHeight - viewPadding.top - 12;
-
-          return ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: maxSheetHeight),
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(20, 12, 20, 16 + bottomInset),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Center(
-                      child: Container(
-                        width: 40,
-                        height: 4,
-                        margin: const EdgeInsets.only(bottom: 12),
-                        decoration: BoxDecoration(
-                          color: colorScheme.onSurfaceVariant.withAlpha(80),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                      ),
-                    ),
-                    Text(
-                      tr('appsViewOptions'),
-                      style: textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        sectionLabel(tr('showBadges')),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            FilterChip(
-                              avatar: const Icon(
-                                Icons.person_rounded,
-                                size: 16,
-                              ),
-                              showCheckmark: false,
-                              label: Text(tr('showAppTypeBadge')),
-                              selected: settingsProvider.showAppTypeBadge,
-                              onSelected: (value) {
-                                settingsProvider.showAppTypeBadge = value;
-                                setSheetState(() {});
-                              },
-                            ),
-                            FilterChip(
-                              avatar: const Icon(Icons.store_rounded, size: 16),
-                              showCheckmark: false,
-                              label: Text(tr('showTrackedStoreBadge')),
-                              selected: settingsProvider.showTrackedStoreBadge,
-                              onSelected: (value) {
-                                settingsProvider.showTrackedStoreBadge = value;
-                                setSheetState(() {});
-                              },
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    Divider(color: colorScheme.outlineVariant),
-                    const SizedBox(height: 8),
-                    sectionLabel(tr('sortBy')),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        sortChip(
-                          label: tr('authorName'),
-                          selected:
-                              effectiveSortColumn ==
-                              SortColumnSettings.authorName,
-                          onTap: () {
-                            setEffectiveSortColumn(
-                              SortColumnSettings.authorName,
-                            );
-                            setSheetState(() {});
-                          },
-                        ),
-                        sortChip(
-                          label: tr('nameAuthor'),
-                          selected:
-                              effectiveSortColumn ==
-                              SortColumnSettings.nameAuthor,
-                          onTap: () {
-                            setEffectiveSortColumn(
-                              SortColumnSettings.nameAuthor,
-                            );
-                            setSheetState(() {});
-                          },
-                        ),
-                        sortChip(
-                          label: tr('asAdded'),
-                          selected:
-                              effectiveSortColumn == SortColumnSettings.added,
-                          onTap: () {
-                            setEffectiveSortColumn(SortColumnSettings.added);
-                            setSheetState(() {});
-                          },
-                        ),
-                        sortChip(
-                          label: tr('releaseDate'),
-                          selected:
-                              effectiveSortColumn ==
-                              SortColumnSettings.releaseDate,
-                          onTap: () {
-                            setEffectiveSortColumn(
-                              SortColumnSettings.releaseDate,
-                            );
-                            setSheetState(() {});
-                          },
-                        ),
-                        sortChip(
-                          label: tr('sortByLastUpdateCheck'),
-                          selected:
-                              effectiveSortColumn ==
-                              SortColumnSettings.lastUpdateCheck,
-                          onTap: () {
-                            setEffectiveSortColumn(
-                              SortColumnSettings.lastUpdateCheck,
-                            );
-                            setSheetState(() {});
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    sectionLabel(tr('sortOrder')),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        sortChip(
-                          label: tr('ascending'),
-                          selected:
-                              effectiveSortOrder == SortOrderSettings.ascending,
-                          onTap: () {
-                            setEffectiveSortOrder(SortOrderSettings.ascending);
-                            setSheetState(() {});
-                          },
-                        ),
-                        sortChip(
-                          label: tr('descending'),
-                          selected:
-                              effectiveSortOrder ==
-                              SortOrderSettings.descending,
-                          onTap: () {
-                            setEffectiveSortOrder(SortOrderSettings.descending);
-                            setSheetState(() {});
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Divider(color: colorScheme.outlineVariant),
-                    const SizedBox(height: 8),
-                    sectionLabel(tr('groupBy')),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        sortChip(
-                          label: tr('groupByNone'),
-                          selected: effectiveGroupBy == AppsListGroupBy.none,
-                          onTap: () {
-                            setEffectiveGroupBy(AppsListGroupBy.none);
-                            setSheetState(() {});
-                          },
-                        ),
-                        sortChip(
-                          label: tr('category'),
-                          selected:
-                              effectiveGroupBy == AppsListGroupBy.category,
-                          onTap: () {
-                            setEffectiveGroupBy(AppsListGroupBy.category);
-                            setSheetState(() {});
-                          },
-                        ),
-                        sortChip(
-                          label: tr('groupByTrackedSource'),
-                          selected: effectiveGroupBy == AppsListGroupBy.source,
-                          onTap: () {
-                            setEffectiveGroupBy(AppsListGroupBy.source);
-                            setSheetState(() {});
-                          },
-                        ),
-                        sortChip(
-                          label: tr('groupByAppType'),
-                          selected: effectiveGroupBy == AppsListGroupBy.appType,
-                          onTap: () {
-                            setEffectiveGroupBy(AppsListGroupBy.appType);
-                            setSheetState(() {});
-                          },
-                        ),
-                      ],
-                    ),
-                    if (effectiveGroupBy != AppsListGroupBy.none)
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(tr('groupNonInstalledSeparately')),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            HelpHintIcon(
-                              message: tr(
-                                'groupNonInstalledSeparatelyDescription',
-                              ),
-                              padding: EdgeInsets.zero,
-                            ),
-                            Switch(
-                              value: effectiveGroupNonInstalledSeparately,
-                              onChanged: (value) {
-                                setEffectiveGroupNonInstalledSeparately(value);
-                                setSheetState(() {});
-                              },
-                            ),
-                          ],
-                        ),
-                        onTap: () {
-                          setEffectiveGroupNonInstalledSeparately(
-                            !effectiveGroupNonInstalledSeparately,
-                          );
-                          setSheetState(() {});
-                        },
-                      ),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(tr('groupUpdatesSeparately')),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          HelpHintIcon(
-                            message: tr('groupUpdatesSeparatelyDescription'),
-                            padding: EdgeInsets.zero,
-                          ),
-                          Switch(
-                            value: effectiveGroupUpdatesSeparately,
-                            onChanged: (value) {
-                              setEffectiveGroupUpdatesSeparately(value);
-                              setSheetState(() {});
-                            },
-                          ),
-                        ],
-                      ),
-                      onTap: () {
-                        setEffectiveGroupUpdatesSeparately(
-                          !effectiveGroupUpdatesSeparately,
-                        );
-                        setSheetState(() {});
-                      },
-                    ),
-                    Divider(color: colorScheme.outlineVariant),
-                    const SizedBox(height: 4),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(tr('pinUpdates')),
-                      value: effectivePinUpdates,
-                      onChanged: (value) {
-                        setEffectivePinUpdates(value);
-                        setSheetState(() {});
-                      },
-                    ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(tr('moveNonInstalledAppsToBottom')),
-                      value: effectiveBuryNonInstalled,
-                      onChanged: (value) {
-                        setEffectiveBuryNonInstalled(value);
-                        setSheetState(() {});
-                      },
-                    ),
-                    // Main-tab-only toggle: shows / hides foldered apps on
-                    // this view AND scopes pull-to-refresh accordingly.
-                    // Hidden when this sheet is opened from inside a folder
-                    // view because the toggle has no meaning there - a
-                    // folder always shows its own apps.
-                    if (folderId == null)
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(tr('showFolderedAppsOnMainPage')),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            HelpHintIcon(
-                              message: tr('showFolderedAppsOnMainPageTooltip'),
-                              padding: EdgeInsets.zero,
-                            ),
-                            Switch(
-                              value:
-                                  settingsProvider.showFolderedAppsOnMainPage,
-                              onChanged: (value) {
-                                settingsProvider.showFolderedAppsOnMainPage =
-                                    value;
-                                setSheetState(() {});
-                              },
-                            ),
-                          ],
-                        ),
-                        onTap: () {
-                          settingsProvider.showFolderedAppsOnMainPage =
-                              !settingsProvider.showFolderedAppsOnMainPage;
-                          setSheetState(() {});
-                        },
-                      ),
-                  ],
+          return AppSheetContent(
+            children: [
+              Text(
+                tr('appsViewOptions'),
+                style: textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-            ),
+              const SizedBox(height: 16),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  sectionLabel(tr('showBadges')),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      FilterChip(
+                        avatar: const Icon(Icons.person_rounded, size: 16),
+                        showCheckmark: false,
+                        label: Text(tr('showAppTypeBadge')),
+                        selected: settingsProvider.showAppTypeBadge,
+                        onSelected: (value) {
+                          settingsProvider.showAppTypeBadge = value;
+                          setSheetState(() {});
+                        },
+                      ),
+                      FilterChip(
+                        avatar: const Icon(Icons.store_rounded, size: 16),
+                        showCheckmark: false,
+                        label: Text(tr('showTrackedStoreBadge')),
+                        selected: settingsProvider.showTrackedStoreBadge,
+                        onSelected: (value) {
+                          settingsProvider.showTrackedStoreBadge = value;
+                          setSheetState(() {});
+                        },
+                      ),
+                      FilterChip(
+                        avatar: const Icon(Icons.category_rounded, size: 16),
+                        showCheckmark: false,
+                        label: Text(tr('showCategoriesBadge')),
+                        selected: settingsProvider.showCategoriesBadge,
+                        onSelected: (value) {
+                          settingsProvider.showCategoriesBadge = value;
+                          setSheetState(() {});
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              Divider(color: colorScheme.outlineVariant),
+              const SizedBox(height: 8),
+              sectionLabel(tr('sortBy')),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  sortChip(
+                    label: tr('authorName'),
+                    selected:
+                        effectiveSortColumn == SortColumnSettings.authorName,
+                    onTap: () {
+                      setEffectiveSortColumn(SortColumnSettings.authorName);
+                      setSheetState(() {});
+                    },
+                  ),
+                  sortChip(
+                    label: tr('nameAuthor'),
+                    selected:
+                        effectiveSortColumn == SortColumnSettings.nameAuthor,
+                    onTap: () {
+                      setEffectiveSortColumn(SortColumnSettings.nameAuthor);
+                      setSheetState(() {});
+                    },
+                  ),
+                  sortChip(
+                    label: tr('asAdded'),
+                    selected: effectiveSortColumn == SortColumnSettings.added,
+                    onTap: () {
+                      setEffectiveSortColumn(SortColumnSettings.added);
+                      setSheetState(() {});
+                    },
+                  ),
+                  sortChip(
+                    label: tr('releaseDate'),
+                    selected:
+                        effectiveSortColumn == SortColumnSettings.releaseDate,
+                    onTap: () {
+                      setEffectiveSortColumn(SortColumnSettings.releaseDate);
+                      setSheetState(() {});
+                    },
+                  ),
+                  sortChip(
+                    label: tr('sortByLastUpdateCheck'),
+                    selected:
+                        effectiveSortColumn ==
+                        SortColumnSettings.lastUpdateCheck,
+                    onTap: () {
+                      setEffectiveSortColumn(
+                        SortColumnSettings.lastUpdateCheck,
+                      );
+                      setSheetState(() {});
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              sectionLabel(tr('sortOrder')),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  sortChip(
+                    label: tr('ascending'),
+                    selected: effectiveSortOrder == SortOrderSettings.ascending,
+                    onTap: () {
+                      setEffectiveSortOrder(SortOrderSettings.ascending);
+                      setSheetState(() {});
+                    },
+                  ),
+                  sortChip(
+                    label: tr('descending'),
+                    selected:
+                        effectiveSortOrder == SortOrderSettings.descending,
+                    onTap: () {
+                      setEffectiveSortOrder(SortOrderSettings.descending);
+                      setSheetState(() {});
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Divider(color: colorScheme.outlineVariant),
+              const SizedBox(height: 8),
+              sectionLabel(tr('groupBy')),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  sortChip(
+                    label: tr('groupByNone'),
+                    selected: effectiveGroupBy == AppsListGroupBy.none,
+                    onTap: () {
+                      setEffectiveGroupBy(AppsListGroupBy.none);
+                      setSheetState(() {});
+                    },
+                  ),
+                  sortChip(
+                    label: tr('category'),
+                    selected: effectiveGroupBy == AppsListGroupBy.category,
+                    onTap: () {
+                      setEffectiveGroupBy(AppsListGroupBy.category);
+                      setSheetState(() {});
+                    },
+                  ),
+                  sortChip(
+                    label: tr('groupByTrackedSource'),
+                    selected: effectiveGroupBy == AppsListGroupBy.source,
+                    onTap: () {
+                      setEffectiveGroupBy(AppsListGroupBy.source);
+                      setSheetState(() {});
+                    },
+                  ),
+                  sortChip(
+                    label: tr('groupByAppType'),
+                    selected: effectiveGroupBy == AppsListGroupBy.appType,
+                    onTap: () {
+                      setEffectiveGroupBy(AppsListGroupBy.appType);
+                      setSheetState(() {});
+                    },
+                  ),
+                ],
+              ),
+              if (effectiveGroupBy != AppsListGroupBy.none)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(tr('groupNonInstalledSeparately')),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      HelpHintIcon(
+                        message: tr('groupNonInstalledSeparatelyDescription'),
+                        padding: EdgeInsets.zero,
+                      ),
+                      Switch(
+                        value: effectiveGroupNonInstalledSeparately,
+                        onChanged: (value) {
+                          setEffectiveGroupNonInstalledSeparately(value);
+                          setSheetState(() {});
+                        },
+                      ),
+                    ],
+                  ),
+                  onTap: () {
+                    setEffectiveGroupNonInstalledSeparately(
+                      !effectiveGroupNonInstalledSeparately,
+                    );
+                    setSheetState(() {});
+                  },
+                ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(tr('groupUpdatesSeparately')),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    HelpHintIcon(
+                      message: tr('groupUpdatesSeparatelyDescription'),
+                      padding: EdgeInsets.zero,
+                    ),
+                    Switch(
+                      value: effectiveGroupUpdatesSeparately,
+                      onChanged: (value) {
+                        setEffectiveGroupUpdatesSeparately(value);
+                        setSheetState(() {});
+                      },
+                    ),
+                  ],
+                ),
+                onTap: () {
+                  setEffectiveGroupUpdatesSeparately(
+                    !effectiveGroupUpdatesSeparately,
+                  );
+                  setSheetState(() {});
+                },
+              ),
+              Divider(color: colorScheme.outlineVariant),
+              const SizedBox(height: 4),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(tr('pinUpdates')),
+                value: effectivePinUpdates,
+                onChanged: (value) {
+                  setEffectivePinUpdates(value);
+                  setSheetState(() {});
+                },
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(tr('moveNonInstalledAppsToBottom')),
+                value: effectiveBuryNonInstalled,
+                onChanged: (value) {
+                  setEffectiveBuryNonInstalled(value);
+                  setSheetState(() {});
+                },
+              ),
+              // Main-tab-only toggle: shows / hides foldered apps on
+              // this view AND scopes pull-to-refresh accordingly.
+              // Hidden when this sheet is opened from inside a folder
+              // view because the toggle has no meaning there - a
+              // folder always shows its own apps.
+              if (folderId == null)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(tr('showFolderedAppsOnMainPage')),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      HelpHintIcon(
+                        message: tr('showFolderedAppsOnMainPageTooltip'),
+                        padding: EdgeInsets.zero,
+                      ),
+                      Switch(
+                        value: settingsProvider.showFolderedAppsOnMainPage,
+                        onChanged: (value) {
+                          settingsProvider.showFolderedAppsOnMainPage = value;
+                          setSheetState(() {});
+                        },
+                      ),
+                    ],
+                  ),
+                  onTap: () {
+                    settingsProvider.showFolderedAppsOnMainPage =
+                        !settingsProvider.showFolderedAppsOnMainPage;
+                    setSheetState(() {});
+                  },
+                ),
+            ],
           );
         },
       );
@@ -2658,7 +2607,7 @@ class AppsPageState extends State<AppsPage> {
     // setter calls, etc.).
     final String? watchedFolderId = widget.folderId;
     context.select<SettingsProvider, int>(
-      (s) => Object.hash(
+      (s) => Object.hashAll([
         s.showFolderedAppsOnMainPage,
         s.pinUpdates,
         s.buryNonInstalled,
@@ -2671,6 +2620,7 @@ class AppsPageState extends State<AppsPage> {
         Object.hashAll(s.categories.entries.map((e) => '${e.key}=${e.value}')),
         s.showAppTypeBadge,
         s.showTrackedStoreBadge,
+        s.showCategoriesBadge,
         s.highlightTouchTargets,
         s.progressiveBlurEnabled,
         s.reduceVisualEffects,
@@ -2692,7 +2642,7 @@ class AppsPageState extends State<AppsPage> {
                 s.folderGroupNonInstalledSeparately(watchedFolderId),
                 s.folderGroupUpdatesSeparately(watchedFolderId),
               ),
-      ),
+      ]),
     );
     final SettingsProvider settingsProvider = context.read<SettingsProvider>();
     final existingFolderIds = settingsProvider.appFolders
@@ -3635,6 +3585,7 @@ class AppsPageState extends State<AppsPage> {
           sourceHost: sourceHost,
           showAppTypeBadge: settingsProvider.showAppTypeBadge,
           showTrackedStoreBadge: settingsProvider.showTrackedStoreBadge,
+          showCategoriesBadge: settingsProvider.showCategoriesBadge,
           onTap: selectedAppIds.isNotEmpty
               ? () => toggleAppSelected(app.app)
               : navigateToAppPage,
@@ -4058,13 +4009,8 @@ class AppsPageState extends State<AppsPage> {
       return () async {
         try {
           final appsToCategorize = selectedApps.toList();
-          await showModalBottomSheet<void>(
+          await showAppModalSheet<void>(
             context: context,
-            isScrollControlled: true,
-            useSafeArea: true,
-            shape: const RoundedRectangleBorder(
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            ),
             builder: (BuildContext sheetContext) {
               return BulkCategoryEditorSheet(
                 availableCategoryColors: settingsProvider.categories,
@@ -4322,18 +4268,11 @@ class AppsPageState extends State<AppsPage> {
     // Changes to toggles and dropdown are applied live; the sheet is dismissed
     // by dragging down or tapping outside.
     showFilterSheet() {
-      showModalBottomSheet<void>(
+      showAppModalSheet<void>(
         context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
         builder: (sheetCtx) {
           return StatefulBuilder(
             builder: (sheetCtx, setSheetState) {
-              final colorScheme = Theme.of(context).colorScheme;
-
               // Call both parent and sheet setState when the filter changes.
               void update(VoidCallback fn) {
                 fn();
@@ -4364,213 +4303,186 @@ class AppsPageState extends State<AppsPage> {
                 ),
               ];
 
-              return SafeArea(
-                top: false,
-                child: Padding(
-                  padding: EdgeInsets.only(
-                    bottom: MediaQuery.viewInsetsOf(sheetCtx).bottom,
-                  ),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+              return AppSheetContent(
+                padding: const EdgeInsets.fromLTRB(0, 0, 0, 16),
+                children: [
+                  // Title row
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 8, 12),
+                    child: Row(
                       children: [
-                        // Drag handle
-                        Center(
-                          child: Container(
-                            margin: const EdgeInsets.symmetric(vertical: 12),
-                            width: 40,
-                            height: 4,
-                            decoration: BoxDecoration(
-                              color: colorScheme.outlineVariant,
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                          ),
-                        ),
-                        // Title row
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 0, 8, 12),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  tr('filterApps'),
-                                  style: Theme.of(context).textTheme.titleMedium
-                                      ?.copyWith(fontWeight: FontWeight.w600),
-                                ),
-                              ),
-                              TextButton(
-                                onPressed: () {
-                                  update(() {
-                                    filter = AppsFilter();
-                                    _searchField = 'appName';
-                                    _searchController.clear();
-                                  });
-                                  Navigator.of(sheetCtx).pop();
-                                },
-                                child: Text(tr('remove')),
-                              ),
-                            ],
-                          ),
-                        ),
-
-                        // ── Search field selector ─────────────────────────────
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+                        Expanded(
                           child: Text(
-                            tr('search'),
-                            style: Theme.of(context).textTheme.labelMedium,
+                            tr('filterApps'),
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w600),
                           ),
                         ),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
-                          child: Wrap(
-                            spacing: 8,
-                            children: [
-                              fieldChip('appName', tr('appName')),
-                              fieldChip('author', tr('author')),
-                              fieldChip('appId', tr('appId')),
-                            ],
-                          ),
-                        ),
-
-                        const Divider(height: 1),
-                        const SizedBox(height: 8),
-
-                        // ── Visibility toggles ────────────────────────────────
-                        SwitchListTile(
-                          dense: true,
-                          title: Text(tr('upToDateApps')),
-                          value: filter.includeUptodate,
-                          onChanged: (v) =>
-                              update(() => filter.includeUptodate = v),
-                        ),
-                        SwitchListTile(
-                          dense: true,
-                          title: Text(tr('nonInstalledApps')),
-                          value: filter.includeNonInstalled,
-                          onChanged: (v) =>
-                              update(() => filter.includeNonInstalled = v),
-                        ),
-
-                        const SizedBox(height: 8),
-                        const Divider(height: 1),
-                        const SizedBox(height: 8),
-
-                        // ── Source dropdown ───────────────────────────────────
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
-                          child: (() {
-                            double maxW = 0.0;
-                            final TextStyle? style = Theme.of(
-                              context,
-                            ).textTheme.bodyLarge;
-                            for (final sourceItem in sourceItems) {
-                              final String text = sourceItem.value;
-                              final textPainter = TextPainter(
-                                text: TextSpan(text: text, style: style),
-                                textDirection: TextDirection.ltr,
-                              )..layout();
-                              if (textPainter.width > maxW) {
-                                maxW = textPainter.width;
-                              }
-                            }
-                            final double calculatedMenuWidth = (maxW + 64.0)
-                                .clamp(
-                                  120.0,
-                                  MediaQuery.of(context).size.width - 88.0,
-                                );
-                            return FormField<String>(
-                              key: ValueKey(filter.sourceFilter),
-                              initialValue: filter.sourceFilter,
-                              builder: (FormFieldState<String> fieldState) {
-                                final InputDecoration decoration =
-                                    InputDecoration(
-                                      labelText: tr('appSource'),
-                                      isDense: true,
-                                      border: const OutlineInputBorder(),
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 10,
-                                          ),
-                                    ).copyWith(errorText: fieldState.errorText);
-                                return ButtonTheme(
-                                  alignedDropdown: true,
-                                  child: InputDecorator(
-                                    decoration: decoration,
-                                    isEmpty: fieldState.value == null,
-                                    child: DropdownButtonHideUnderline(
-                                      child: DropdownButton<String>(
-                                        value: fieldState.value,
-                                        isExpanded: true,
-                                        isDense: true,
-                                        menuWidth: calculatedMenuWidth,
-                                        items: sourceItems
-                                            .map(
-                                              (sourceItem) => DropdownMenuItem(
-                                                value: sourceItem.key,
-                                                child: Text(sourceItem.value),
-                                              ),
-                                            )
-                                            .toList(),
-                                        onChanged: (newValue) {
-                                          fieldState.didChange(newValue);
-                                          update(
-                                            () => filter.sourceFilter =
-                                                newValue ?? '',
-                                          );
-                                        },
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              },
-                            );
-                          })(),
-                        ),
-
-                        // ── Category selector ─────────────────────────────────
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                          child: _TriStateCategoryFilterSelector(
-                            categoryColors: settingsProvider.categories,
-                            includedCategories: filter.includedCategoryFilter,
-                            excludedCategories: filter.excludedCategoryFilter,
-                            matchMode: filter.categoryMatchMode,
-                            onChanged: (included, excluded) {
-                              update(() {
-                                filter.includedCategoryFilter = included;
-                                filter.excludedCategoryFilter = excluded;
-                              });
-                            },
-                            onMatchModeChanged: (matchMode) {
-                              update(() {
-                                filter.categoryMatchMode = matchMode;
-                              });
-                            },
-                          ),
-                        ),
-
-                        // ── Save as Folder ────────────────────────────────────
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-                          child: OutlinedButton.icon(
-                            icon: const Icon(
-                              Icons.create_new_folder_outlined,
-                              size: 18,
-                            ),
-                            label: Text(tr('saveAsFolder')),
-                            onPressed: () {
-                              Navigator.of(sheetCtx).pop();
-                              _saveFilterAsFolder(context, filter);
-                            },
-                          ),
+                        TextButton(
+                          onPressed: () {
+                            update(() {
+                              filter = AppsFilter();
+                              _searchField = 'appName';
+                              _searchController.clear();
+                            });
+                            Navigator.of(sheetCtx).pop();
+                          },
+                          child: Text(tr('remove')),
                         ),
                       ],
                     ),
                   ),
-                ),
+
+                  // ── Search field selector ─────────────────────────────
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+                    child: Text(
+                      tr('search'),
+                      style: Theme.of(context).textTheme.labelMedium,
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+                    child: Wrap(
+                      spacing: 8,
+                      children: [
+                        fieldChip('appName', tr('appName')),
+                        fieldChip('author', tr('author')),
+                        fieldChip('appId', tr('appId')),
+                      ],
+                    ),
+                  ),
+
+                  const Divider(height: 1),
+                  const SizedBox(height: 8),
+
+                  // ── Visibility toggles ────────────────────────────────
+                  SwitchListTile(
+                    dense: true,
+                    title: Text(tr('upToDateApps')),
+                    value: filter.includeUptodate,
+                    onChanged: (v) => update(() => filter.includeUptodate = v),
+                  ),
+                  SwitchListTile(
+                    dense: true,
+                    title: Text(tr('nonInstalledApps')),
+                    value: filter.includeNonInstalled,
+                    onChanged: (v) =>
+                        update(() => filter.includeNonInstalled = v),
+                  ),
+
+                  const SizedBox(height: 8),
+                  const Divider(height: 1),
+                  const SizedBox(height: 8),
+
+                  // ── Source dropdown ───────────────────────────────────
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+                    child: (() {
+                      double maxW = 0.0;
+                      final TextStyle? style = Theme.of(
+                        context,
+                      ).textTheme.bodyLarge;
+                      for (final sourceItem in sourceItems) {
+                        final String text = sourceItem.value;
+                        final textPainter = TextPainter(
+                          text: TextSpan(text: text, style: style),
+                          textDirection: TextDirection.ltr,
+                        )..layout();
+                        if (textPainter.width > maxW) {
+                          maxW = textPainter.width;
+                        }
+                      }
+                      final double calculatedMenuWidth = (maxW + 64.0).clamp(
+                        120.0,
+                        MediaQuery.of(context).size.width - 88.0,
+                      );
+                      return FormField<String>(
+                        key: ValueKey(filter.sourceFilter),
+                        initialValue: filter.sourceFilter,
+                        builder: (FormFieldState<String> fieldState) {
+                          final InputDecoration decoration = InputDecoration(
+                            labelText: tr('appSource'),
+                            isDense: true,
+                            border: const OutlineInputBorder(),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                          ).copyWith(errorText: fieldState.errorText);
+                          return ButtonTheme(
+                            alignedDropdown: true,
+                            child: InputDecorator(
+                              decoration: decoration,
+                              isEmpty: fieldState.value == null,
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  value: fieldState.value,
+                                  isExpanded: true,
+                                  isDense: true,
+                                  menuWidth: calculatedMenuWidth,
+                                  items: sourceItems
+                                      .map(
+                                        (sourceItem) => DropdownMenuItem(
+                                          value: sourceItem.key,
+                                          child: Text(sourceItem.value),
+                                        ),
+                                      )
+                                      .toList(),
+                                  onChanged: (newValue) {
+                                    fieldState.didChange(newValue);
+                                    update(
+                                      () =>
+                                          filter.sourceFilter = newValue ?? '',
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    })(),
+                  ),
+
+                  // ── Category selector ─────────────────────────────────
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                    child: _TriStateCategoryFilterSelector(
+                      categoryColors: settingsProvider.categories,
+                      includedCategories: filter.includedCategoryFilter,
+                      excludedCategories: filter.excludedCategoryFilter,
+                      matchMode: filter.categoryMatchMode,
+                      onChanged: (included, excluded) {
+                        update(() {
+                          filter.includedCategoryFilter = included;
+                          filter.excludedCategoryFilter = excluded;
+                        });
+                      },
+                      onMatchModeChanged: (matchMode) {
+                        update(() {
+                          filter.categoryMatchMode = matchMode;
+                        });
+                      },
+                    ),
+                  ),
+
+                  // ── Save as Folder ────────────────────────────────────
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+                    child: OutlinedButton.icon(
+                      icon: const Icon(
+                        Icons.create_new_folder_outlined,
+                        size: 18,
+                      ),
+                      label: Text(tr('saveAsFolder')),
+                      onPressed: () {
+                        Navigator.of(sheetCtx).pop();
+                        _saveFilterAsFolder(context, filter);
+                      },
+                    ),
+                  ),
+                ],
               );
             },
           );
@@ -6228,130 +6140,119 @@ class AppsPageState extends State<AppsPage> {
   // ── Folder manage dialog ────────────────────────────────────────────────────
 
   void _showFolderManageDialog(BuildContext context) {
-    showModalBottomSheet<void>(
+    showAppModalSheet<void>(
       context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
       builder: (sheetCtx) => StatefulBuilder(
         builder: (sheetCtx, setSheetState) {
           final settingsProvider = sheetCtx.watch<SettingsProvider>();
           final folders = settingsProvider.appFolders;
-          final bottomInset = MediaQuery.viewPaddingOf(sheetCtx).bottom;
 
-          return Padding(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomInset),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+          return AppSheetContent(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  tr('folders'),
+                  style: Theme.of(sheetCtx).textTheme.titleMedium,
+                ),
+              ),
+              if (folders.isEmpty)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Text(
-                    tr('folders'),
-                    style: Theme.of(sheetCtx).textTheme.titleMedium,
-                  ),
-                ),
-                if (folders.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    child: Center(child: Text(tr('noFolders'))),
-                  )
-                else
-                  ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: folders.length,
-                    itemBuilder: (_, i) {
-                      final folder = folders[i];
-                      return ListTile(
-                        leading: const Icon(Icons.folder_outlined),
-                        title: Text(folder.name),
-                        subtitle: folder.rule != null
-                            ? Text(
-                                '${_folderRuleFieldLabel(folder.rule!.field)}'
-                                ' ${_folderRuleMatchLabel(folder.rule!.matchType).toLowerCase()}'
-                                ' "${folder.rule!.value}"',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              )
-                            : null,
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.edit_outlined),
-                              tooltip: tr('editFolder'),
-                              onPressed: () {
-                                Navigator.of(sheetCtx).pop();
-                                _showFolderEditDialog(
-                                  context,
-                                  existing: folder,
-                                );
-                              },
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.delete_outlined),
-                              tooltip: tr('deleteFolder'),
-                              onPressed: () async {
-                                final confirm = await showDialog<bool>(
-                                  context: sheetCtx,
-                                  builder: (dCtx) => AlertDialog(
-                                    content: Text(
-                                      tr(
-                                        'deleteFolderConfirm',
-                                        namedArgs: {'name': folder.name},
-                                      ),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Center(child: Text(tr('noFolders'))),
+                )
+              else
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: folders.length,
+                  itemBuilder: (_, i) {
+                    final folder = folders[i];
+                    return ListTile(
+                      leading: const Icon(Icons.folder_outlined),
+                      title: Text(folder.name),
+                      subtitle: folder.rule != null
+                          ? Text(
+                              '${_folderRuleFieldLabel(folder.rule!.field)}'
+                              ' ${_folderRuleMatchLabel(folder.rule!.matchType).toLowerCase()}'
+                              ' "${folder.rule!.value}"',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            )
+                          : null,
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit_outlined),
+                            tooltip: tr('editFolder'),
+                            onPressed: () {
+                              Navigator.of(sheetCtx).pop();
+                              _showFolderEditDialog(context, existing: folder);
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outlined),
+                            tooltip: tr('deleteFolder'),
+                            onPressed: () async {
+                              final confirm = await showDialog<bool>(
+                                context: sheetCtx,
+                                builder: (dCtx) => AlertDialog(
+                                  content: Text(
+                                    tr(
+                                      'deleteFolderConfirm',
+                                      namedArgs: {'name': folder.name},
                                     ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.of(dCtx).pop(false),
-                                        child: Text(tr('cancel')),
-                                      ),
-                                      FilledButton(
-                                        onPressed: () =>
-                                            Navigator.of(dCtx).pop(true),
-                                        child: Text(tr('delete')),
-                                      ),
-                                    ],
                                   ),
-                                );
-                                if (confirm != true) return;
-                                // ignore: use_build_context_synchronously
-                                if (!context.mounted) return;
-                                final sp = context.read<SettingsProvider>();
-                                final updated = sp.appFolders
-                                    .where((f) => f.id != folder.id)
-                                    .toList();
-                                sp.appFolders = updated;
-                                sp.clearFolderViewSettings(folder.id);
-                                await _removeFolderFromAllApps(folder.id);
-                                if (sheetCtx.mounted) {
-                                  setSheetState(() {});
-                                }
-                              },
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: () {
-                      Navigator.of(sheetCtx).pop();
-                      _showFolderEditDialog(context);
-                    },
-                    icon: const Icon(Icons.create_new_folder_outlined),
-                    label: Text(tr('newFolder')),
-                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.of(dCtx).pop(false),
+                                      child: Text(tr('cancel')),
+                                    ),
+                                    FilledButton(
+                                      onPressed: () =>
+                                          Navigator.of(dCtx).pop(true),
+                                      child: Text(tr('delete')),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              if (confirm != true) return;
+                              // ignore: use_build_context_synchronously
+                              if (!context.mounted) return;
+                              final sp = context.read<SettingsProvider>();
+                              final updated = sp.appFolders
+                                  .where((f) => f.id != folder.id)
+                                  .toList();
+                              sp.appFolders = updated;
+                              sp.clearFolderViewSettings(folder.id);
+                              await _removeFolderFromAllApps(folder.id);
+                              if (sheetCtx.mounted) {
+                                setSheetState(() {});
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
-              ],
-            ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () {
+                    Navigator.of(sheetCtx).pop();
+                    _showFolderEditDialog(context);
+                  },
+                  icon: const Icon(Icons.create_new_folder_outlined),
+                  label: Text(tr('newFolder')),
+                ),
+              ),
+            ],
           );
         },
       ),
@@ -6635,5 +6536,131 @@ class _ConditionalScrollbar extends StatelessWidget {
       );
     }
     return Scrollbar(interactive: true, controller: controller, child: child);
+  }
+}
+
+class _CategoryChipsRow extends StatelessWidget {
+  const _CategoryChipsRow({
+    required this.categories,
+    required this.categoryColors,
+  });
+
+  final List<String> categories;
+  final Map<String?, int> categoryColors;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final int transparent = colorScheme.surface.withValues(alpha: 0).toARGB32();
+
+    final TextStyle? labelStyle = theme.textTheme.labelMedium?.copyWith(
+      fontWeight: FontWeight.w500,
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double maxWidth = constraints.maxWidth;
+
+        double calculateTextWidth(String text) {
+          final TextPainter textPainter = TextPainter(
+            text: TextSpan(text: text, style: labelStyle),
+            maxLines: 1,
+            textDirection: TextDirection.ltr,
+          );
+          try {
+            textPainter.textScaler = MediaQuery.textScalerOf(context);
+          } catch (_) {
+            try {
+              // ignore: deprecated_member_use
+              textPainter.textScaleFactor = MediaQuery.textScaleFactorOf(
+                context,
+              );
+            } catch (_) {}
+          }
+          textPainter.layout();
+          return textPainter.width;
+        }
+
+        const double chipPaddingFootprint = 46.0;
+
+        double totalWidthOfAll = 0.0;
+        final List<double> chipWidths = [];
+        for (final category in categories) {
+          final double textW = calculateTextWidth(category);
+          final double chipW = textW + chipPaddingFootprint;
+          chipWidths.add(chipW);
+          totalWidthOfAll += chipW;
+        }
+
+        if (totalWidthOfAll <= maxWidth) {
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: categories.map((category) {
+              final color = Color(
+                categoryColors[category] ?? transparent,
+              ).withAlpha(255);
+              return CategoryActionChip(
+                label: category,
+                color: color,
+                state: CategoryActionChipState.plain,
+              );
+            }).toList(),
+          );
+        }
+
+        int bestK = 0;
+        for (int k = categories.length - 1; k >= 0; k--) {
+          double prefixWidth = 0.0;
+          for (int i = 0; i < k; i++) {
+            prefixWidth += chipWidths[i];
+          }
+          final int remaining = categories.length - k;
+          final String plusMoreText = tr(
+            'plusMore',
+            args: [remaining.toString()],
+          );
+          final double plusMoreChipW =
+              calculateTextWidth(plusMoreText) + chipPaddingFootprint;
+
+          if (prefixWidth + plusMoreChipW <= maxWidth) {
+            bestK = k;
+            break;
+          }
+        }
+
+        final List<Widget> children = [];
+        for (int i = 0; i < bestK; i++) {
+          final category = categories[i];
+          final color = Color(
+            categoryColors[category] ?? transparent,
+          ).withAlpha(255);
+          children.add(
+            CategoryActionChip(
+              label: category,
+              color: color,
+              state: CategoryActionChipState.plain,
+            ),
+          );
+        }
+
+        final int remainingCount = categories.length - bestK;
+        if (remainingCount > 0) {
+          final String plusMoreText = tr(
+            'plusMore',
+            args: [remainingCount.toString()],
+          );
+          children.add(
+            CategoryActionChip(
+              label: plusMoreText,
+              color: colorScheme.surfaceContainerHighest,
+              state: CategoryActionChipState.muted,
+            ),
+          );
+        }
+
+        return Row(mainAxisSize: MainAxisSize.min, children: children);
+      },
+    );
   }
 }

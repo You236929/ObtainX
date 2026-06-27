@@ -623,6 +623,8 @@
   "showBadges": "Show badges",
   "showAppTypeBadge": "App type",
   "showTrackedStoreBadge": "Tracked store",
+  "showCategoriesBadge": "Categories",
+  "plusMore": "+{}",
   "appsTabViewOptionsHint": "Tip: open View options on the Apps tab for quick layout controls.",
   "groupNonInstalledSeparately": "Group non-installed apps separately",
   "groupNonInstalledSeparatelyDescription": "When grouping by category or source, show apps that are not installed in their own section instead of inside each group.",

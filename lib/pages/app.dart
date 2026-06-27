@@ -13,6 +13,7 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:obtainium/app_sources/apkmirror.dart';
 import 'package:obtainium/app_sources/github.dart';
+import 'package:obtainium/components/app_bottom_sheet.dart';
 import 'package:obtainium/components/app_page_section_title.dart';
 import 'package:obtainium/components/category_action_chip.dart';
 import 'package:obtainium/pages/additional_options_page.dart';
@@ -3391,6 +3392,7 @@ class _AppPageState extends State<AppPage> {
       const heroIconSize = 48.0;
       final double dialogIconSize = small ? 70 : heroIconSize;
       final double dialogIconRadius = small ? 12 : 16;
+      final double placeholderIconSize = small ? dialogIconSize : 30;
       final iconWidget = _tappableAppIconDisplay(
         themeContext: themeContext,
         appInMemory: app,
@@ -3399,12 +3401,31 @@ class _AppPageState extends State<AppPage> {
         iconMemoryBytes: _heroIconMemoryOverrideForEdit(app),
         exclusiveIconMemoryBytes: _editStagedClearOverride,
         emptyPlaceholder: small
-            ? const SizedBox(height: 70, width: 70)
+            ? SizedBox(
+                height: dialogIconSize,
+                width: dialogIconSize,
+                child: Center(
+                  child: Transform(
+                    alignment: Alignment.center,
+                    transform: Matrix4.rotationZ(0.31),
+                    child: Image(
+                      image: const AssetImage('assets/graphics/icon_small.png'),
+                      width: placeholderIconSize,
+                      height: placeholderIconSize,
+                      fit: BoxFit.contain,
+                      color: dialogColumnTheme.colorScheme.onSurfaceVariant
+                          .withValues(alpha: 0.5),
+                      colorBlendMode: BlendMode.modulate,
+                      gaplessPlayback: true,
+                    ),
+                  ),
+                ),
+              )
             : Container(
-                height: heroIconSize,
-                width: heroIconSize,
+                height: dialogIconSize,
+                width: dialogIconSize,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(dialogIconRadius),
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
@@ -3412,6 +3433,21 @@ class _AppPageState extends State<AppPage> {
                       dialogColumnTheme.colorScheme.primary,
                       dialogColumnTheme.colorScheme.primary.withAlpha(200),
                     ],
+                  ),
+                ),
+                child: Center(
+                  child: Transform(
+                    alignment: Alignment.center,
+                    transform: Matrix4.rotationZ(0.31),
+                    child: Image(
+                      image: const AssetImage('assets/graphics/icon_small.png'),
+                      width: placeholderIconSize,
+                      height: placeholderIconSize,
+                      fit: BoxFit.contain,
+                      color: Colors.white.withValues(alpha: 0.5),
+                      colorBlendMode: BlendMode.modulate,
+                      gaplessPlayback: true,
+                    ),
                   ),
                 ),
               ),
@@ -4069,36 +4105,28 @@ class _AppPageState extends State<AppPage> {
                       color: Theme.of(themeContext).colorScheme.primary,
                       iconSize: 24,
                       onPressed: () {
-                        showModalBottomSheet<void>(
+                        showAppModalSheet<void>(
                           context: context,
-                          isScrollControlled: true,
-                          useSafeArea: true,
-                          showDragHandle: true,
+                          fullWidth: true,
                           backgroundColor: pageThemeForPage.colorScheme.surface,
-                          // Full width — override the M3 default that caps the
-                          // sheet width on wide screens.
-                          constraints: const BoxConstraints(
-                            maxWidth: double.infinity,
-                          ),
                           builder: (BuildContext sheetRouteContext) {
                             return Theme(
                               data: pageThemeForPage,
                               child: Builder(
                                 builder: (BuildContext sheetThemedContext) {
-                                  return SafeArea(
-                                    top: false,
-                                    child: SingleChildScrollView(
-                                      padding: const EdgeInsets.fromLTRB(
-                                        16,
-                                        0,
-                                        16,
-                                        16,
-                                      ),
-                                      child: getFullInfoColumn(
+                                  return AppSheetContent(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      0,
+                                      0,
+                                      0,
+                                      16,
+                                    ),
+                                    children: [
+                                      getFullInfoColumn(
                                         sheetThemedContext,
                                         small: true,
                                       ),
-                                    ),
+                                    ],
                                   );
                                 },
                               ),

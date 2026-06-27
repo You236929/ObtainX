@@ -28,6 +28,7 @@ import 'package:url_launcher/url_launcher_string.dart';
 
 const double _appVaultFabBottomGap = 8.0;
 const double _fabHorizontalMargin = 16.0;
+const double _fabMinimumSafeBottomPadding = 16.0;
 
 enum _AddMode { byUrl, search, fromDevice }
 
@@ -340,7 +341,10 @@ class AddAppPageState extends State<AddAppPage> {
         ? coveredBottomInset
         : 0.0;
     final double appVaultFabBottomPadding =
-        bottomChromeClearance + _appVaultFabBottomGap;
+        (bottomChromeClearance > _fabMinimumSafeBottomPadding
+            ? bottomChromeClearance
+            : _fabMinimumSafeBottomPadding) +
+        _appVaultFabBottomGap;
     final bool urlHasInput =
         _mode == _AddMode.byUrl && userInput.trim().isNotEmpty;
     final bool showAppVaultFab =
@@ -1710,6 +1714,8 @@ class AddAppPageState extends State<AddAppPage> {
                             child: BulkAddWidget(
                               key: _bulkWidgetKey,
                               isLargeScreen: isLargeScreen,
+                              bottomActionBottomPadding:
+                                  appVaultFabBottomPadding,
                               onComplete: () => setState(() {
                                 _byUrlOpenedFromSearchPick = false;
                                 _mode = _AddMode.byUrl;
@@ -1838,6 +1844,7 @@ class AddAppPageState extends State<AddAppPage> {
                   child: BulkAddWidget(
                     key: _bulkWidgetKey,
                     isLargeScreen: isLargeScreen,
+                    bottomActionBottomPadding: appVaultFabBottomPadding,
                     onComplete: () => setState(() {
                       _byUrlOpenedFromSearchPick = false;
                       _mode = _AddMode.byUrl;

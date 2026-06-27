@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:obtainium/layout_breakpoints.dart';
 import 'package:obtainium/widgets/help_hint_icon.dart';
+import 'package:obtainium/components/app_bottom_sheet.dart';
 import 'package:obtainium/components/app_dropdown_field.dart';
 import 'package:obtainium/components/custom_app_bar.dart';
 import 'package:obtainium/components/themes_settings_section.dart';
@@ -2736,95 +2737,82 @@ class _ThirdPartyInstallerSelectorState
         ? '$currentPkg|$currentAct'
         : null;
 
-    showModalBottomSheet(
+    showAppModalSheet<void>(
       context: context,
-      isScrollControlled: true,
       builder: (sheetContext) {
         String? selectedValue = currentValue;
         return StatefulBuilder(
           builder: (builderContext, setSheetState) {
-            return DraggableScrollableSheet(
-              expand: false,
-              initialChildSize: 0.5,
-              maxChildSize: 0.85,
-              builder: (_, scrollController) {
-                return RadioGroup<String>(
-                  groupValue: selectedValue,
-                  onChanged: (String? value) {
-                    setSheetState(() => selectedValue = value);
-                    if (value != null) {
-                      final selected = _installerApps!.firstWhere(
-                        (a) => '${a.packageName}|${a.activityName}' == value,
-                      );
-                      widget.settingsProvider.legacyInstallerPackage =
-                          selected.packageName;
-                      widget.settingsProvider.legacyInstallerActivity =
-                          selected.activityName;
-                    }
-                    Navigator.pop(sheetContext);
-                  },
-                  child: Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Text(
-                          tr('thirdPartyInstallerSelect'),
-                          style: Theme.of(builderContext).textTheme.titleMedium,
-                        ),
-                      ),
-                      Expanded(
-                        child: ListView.builder(
-                          controller: scrollController,
-                          itemCount: _installerApps!.length,
-                          itemBuilder: (_, index) {
-                            final app = _installerApps![index];
-                            final radioValue =
-                                '${app.packageName}|${app.activityName}';
-                            return RadioListTile<String>(
-                              secondary:
-                                  app.icon != null && app.icon!.isNotEmpty
-                                  ? ClipRRect(
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: Image.memory(
-                                        app.icon!,
-                                        width: 40,
-                                        height: 40,
-                                        fit: BoxFit.contain,
-                                        // Decode at the rendered size × DPR
-                                        // so a 512×512 launcher icon doesn't
-                                        // sit at full resolution in the
-                                        // raster cache for a 40-px row.
-                                        cacheWidth:
-                                            (40 *
-                                                    MediaQuery.devicePixelRatioOf(
-                                                      context,
-                                                    ))
-                                                .round(),
-                                        cacheHeight:
-                                            (40 *
-                                                    MediaQuery.devicePixelRatioOf(
-                                                      context,
-                                                    ))
-                                                .round(),
-                                        errorBuilder: (_, _, _) =>
-                                            const Icon(Icons.android, size: 40),
-                                      ),
-                                    )
-                                  : const Icon(Icons.android, size: 40),
-                              title: Text(app.label),
-                              subtitle: Text(
-                                app.packageName,
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                              value: radioValue,
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                );
+            return RadioGroup<String>(
+              groupValue: selectedValue,
+              onChanged: (String? value) {
+                setSheetState(() => selectedValue = value);
+                if (value != null) {
+                  final selected = _installerApps!.firstWhere(
+                    (a) => '${a.packageName}|${a.activityName}' == value,
+                  );
+                  widget.settingsProvider.legacyInstallerPackage =
+                      selected.packageName;
+                  widget.settingsProvider.legacyInstallerActivity =
+                      selected.activityName;
+                }
+                Navigator.pop(sheetContext);
               },
+              child: AppSheetContent(
+                padding: const EdgeInsets.only(bottom: 8),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        tr('thirdPartyInstallerSelect'),
+                        style: Theme.of(builderContext).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                  ..._installerApps!.map((app) {
+                    final radioValue = '${app.packageName}|${app.activityName}';
+                    return RadioListTile<String>(
+                      secondary: app.icon != null && app.icon!.isNotEmpty
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.memory(
+                                app.icon!,
+                                width: 40,
+                                height: 40,
+                                fit: BoxFit.contain,
+                                // Decode at the rendered size × DPR so a
+                                // 512×512 launcher icon doesn't sit at full
+                                // resolution in the raster cache for a 40-px row.
+                                cacheWidth:
+                                    (40 *
+                                            MediaQuery.devicePixelRatioOf(
+                                              context,
+                                            ))
+                                        .round(),
+                                cacheHeight:
+                                    (40 *
+                                            MediaQuery.devicePixelRatioOf(
+                                              context,
+                                            ))
+                                        .round(),
+                                errorBuilder: (_, _, _) =>
+                                    const Icon(Icons.android, size: 40),
+                              ),
+                            )
+                          : const Icon(Icons.android, size: 40),
+                      title: Text(app.label),
+                      subtitle: Text(
+                        app.packageName,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      value: radioValue,
+                    );
+                  }),
+                ],
+              ),
             );
           },
         );

@@ -617,6 +617,15 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  bool get showCategoriesBadge {
+    return prefs?.getBool('showCategoriesBadge') ?? false;
+  }
+
+  set showCategoriesBadge(bool value) {
+    prefs?.setBool('showCategoriesBadge', value);
+    notifyListeners();
+  }
+
   int get updateInterval {
     return prefs?.getInt('updateInterval') ?? 360;
   }

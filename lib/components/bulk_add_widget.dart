@@ -80,12 +80,14 @@ class BulkAddWidget extends StatefulWidget {
   final bool standalone;
   final VoidCallback? onComplete;
   final bool isLargeScreen;
+  final double? bottomActionBottomPadding;
 
   const BulkAddWidget({
     super.key,
     this.standalone = false,
     this.onComplete,
     required this.isLargeScreen,
+    this.bottomActionBottomPadding,
   });
 
   @override
@@ -725,11 +727,12 @@ class BulkAddWidgetState extends State<BulkAddWidget> {
   }
 
   double _bottomActionBottomPadding() =>
+      widget.bottomActionBottomPadding ??
       math.max(
-        MediaQuery.paddingOf(context).bottom,
-        _bulkBottomActionMinimumSafePadding,
-      ) +
-      _bulkBottomActionGap;
+            MediaQuery.paddingOf(context).bottom,
+            _bulkBottomActionMinimumSafePadding,
+          ) +
+          _bulkBottomActionGap;
 
   double _bottomActionListPadding() =>
       _bottomActionBottomPadding() +
@@ -1534,9 +1537,7 @@ class BulkAddWidgetState extends State<BulkAddWidget> {
         _bulkBottomActionHorizontalPadding,
         24,
         _bulkBottomActionHorizontalPadding,
-        widget.isLargeScreen
-            ? MediaQuery.paddingOf(context).bottom + 16
-            : _bottomActionBottomPadding(),
+        _bottomActionBottomPadding(),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -1590,7 +1591,7 @@ class BulkAddWidgetState extends State<BulkAddWidget> {
       ),
     );
 
-    if (widget.isLargeScreen) {
+    if (widget.isLargeScreen && widget.standalone) {
       if (_foundApps.isEmpty &&
           _notFoundApps.isEmpty &&
           _cancelledApps.isEmpty) {
