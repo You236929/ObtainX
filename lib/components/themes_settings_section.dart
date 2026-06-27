@@ -27,20 +27,28 @@ void _applyThemeSegment(
 ) {
   switch (segment) {
     case _ThemeBrightnessSegment.black:
-      settings.useBlackTheme = true;
-      settings.theme = ThemeSettings.dark;
+      settings.setThemeAppearance(
+        theme: ThemeSettings.dark,
+        useBlackTheme: true,
+      );
       break;
     case _ThemeBrightnessSegment.system:
-      settings.useBlackTheme = false;
-      settings.theme = ThemeSettings.system;
+      settings.setThemeAppearance(
+        theme: ThemeSettings.system,
+        useBlackTheme: false,
+      );
       break;
     case _ThemeBrightnessSegment.light:
-      settings.useBlackTheme = false;
-      settings.theme = ThemeSettings.light;
+      settings.setThemeAppearance(
+        theme: ThemeSettings.light,
+        useBlackTheme: false,
+      );
       break;
     case _ThemeBrightnessSegment.dark:
-      settings.useBlackTheme = false;
-      settings.theme = ThemeSettings.dark;
+      settings.setThemeAppearance(
+        theme: ThemeSettings.dark,
+        useBlackTheme: false,
+      );
       break;
   }
 }

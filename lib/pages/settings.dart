@@ -82,6 +82,9 @@ class _SettingsCategory {
 class _SettingsPageState extends State<SettingsPage> {
   late final Future<AndroidDeviceInfo> _androidInfo =
       DeviceInfoPlugin().androidInfo;
+  final ValueNotifier<Map<String, bool>> _expandedSettingsSections =
+      ValueNotifier<Map<String, bool>>(<String, bool>{});
+  bool _expandedSettingsSectionsLoaded = false;
 
   String? _selectedCategory;
 
@@ -122,6 +125,25 @@ class _SettingsPageState extends State<SettingsPage> {
   ];
 
   @override
+  void dispose() {
+    _expandedSettingsSections.dispose();
+    super.dispose();
+  }
+
+  void _loadExpandedSettingsSections(SettingsProvider sp) {
+    if (_expandedSettingsSectionsLoaded || sp.prefs == null) return;
+    _expandedSettingsSections.value = <String, bool>{
+      for (final key in _settingsSectionKeys)
+        key: sp.prefs?.getBool('settingsSection_$key') ?? true,
+    };
+    _expandedSettingsSectionsLoaded = true;
+  }
+
+  static bool _sectionExpanded(Map<String, bool> expandedState, String key) {
+    return expandedState[key] ?? true;
+  }
+
+  @override
   Widget build(BuildContext context) {
     // Narrow watch: register a dependency only on the values needed for the
     // Scaffold chrome (via context.select) so this page rebuilds when those
@@ -134,25 +156,23 @@ class _SettingsPageState extends State<SettingsPage> {
 
     // One-time initialization guard.
     if (sp.prefs == null) sp.initializeSettings();
-
-    // Collapse state: persisted in SharedPreferences but toggled via local
-    // setState so toggling a section header does NOT trigger a global
-    // notifyListeners / full-page rebuild.
-    final Map<String, bool> expandedState = <String, bool>{
-      for (final key in _settingsSectionKeys)
-        key: sp.prefs?.getBool('settingsSection_$key') ?? true,
-    };
+    _loadExpandedSettingsSections(sp);
 
     void setSectionExpanded(String key, bool value) {
       sp.prefs?.setBool('settingsSection_$key', value);
-      setState(() {});
+      _expandedSettingsSections.value = <String, bool>{
+        ..._expandedSettingsSections.value,
+        key: value,
+      };
     }
 
     void setAllSettingsSectionsExpanded(bool value) {
       for (final sectionKey in _settingsSectionKeys) {
         sp.prefs?.setBool('settingsSection_$sectionKey', value);
       }
-      setState(() {});
+      _expandedSettingsSections.value = <String, bool>{
+        for (final sectionKey in _settingsSectionKeys) sectionKey: value,
+      };
     }
 
     final List<String> visibleSettingsSectionKeys = [
@@ -167,10 +187,6 @@ class _SettingsPageState extends State<SettingsPage> {
       'interaction',
       'categories',
     ];
-    final bool allSettingsSectionsExpanded = visibleSettingsSectionKeys.every(
-      (k) => expandedState[k] ?? true,
-    );
-
     Widget settingsCard(List<Widget> children) {
       return m3eExpressiveSettingsCard(
         context: context,
@@ -180,26 +196,26 @@ class _SettingsPageState extends State<SettingsPage> {
     }
 
     Widget collapsibleCard(String key, Widget child) {
-      final bool expanded = expandedState[key] ?? true;
-      return ClipRect(
-        clipper: _SettingsSectionShadowClipper(expanded: expanded),
-        child: AnimatedAlign(
-          duration: const Duration(milliseconds: 360),
-          curve: Curves.easeInOutCubicEmphasized,
-          alignment: Alignment.topCenter,
-          heightFactor: expanded ? 1.0 : 0.0,
-          child: AnimatedOpacity(
-            duration: Duration(milliseconds: expanded ? 260 : 140),
-            curve: expanded ? Curves.easeOutCubic : Curves.easeInCubic,
-            opacity: expanded ? 1.0 : 0.0,
-            child: child,
-          ),
-        ),
+      return ValueListenableBuilder<Map<String, bool>>(
+        valueListenable: _expandedSettingsSections,
+        child: child,
+        builder: (context, expandedState, child) {
+          final bool expanded = _sectionExpanded(expandedState, key);
+          return ClipRect(
+            clipper: _SettingsSectionShadowClipper(expanded: expanded),
+            child: AnimatedAlign(
+              duration: const Duration(milliseconds: 360),
+              curve: Curves.easeInOutCubicEmphasized,
+              alignment: Alignment.topCenter,
+              heightFactor: expanded ? 1.0 : 0.0,
+              child: child,
+            ),
+          );
+        },
       );
     }
 
     Widget sectionHeader(String title, IconData icon, String key) {
-      final bool expanded = expandedState[key] ?? true;
       const Duration headerTransitionDuration = Duration(milliseconds: 300);
       const Curve headerTransitionCurve = Curves.easeInOutCubicEmphasized;
       final Color collapsedHeaderColor = Color.lerp(
@@ -208,111 +224,120 @@ class _SettingsPageState extends State<SettingsPage> {
         0.30,
       )!;
       final Color collapsedHeaderContentColor = cs.onSecondaryContainer;
-      final Color headerContentColor = expanded
-          ? cs.primary
-          : collapsedHeaderContentColor;
-      final BorderSide outlineSide = expanded
-          ? BorderSide.none
-          : m3ePureBlackOutlineSide(cs, alpha: 0.16);
 
-      return AnimatedPadding(
-        duration: headerTransitionDuration,
-        curve: headerTransitionCurve,
-        padding: EdgeInsets.fromLTRB(0, expanded ? 20 : 16, 0, 8),
-        child: AnimatedContainer(
-          duration: headerTransitionDuration,
-          curve: headerTransitionCurve,
-          decoration: BoxDecoration(
-            color: expanded ? Colors.transparent : collapsedHeaderColor,
-            borderRadius: BorderRadius.circular(expanded ? 8 : 28),
-            border: outlineSide == BorderSide.none
-                ? null
-                : Border.fromBorderSide(outlineSide),
-          ),
-          child: Material(
-            type: MaterialType.transparency,
-            child: InkWell(
-              onTap: () => setSectionExpanded(key, !expanded),
-              borderRadius: BorderRadius.circular(expanded ? 8 : 28),
-              splashFactory: NoSplash.splashFactory,
-              splashColor: Colors.transparent,
-              highlightColor: Colors.transparent,
-              hoverColor: Colors.transparent,
-              child: AnimatedPadding(
-                duration: headerTransitionDuration,
-                curve: headerTransitionCurve,
-                padding: EdgeInsets.symmetric(
-                  horizontal: expanded ? 4 : 12,
-                  vertical: expanded ? 4 : 8,
-                ),
-                child: Row(
-                  children: [
-                    AnimatedContainer(
-                      duration: headerTransitionDuration,
-                      curve: headerTransitionCurve,
-                      width: expanded ? 20 : 30,
-                      height: expanded ? 20 : 30,
-                      decoration: BoxDecoration(
-                        color: expanded
-                            ? Colors.transparent
-                            : cs.primary.withValues(alpha: 0.16),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        icon,
-                        color: headerContentColor,
-                        size: expanded ? 16 : 17,
-                      ),
+      return ValueListenableBuilder<Map<String, bool>>(
+        valueListenable: _expandedSettingsSections,
+        builder: (context, expandedState, _) {
+          final bool expanded = _sectionExpanded(expandedState, key);
+          final Color headerContentColor = expanded
+              ? cs.primary
+              : collapsedHeaderContentColor;
+          final BorderSide outlineSide = expanded
+              ? BorderSide.none
+              : m3ePureBlackOutlineSide(cs, alpha: 0.16);
+
+          return AnimatedPadding(
+            duration: headerTransitionDuration,
+            curve: headerTransitionCurve,
+            padding: EdgeInsets.fromLTRB(0, expanded ? 20 : 16, 0, 8),
+            child: AnimatedContainer(
+              duration: headerTransitionDuration,
+              curve: headerTransitionCurve,
+              decoration: BoxDecoration(
+                color: expanded ? Colors.transparent : collapsedHeaderColor,
+                borderRadius: BorderRadius.circular(expanded ? 8 : 28),
+                border: outlineSide == BorderSide.none
+                    ? null
+                    : Border.fromBorderSide(outlineSide),
+              ),
+              child: Material(
+                type: MaterialType.transparency,
+                child: InkWell(
+                  onTap: () => setSectionExpanded(key, !expanded),
+                  borderRadius: BorderRadius.circular(expanded ? 8 : 28),
+                  splashFactory: NoSplash.splashFactory,
+                  splashColor: Colors.transparent,
+                  highlightColor: Colors.transparent,
+                  hoverColor: Colors.transparent,
+                  child: AnimatedPadding(
+                    duration: headerTransitionDuration,
+                    curve: headerTransitionCurve,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: expanded ? 4 : 12,
+                      vertical: expanded ? 4 : 8,
                     ),
-                    SizedBox(width: expanded ? 8 : 10),
-                    Expanded(
-                      child: AnimatedDefaultTextStyle(
-                        duration: headerTransitionDuration,
-                        curve: headerTransitionCurve,
-                        style: TextStyle(
-                          fontWeight: expanded
-                              ? FontWeight.w600
-                              : FontWeight.w700,
-                          color: headerContentColor,
-                          fontSize: 13,
-                          letterSpacing: expanded ? 0 : 0.1,
-                          decoration: TextDecoration.none,
+                    child: Row(
+                      children: [
+                        AnimatedContainer(
+                          duration: headerTransitionDuration,
+                          curve: headerTransitionCurve,
+                          width: expanded ? 20 : 30,
+                          height: expanded ? 20 : 30,
+                          decoration: BoxDecoration(
+                            color: expanded
+                                ? Colors.transparent
+                                : cs.primary.withValues(alpha: 0.16),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            icon,
+                            color: headerContentColor,
+                            size: expanded ? 16 : 17,
+                          ),
                         ),
-                        child: Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        SizedBox(width: expanded ? 8 : 10),
+                        Expanded(
+                          child: AnimatedDefaultTextStyle(
+                            duration: headerTransitionDuration,
+                            curve: headerTransitionCurve,
+                            style: TextStyle(
+                              fontWeight: expanded
+                                  ? FontWeight.w600
+                                  : FontWeight.w700,
+                              color: headerContentColor,
+                              fontSize: 13,
+                              letterSpacing: expanded ? 0 : 0.1,
+                              decoration: TextDecoration.none,
+                            ),
+                            child: Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         ),
-                      ),
+                        AnimatedContainer(
+                          duration: headerTransitionDuration,
+                          curve: headerTransitionCurve,
+                          width: expanded ? 20 : 32,
+                          height: expanded ? 20 : 32,
+                          decoration: BoxDecoration(
+                            color: expanded
+                                ? Colors.transparent
+                                : cs.surfaceContainerHighest,
+                            shape: BoxShape.circle,
+                          ),
+                          child: AnimatedRotation(
+                            turns: expanded ? 0.25 : 0,
+                            duration: headerTransitionDuration,
+                            curve: headerTransitionCurve,
+                            child: Icon(
+                              Icons.chevron_right_rounded,
+                              color: expanded
+                                  ? cs.primary
+                                  : cs.onSurfaceVariant,
+                              size: expanded ? 18 : 20,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    AnimatedContainer(
-                      duration: headerTransitionDuration,
-                      curve: headerTransitionCurve,
-                      width: expanded ? 20 : 32,
-                      height: expanded ? 20 : 32,
-                      decoration: BoxDecoration(
-                        color: expanded
-                            ? Colors.transparent
-                            : cs.surfaceContainerHighest,
-                        shape: BoxShape.circle,
-                      ),
-                      child: AnimatedRotation(
-                        turns: expanded ? 0.25 : 0,
-                        duration: headerTransitionDuration,
-                        curve: headerTransitionCurve,
-                        child: Icon(
-                          Icons.chevron_right_rounded,
-                          color: expanded ? cs.primary : cs.onSurfaceVariant,
-                          size: expanded ? 18 : 20,
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
-          ),
-        ),
+          );
+        },
       );
     }
 
@@ -390,7 +415,7 @@ class _SettingsPageState extends State<SettingsPage> {
       _SettingsCategory(
         key: 'warnings',
         title: tr('warnings'),
-        icon: Icons.warning_amber_rounded,
+        icon: Icons.warning_rounded,
         widget: const _WarningsSection(),
       ),
       _SettingsCategory(
@@ -675,18 +700,27 @@ class _SettingsPageState extends State<SettingsPage> {
                 title: tr('settings'),
                 matchGradientBackground: sp.useGradientBackground,
                 actions: [
-                  IconButton(
-                    tooltip: allSettingsSectionsExpanded
-                        ? tr('collapseAll')
-                        : tr('expandAll'),
-                    icon: Icon(
-                      allSettingsSectionsExpanded
-                          ? Icons.unfold_less_rounded
-                          : Icons.unfold_more_rounded,
-                    ),
-                    onPressed: () {
-                      setAllSettingsSectionsExpanded(
-                        !allSettingsSectionsExpanded,
+                  ValueListenableBuilder<Map<String, bool>>(
+                    valueListenable: _expandedSettingsSections,
+                    builder: (context, expandedState, _) {
+                      final bool allSettingsSectionsExpanded =
+                          visibleSettingsSectionKeys.every(
+                            (key) => _sectionExpanded(expandedState, key),
+                          );
+                      return IconButton(
+                        tooltip: allSettingsSectionsExpanded
+                            ? tr('collapseAll')
+                            : tr('expandAll'),
+                        icon: Icon(
+                          allSettingsSectionsExpanded
+                              ? Icons.unfold_less_rounded
+                              : Icons.unfold_more_rounded,
+                        ),
+                        onPressed: () {
+                          setAllSettingsSectionsExpanded(
+                            !allSettingsSectionsExpanded,
+                          );
+                        },
                       );
                     },
                   ),
@@ -752,7 +786,7 @@ class _SettingsPageState extends State<SettingsPage> {
                             // ── Warnings ─────────────────────────────────
                             sectionHeader(
                               tr('warnings'),
-                              Icons.warning_amber_rounded,
+                              Icons.warning_rounded,
                               'warnings',
                             ),
                             collapsibleCard(

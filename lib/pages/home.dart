@@ -425,30 +425,51 @@ class _HomePageState extends State<HomePage> {
             backgroundColor: scheme.surface,
             extendBody: blurBottomNav && !isLargeScreen,
             body: isLargeScreen
-                ? Row(
-                    children: [
-                      NavigationRail(
-                        selectedIndex: homeNavSelectedIndex,
-                        onDestinationSelected: (int index) async {
-                          hapticSelection();
-                          switchToPage(index);
-                        },
-                        labelType: NavigationRailLabelType.all,
-                        destinations: homeNavRailDestinations,
-                        backgroundColor: scheme.surface,
-                      ),
-                      VerticalDivider(
-                        width: 1,
-                        thickness: 1,
-                        color: scheme.outlineVariant.withAlpha(50),
-                      ),
-                      Expanded(
-                        child: IndexedStack(
-                          index: homeNavSelectedIndex,
-                          children: pages.map((p) => p.widget).toList(),
-                        ),
-                      ),
-                    ],
+                ? Builder(
+                    builder: (BuildContext context) {
+                      return Row(
+                        children: [
+                          MediaQuery(
+                            data: MediaQuery.of(context).copyWith(
+                              padding: MediaQuery.of(context).padding.copyWith(
+                                left: MediaQuery.of(context).padding.left > 0
+                                    ? 24.0
+                                    : 0.0,
+                                right: MediaQuery.of(context).padding.right > 0
+                                    ? 24.0
+                                    : 0.0,
+                              ),
+                            ),
+                            child: NavigationRail(
+                              selectedIndex: homeNavSelectedIndex,
+                              onDestinationSelected: (int index) async {
+                                hapticSelection();
+                                switchToPage(index);
+                              },
+                              labelType: NavigationRailLabelType.all,
+                              destinations: homeNavRailDestinations,
+                              backgroundColor: scheme.surface,
+                            ),
+                          ),
+                          VerticalDivider(
+                            width: 1,
+                            thickness: 1,
+                            color: scheme.outlineVariant.withAlpha(50),
+                          ),
+                          Expanded(
+                            child: MediaQuery.removePadding(
+                              context: context,
+                              removeLeft: true,
+                              removeRight: true,
+                              child: IndexedStack(
+                                index: homeNavSelectedIndex,
+                                children: pages.map((p) => p.widget).toList(),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   )
                 : Stack(
                     fit: StackFit.expand,

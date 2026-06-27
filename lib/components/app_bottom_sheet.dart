@@ -35,7 +35,17 @@ Future<T?> showAppModalSheet<T>({
         ? const BoxConstraints(maxWidth: double.infinity)
         : null,
     shape: const RoundedRectangleBorder(borderRadius: _kSheetRadius),
-    builder: builder,
+    builder: (BuildContext sheetContext) {
+      final Widget sheet = builder(sheetContext);
+      return fullWidth
+          ? sheet
+          : MediaQuery.removePadding(
+              context: sheetContext,
+              removeLeft: true,
+              removeRight: true,
+              child: sheet,
+            );
+    },
   );
 }
 
@@ -82,7 +92,9 @@ class AppSheetContent extends StatelessWidget {
     // use whichever limit is more restrictive.
     final double byFraction = mq.size.height * maxHeightFraction;
     final double byClearance = mq.size.height - mq.viewPadding.top - 56;
-    final double maxHeight = byFraction < byClearance ? byFraction : byClearance;
+    final double maxHeight = byFraction < byClearance
+        ? byFraction
+        : byClearance;
     // Keyboard when it's open, otherwise the system nav bar.
     final double bottomInset = mq.viewInsets.bottom > 0
         ? mq.viewInsets.bottom

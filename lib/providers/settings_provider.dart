@@ -360,7 +360,18 @@ class SettingsProvider with ChangeNotifier {
   }
 
   set theme(ThemeSettings t) {
+    if (theme == t) return;
     prefs?.setInt('theme', t.index);
+    notifyListeners();
+  }
+
+  void setThemeAppearance({
+    required ThemeSettings theme,
+    required bool useBlackTheme,
+  }) {
+    if (this.theme == theme && this.useBlackTheme == useBlackTheme) return;
+    prefs?.setInt('theme', theme.index);
+    prefs?.setBool('useBlackTheme', useBlackTheme);
     notifyListeners();
   }
 
@@ -586,6 +597,7 @@ class SettingsProvider with ChangeNotifier {
   }
 
   set useBlackTheme(bool useBlackTheme) {
+    if (this.useBlackTheme == useBlackTheme) return;
     prefs?.setBool('useBlackTheme', useBlackTheme);
     notifyListeners();
   }

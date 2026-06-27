@@ -63,8 +63,7 @@ bool _isInstalledVersionPseudo(AppInMemory appInMemory) {
   if (installedInfo == null) {
     return false;
   }
-  final String? realInstalledVersion =
-      _usesVersionCodeAsOsVersion(appModel)
+  final String? realInstalledVersion = _usesVersionCodeAsOsVersion(appModel)
       ? installedInfo.versionCode.toString()
       : installedInfo.versionName;
   if (realInstalledVersion == null || realInstalledVersion.isEmpty) {
