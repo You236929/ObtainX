@@ -778,6 +778,7 @@ class BulkImportService {
     void Function(int done, int total)? onProgress,
     Map<String, String?>? alreadyKnown,
     bool Function()? shouldAbort,
+    void Function()? onRateLimit,
   }) async {
     final Map<String, String?> result = <String, String?>{};
     if (alreadyKnown != null) {
@@ -917,9 +918,17 @@ class BulkImportService {
           } else {
             result[pkg] = null;
           }
+        } else {
+          debugPrint('GitHub search failed for $pkg: status ${response.statusCode}, body: ${response.body}');
+          if (response.statusCode == 401 ||
+              response.statusCode == 403 ||
+              response.statusCode == 429) {
+            onRateLimit?.call();
+            break;
+          }
         }
-        // Non-200 (rate limit, server error) — don't cache; retry next scan.
-      } catch (_) {
+      } catch (e, s) {
+        debugPrint('GitHub search exception for $pkg: $e\n$s');
         // Network error or timeout — don't cache; retry next scan.
       }
       reportProgress();

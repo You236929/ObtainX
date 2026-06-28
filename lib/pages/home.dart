@@ -60,7 +60,11 @@ class HomePageState extends State<HomePage> {
       Icons.backup_outlined,
       const ImportExportPage(),
     ),
-    NavigationPageItem(tr('settings'), Icons.settings, const SettingsPage()),
+    NavigationPageItem(
+      tr('settings'),
+      Icons.settings,
+      SettingsPage(key: GlobalKey<SettingsPageState>()),
+    ),
   ];
 
   @override
@@ -307,6 +311,10 @@ class HomePageState extends State<HomePage> {
       return currentKey.currentState?.confirmCancelBulkScanForNavigation() ??
           true;
     }
+    if (currentKey is GlobalKey<SettingsPageState>) {
+      return currentKey.currentState?.confirmDiscardUnsavedChanges() ??
+          true;
+    }
     return true;
   }
 
@@ -359,6 +367,14 @@ class HomePageState extends State<HomePage> {
               return;
             }
             if (addAppPageState.handleBack()) return;
+          }
+        }
+        if (currentKey is GlobalKey<SettingsPageState>) {
+          final SettingsPageState? settingsPageState = currentKey.currentState;
+          if (settingsPageState != null) {
+            if (!await settingsPageState.confirmDiscardUnsavedChanges()) {
+              return;
+            }
           }
         }
         if (currentKey is GlobalKey<AppsPageState>) {

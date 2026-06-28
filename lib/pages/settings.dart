@@ -20,6 +20,7 @@ import 'package:obtainium/components/generated_form_modal.dart';
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/main.dart';
 import 'package:obtainium/app_sources/github.dart';
+import 'package:obtainium/app_sources/gitlab.dart';
 import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/providers/installer_provider.dart' as installer;
 import 'package:obtainium/providers/logs_provider.dart';
@@ -62,7 +63,7 @@ class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
 
   @override
-  State<SettingsPage> createState() => _SettingsPageState();
+  State<SettingsPage> createState() => SettingsPageState();
 }
 
 /// One entry in the large-screen settings master list (and its detail pane).
@@ -80,7 +81,9 @@ class _SettingsCategory {
   final Widget widget;
 }
 
-class _SettingsPageState extends State<SettingsPage> {
+class SettingsPageState extends State<SettingsPage> {
+  final GlobalKey<_SourceSpecificSectionState> _sourceSpecificKey =
+      GlobalKey<_SourceSpecificSectionState>();
   late final Future<AndroidDeviceInfo> _androidInfo =
       DeviceInfoPlugin().androidInfo;
   final ValueNotifier<Map<String, bool>> _expandedSettingsSections =
@@ -129,6 +132,39 @@ class _SettingsPageState extends State<SettingsPage> {
   void dispose() {
     _expandedSettingsSections.dispose();
     super.dispose();
+  }
+
+  Future<bool> confirmDiscardUnsavedChanges() async {
+    final sourceSpecificState = _sourceSpecificKey.currentState;
+    if (sourceSpecificState != null) {
+      if (sourceSpecificState.isGithubDirty || sourceSpecificState.isGitlabDirty) {
+        final bool? discard = await showDialog<bool>(
+          context: context,
+          builder: (BuildContext dialogContext) {
+            return AlertDialog(
+              title: Text(tr('discardUnsavedChangesQuestion')),
+              content: Text(tr('discardUnsavedPATChangesExplanation')),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: Text(tr('cancel')),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: Text(tr('continue')),
+                ),
+              ],
+            );
+          },
+        );
+        if (discard == true) {
+          sourceSpecificState.discardChanges();
+          return true;
+        }
+        return false;
+      }
+    }
+    return true;
   }
 
   void _loadExpandedSettingsSections(SettingsProvider sp) {
@@ -422,7 +458,7 @@ class _SettingsPageState extends State<SettingsPage> {
           key: 'sourceSpecific',
           title: tr('sourceSpecific'),
           icon: Icons.dns_rounded,
-          widget: const _SourceSpecificSection(),
+          widget: _SourceSpecificSection(key: _sourceSpecificKey),
         ),
       _SettingsCategory(
         key: 'themes',
@@ -493,10 +529,12 @@ class _SettingsPageState extends State<SettingsPage> {
           child: Material(
             type: MaterialType.transparency,
             child: InkWell(
-              onTap: () {
-                setState(() {
-                  _selectedCategory = key;
-                });
+              onTap: () async {
+                if (await confirmDiscardUnsavedChanges()) {
+                  setState(() {
+                    _selectedCategory = key;
+                  });
+                }
               },
               borderRadius: BorderRadius.circular(28),
               child: Padding(
@@ -782,7 +820,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               ),
                               collapsibleCard(
                                 'sourceSpecific',
-                                const _SourceSpecificSection(),
+                                _SourceSpecificSection(key: _sourceSpecificKey),
                               ),
                             ],
                             // ── Themes ───────────────────────────────────
@@ -1184,12 +1222,12 @@ class _UpdateIntervalSliderState extends State<_UpdateIntervalSlider> {
   int _intervalForVal(double val) {
     final int index = val.round().clamp(
       0,
-      _SettingsPageState.updateIntervalNodes.length,
+      SettingsPageState.updateIntervalNodes.length,
     );
     if (index == 0) {
       return 0;
     }
-    return _SettingsPageState.updateIntervalNodes[index - 1];
+    return SettingsPageState.updateIntervalNodes[index - 1];
   }
 
   String _labelForVal(double val) {
@@ -1255,11 +1293,11 @@ class _UpdateIntervalSliderState extends State<_UpdateIntervalSlider> {
                   child: Slider(
                     value: sliderVal.clamp(
                       0,
-                      _SettingsPageState.updateIntervalNodes.length.toDouble(),
+                      SettingsPageState.updateIntervalNodes.length.toDouble(),
                     ),
-                    max: _SettingsPageState.updateIntervalNodes.length
+                    max: SettingsPageState.updateIntervalNodes.length
                         .toDouble(),
-                    divisions: _SettingsPageState.updateIntervalNodes.length,
+                    divisions: SettingsPageState.updateIntervalNodes.length,
                     label: label,
                     onChanged: (double value) {
                       setState(() => _dragValue = value);
@@ -1283,70 +1321,322 @@ class _UpdateIntervalSliderState extends State<_UpdateIntervalSlider> {
 }
 
 /// Source-specific settings section — reads/writes generic source config.
-class _SourceSpecificSection extends StatelessWidget {
-  const _SourceSpecificSection();
+class _SourceSpecificSection extends StatefulWidget {
+  const _SourceSpecificSection({super.key});
+
+  @override
+  State<_SourceSpecificSection> createState() => _SourceSpecificSectionState();
+}
+
+class _SourceSpecificSectionState extends State<_SourceSpecificSection> {
+  late final TextEditingController _githubPatController;
+  late final TextEditingController _hubProxyController;
+  late final TextEditingController _gitlabPatController;
+  bool _githubChecking = false;
+  bool _gitlabChecking = false;
+
+  bool get isGithubDirty {
+    final String currentText = _githubPatController.text.trim();
+    final SettingsProvider sp = context.read<SettingsProvider>();
+    final String savedText = sp.getSettingString(GitHub.githubCredsKey) ?? '';
+    return currentText != savedText;
+  }
+
+  bool get isGitlabDirty {
+    final String currentText = _gitlabPatController.text.trim();
+    final SettingsProvider sp = context.read<SettingsProvider>();
+    final String savedText = sp.getSettingString('gitlab-creds') ?? '';
+    return currentText != savedText;
+  }
+
+  void discardChanges() {
+    final SettingsProvider sp = context.read<SettingsProvider>();
+    _githubPatController.text = sp.getSettingString(GitHub.githubCredsKey) ?? '';
+    _gitlabPatController.text = sp.getSettingString('gitlab-creds') ?? '';
+    setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final SettingsProvider sp = context.read<SettingsProvider>();
+    _githubPatController = TextEditingController(
+      text: sp.getSettingString(GitHub.githubCredsKey) ?? '',
+    );
+    _hubProxyController = TextEditingController(
+      text: sp.getSettingString(GitHub.githubReqPrefixKey) ?? '',
+    );
+    _gitlabPatController = TextEditingController(
+      text: sp.getSettingString('gitlab-creds') ?? '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _githubPatController.dispose();
+    _hubProxyController.dispose();
+    _gitlabPatController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Subscribe to any change in stored source settings.
-    context.select<SettingsProvider, bool>((s) => s.prefs != null);
-    final SettingsProvider sp = context.read<SettingsProvider>();
-    final SourceProvider sourceProvider = SourceProvider();
+    final SettingsProvider sp = context.watch<SettingsProvider>();
     final ColorScheme cs = Theme.of(context).colorScheme;
-
-    final sources = sourceProvider.sourceTemplates
-        .where((s) => s.sourceConfigSettingFormItems.isNotEmpty)
-        .toList();
-
-    final forms = sources.map((source) {
-      return GeneratedForm(
-        outlinedInputFields: true,
-        items: source.sourceConfigSettingFormItems.map((item) {
-          final formItem = item.clone();
-          if (formItem is GeneratedFormSwitch) {
-            formItem.defaultValue = sp.getSettingBool(formItem.key);
-          } else {
-            formItem.defaultValue = sp.getSettingString(formItem.key);
-          }
-          return [formItem];
-        }).toList(),
-        onValueChanges: (values, valid, isBuilding) {
-          if (valid && !isBuilding) {
-            if (source is GitHub) {
-              final String? githubCreds = values[GitHub.githubCredsKey]
-                  ?.toString();
-              if (!GitHub.hasValidatedPAT(githubCreds, sp)) {
-                GitHub.clearPATValidation(sp);
-              }
-            }
-            values.forEach((key, value) {
-              final formItem = source.sourceConfigSettingFormItems
-                  .where((i) => i.key == key)
-                  .firstOrNull;
-              if (formItem is GeneratedFormSwitch) {
-                sp.setSettingBool(key, value == true);
-              } else {
-                sp.setSettingString(key, value ?? '');
-              }
-            });
-          }
-        },
-      );
-    }).toList();
 
     return m3eExpressiveSettingsCard(
       context: context,
       colorScheme: cs,
       items: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              for (int i = 0; i < forms.length; i++) ...[
-                if (i > 0) const SizedBox(height: 12),
-                forms[i],
-              ],
+              Row(
+                children: [
+                  Text(
+                    tr('personalAccessTokenPAT'),
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  HelpHintIcon(
+                    message: tr('patExplanationTooltip'),
+                    size: 18,
+                    padding: const EdgeInsets.only(left: 8),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _githubPatController,
+                      obscureText: true,
+                      decoration: InputDecoration(
+                        labelText: tr('githubPATLabel'),
+                        border: const OutlineInputBorder(),
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.open_in_new_rounded),
+                          onPressed: () => launchUrlString(
+                            'https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens',
+                            mode: LaunchMode.externalApplication,
+                          ),
+                          tooltip: tr('about'),
+                        ),
+                      ),
+                      onChanged: (val) {
+                        setState(() {});
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Builder(
+                    builder: (context) {
+                      final String enteredText = _githubPatController.text.trim();
+                      final String savedText = sp.getSettingString(GitHub.githubCredsKey) ?? '';
+                      final bool isDirty = enteredText != savedText;
+                      final bool isValidated = GitHub.hasValidatedPAT(enteredText, sp);
+                      final bool buttonIsEnabled = isDirty || (enteredText.isNotEmpty && !isValidated);
+
+                      return SizedBox(
+                        width: 48,
+                        height: 56,
+                        child: Center(
+                          child: _githubChecking
+                              ? SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: ExpressiveLoadingIndicator(
+                                    color: cs.primary,
+                                    constraints: const BoxConstraints.tightFor(width: 20, height: 20),
+                                  ),
+                                )
+                              : (GitHub.hasValidatedPAT(enteredText, sp)
+                                  ? Tooltip(
+                                      message: tr('githubPATValidated'),
+                                      child: Icon(
+                                        Icons.verified_user,
+                                        color: cs.primary,
+                                      ),
+                                    )
+                                  : IconButton.filledTonal(
+                                      icon: const Icon(Icons.save_rounded),
+                                      onPressed: buttonIsEnabled
+                                          ? () async {
+                                              FocusManager.instance.primaryFocus?.unfocus();
+                                              if (enteredText.isEmpty) {
+                                                sp.setSettingString(GitHub.githubCredsKey, '');
+                                                GitHub.clearPATValidation(sp);
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  SnackBar(content: Text(tr('dismiss'))),
+                                                );
+                                                setState(() {});
+                                                return;
+                                              }
+                                              setState(() {
+                                                _githubChecking = true;
+                                              });
+                                              final String? error = await GitHub.validatePAT(enteredText);
+                                              if (!mounted) return;
+                                              setState(() {
+                                                _githubChecking = false;
+                                              });
+                                              if (error == null) {
+                                                sp.setSettingString(GitHub.githubCredsKey, enteredText);
+                                                GitHub.storePATValidation(enteredText, sp);
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  SnackBar(content: Text(tr('githubPATValidated'))),
+                                                );
+                                              } else {
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  SnackBar(content: Text(error)),
+                                                );
+                                              }
+                                            }
+                                          : null,
+                                    )),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _hubProxyController,
+                decoration: InputDecoration(
+                  labelText: tr('GHReqPrefix'),
+                  hintText: 'gh-proxy.org',
+                  border: const OutlineInputBorder(),
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.open_in_new_rounded),
+                    onPressed: () => launchUrlString(
+                      'https://github.com/sky22333/hubproxy',
+                      mode: LaunchMode.externalApplication,
+                    ),
+                    tooltip: tr('about'),
+                  ),
+                ),
+                onChanged: (val) {
+                  sp.setSettingString(GitHub.githubReqPrefixKey, val.trim());
+                },
+              ),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                title: Text(tr('GHReqPrefixUseToken')),
+                value: sp.getSettingBool(GitHub.githubReqPrefixUseTokenKey) ?? false,
+                onChanged: (val) {
+                  sp.setSettingBool(GitHub.githubReqPrefixUseTokenKey, val);
+                },
+                contentPadding: EdgeInsets.zero,
+              ),
+              SwitchListTile(
+                title: Text(tr('repoRenamedCheck')),
+                value: sp.getSettingBool('checkRepoRename') ?? false,
+                onChanged: (val) {
+                  sp.setSettingBool('checkRepoRename', val);
+                },
+                contentPadding: EdgeInsets.zero,
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _gitlabPatController,
+                      obscureText: true,
+                      decoration: InputDecoration(
+                        labelText: tr('gitlabPATLabel'),
+                        border: const OutlineInputBorder(),
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.open_in_new_rounded),
+                          onPressed: () => launchUrlString(
+                            'https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html#create-a-personal-access-token',
+                            mode: LaunchMode.externalApplication,
+                          ),
+                          tooltip: tr('about'),
+                        ),
+                      ),
+                      onChanged: (val) {
+                        setState(() {});
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Builder(
+                    builder: (context) {
+                      final String enteredText = _gitlabPatController.text.trim();
+                      final String savedText = sp.getSettingString('gitlab-creds') ?? '';
+                      final bool isDirty = enteredText != savedText;
+                      final bool isValidated = GitLab.hasValidatedPAT(enteredText, sp);
+                      final bool buttonIsEnabled = isDirty || (enteredText.isNotEmpty && !isValidated);
+
+                      return SizedBox(
+                        width: 48,
+                        height: 56,
+                        child: Center(
+                          child: _gitlabChecking
+                              ? SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: ExpressiveLoadingIndicator(
+                                    color: cs.primary,
+                                    constraints: const BoxConstraints.tightFor(width: 20, height: 20),
+                                  ),
+                                )
+                              : (GitLab.hasValidatedPAT(enteredText, sp)
+                                  ? Tooltip(
+                                      message: tr('gitlabPATValidated'),
+                                      child: Icon(
+                                        Icons.verified_user,
+                                        color: cs.primary,
+                                      ),
+                                    )
+                                  : IconButton.filledTonal(
+                                      icon: const Icon(Icons.save_rounded),
+                                      onPressed: buttonIsEnabled
+                                          ? () async {
+                                              FocusManager.instance.primaryFocus?.unfocus();
+                                              if (enteredText.isEmpty) {
+                                                sp.setSettingString('gitlab-creds', '');
+                                                GitLab.clearPATValidation(sp);
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  SnackBar(content: Text(tr('dismiss'))),
+                                                );
+                                                setState(() {});
+                                                return;
+                                              }
+                                              setState(() {
+                                                _gitlabChecking = true;
+                                              });
+                                              final String? error = await GitLab.validatePAT(enteredText);
+                                              if (!mounted) return;
+                                              setState(() {
+                                                _gitlabChecking = false;
+                                              });
+                                              if (error == null) {
+                                                sp.setSettingString('gitlab-creds', enteredText);
+                                                GitLab.storePATValidation(enteredText, sp);
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  SnackBar(content: Text(tr('gitlabPATValidated'))),
+                                                );
+                                              } else {
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  SnackBar(content: Text(error)),
+                                                );
+                                              }
+                                            }
+                                          : null,
+                                    )),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
             ],
           ),
         ),
