@@ -773,7 +773,7 @@
   "resetSearchQuestion": "重置搜索？",
   "discardUnsavedChangesUrlExplanation": "此应用尚未添加到列表中。切换标签页将丢弃它。继续吗？",
   "discardUnsavedChangesSearchExplanation": "切换标签页将重置此搜索页面。继续吗？",
-  "githubRateLimitWarningText": "搜索被GitHub的速率限制拦截。请添加",
+  "githubRateLimitWarningText": "搜索被 GitHub 速率限制阻止。请添加",
   "githubRateLimitWarningLink": "个人访问令牌",
   "githubRateLimitWarningTextEnd": " 以绕过限制并重新搜索。",
   "searchAgain": "重新搜索",

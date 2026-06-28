@@ -773,7 +773,7 @@
   "resetSearchQuestion": "重設搜尋？",
   "discardUnsavedChangesUrlExplanation": "此應用尚未新增至列表中。切換標籤頁將捨棄它。繼續嗎？",
   "discardUnsavedChangesSearchExplanation": "切換標籤頁將重設此搜尋頁面。繼續嗎？",
-  "githubRateLimitWarningText": "搜尋被GitHub的速率限制攔截。請新增",
+  "githubRateLimitWarningText": "搜尋被 GitHub 速率限制阻止。請新增",
   "githubRateLimitWarningLink": "個人存取權杖",
   "githubRateLimitWarningTextEnd": " 以繞過限制並重新搜尋。",
   "searchAgain": "重新搜尋",
