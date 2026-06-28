@@ -77,6 +77,9 @@ class _ImportExportPageState extends State<ImportExportPage> {
     var settingsProvider = context.read<SettingsProvider>();
 
     var outlineButtonStyle = ButtonStyle(
+      foregroundColor: WidgetStateProperty.all(
+        Theme.of(context).colorScheme.onSurface,
+      ),
       shape: WidgetStateProperty.all(
         StadiumBorder(
           side: BorderSide(
@@ -1218,24 +1221,27 @@ class _SelectionModalState extends State<SelectionModal> {
 
   @override
   Widget build(BuildContext context) {
-    Map<MapEntry<String, List<String>>, bool> filteredEntrySelections = {};
-    entrySelections.forEach((key, value) {
-      var searchableText = key.value.isEmpty ? key.key : key.value[0];
-      if (filterRegex.isEmpty || RegExp(filterRegex).hasMatch(searchableText)) {
-        filteredEntrySelections.putIfAbsent(key, () => value);
+    // Filter once with a single compiled RegExp. Previously a RegExp was
+    // compiled per entry — and twice over when the case-sensitive pass found
+    // nothing — i.e. O(entries) compilations on every keystroke over what can
+    // be a large mass-import list.
+    final List<MapEntry<String, List<String>>> filteredEntryKeys;
+    if (filterRegex.isEmpty) {
+      filteredEntryKeys = entrySelections.keys.toList();
+    } else {
+      String searchableFor(MapEntry<String, List<String>> key) =>
+          key.value.isEmpty ? key.key : key.value[0];
+      final RegExp rx = RegExp(filterRegex);
+      var matches = entrySelections.keys
+          .where((key) => rx.hasMatch(searchableFor(key)))
+          .toList();
+      if (matches.isEmpty) {
+        final RegExp rxInsensitive = RegExp(filterRegex, caseSensitive: false);
+        matches = entrySelections.keys
+            .where((key) => rxInsensitive.hasMatch(searchableFor(key)))
+            .toList();
       }
-    });
-    if (filterRegex.isNotEmpty && filteredEntrySelections.isEmpty) {
-      entrySelections.forEach((key, value) {
-        var searchableText = key.value.isEmpty ? key.key : key.value[0];
-        if (filterRegex.isEmpty ||
-            RegExp(
-              filterRegex,
-              caseSensitive: false,
-            ).hasMatch(searchableText)) {
-          filteredEntrySelections.putIfAbsent(key, () => value);
-        }
-      });
+      filteredEntryKeys = matches;
     }
     getSelectAllButton() {
       if (widget.onlyOneSelectionAllowed) {
@@ -1294,9 +1300,7 @@ class _SelectionModalState extends State<SelectionModal> {
           )
         : null;
 
-    final List<Widget> entryTileWidgets = filteredEntrySelections.keys.map((
-      entry,
-    ) {
+    Widget buildEntryTile(MapEntry<String, List<String>> entry) {
       selectThis(bool? value) {
         setState(() {
           value ??= false;
@@ -1415,11 +1419,11 @@ class _SelectionModalState extends State<SelectionModal> {
       return widget.onlyOneSelectionAllowed
           ? singleSelectTile
           : multiSelectTile;
-    }).toList();
+    }
 
     final List<Widget> sheetColumnChildren = [
       ?filterFormWidget,
-      ...entryTileWidgets,
+      for (final key in filteredEntryKeys) buildEntryTile(key),
     ];
 
     final List<Widget> selectionActions = [
@@ -1612,12 +1616,14 @@ class _SelectionModalState extends State<SelectionModal> {
                     const SizedBox(height: 8),
                   ],
                   Flexible(
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        mainAxisSize: MainAxisSize.min,
-                        children: entryTileWidgets,
-                      ),
+                    // ListView.builder so only visible tiles are built; the
+                    // mass-import list can hold hundreds of entries and was
+                    // previously materialized in full inside a Column.
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: filteredEntryKeys.length,
+                      itemBuilder: (context, index) =>
+                          buildEntryTile(filteredEntryKeys[index]),
                     ),
                   ),
                   const Divider(height: 1),

@@ -311,6 +311,13 @@ Map<String, dynamic> appJSONCompatibilityModifiers(Map<String, dynamic> json) {
       'versionStringSource',
     ),
   );
+  if (additionalSettings['versionDetection'] == 'versionCode' ||
+      additionalSettings['useVersionCodeAsOSVersion'] == true) {
+    additionalSettings['versionDetection'] = 'versionCode';
+    additionalSettings['useVersionCodeAsOSVersion'] = true;
+  } else {
+    additionalSettings['useVersionCodeAsOSVersion'] = false;
+  }
   // Convert bool style pseudo version method to dropdown style
   if (originalAdditionalSettings['supportFixedAPKURL'] == true) {
     additionalSettings['defaultPseudoVersioningMethod'] = 'partialAPKHash';
@@ -1103,19 +1110,13 @@ abstract class AppSource {
       ),
     ],
     [
-      GeneratedFormSwitch(
-        'useVersionCodeAsOSVersion',
-        label: tr('useVersionCodeAsOSVersion'),
-        defaultValue: false,
-      ),
-    ],
-    [
       GeneratedFormDropdown(
         'versionDetection',
         [
           MapEntry('auto', tr('versionDetectionModeAuto')),
           MapEntry('standard', tr('versionDetectionModeStandard')),
           MapEntry('pseudo', tr('versionDetectionModePseudo')),
+          MapEntry('versionCode', tr('versionDetectionModeVersionCode')),
         ],
         label: tr('versionDetection'),
         defaultValue: 'auto',
@@ -1520,6 +1521,15 @@ bool isVersionPseudo(App app) =>
         (app.additionalSettings['versionDetection'] == 'pseudo' ||
             app.additionalSettings['versionDetection'] == false));
 
+String toTitleCase(String text) {
+  if (text.isEmpty) return text;
+  return text
+      .split(RegExp(r'[\s\-_]+'))
+      .where((w) => w.isNotEmpty)
+      .map((w) => w[0].toUpperCase() + w.substring(1))
+      .join(' ');
+}
+
 class SourceProvider {
   static final Map<String, RegExp> _sourceRegexCache = {};
 
@@ -1531,33 +1541,43 @@ class SourceProvider {
   // constructions for a 400-app library). We now match against cached, never-
   // mutated template instances and only construct ONE fresh source — the matched
   // one — so each caller still gets its own isolated, mutable instance.
-  // HTML must ALWAYS be last as sources are tried in order.
+  // Order: host-based sources are listed alphabetically by their display name
+  // (`AppSource.name`) — this same list is what the add-app supported-sources
+  // tooltip and the filter-apps sheet render, in order, so the user-visible list
+  // reads alphabetically. Note the sort key is the *display* name, which a few
+  // sources override (e.g. Codeberg → "Forgejo (Codeberg)" sorts under F), not the class name.
+  // The two hostless, pattern-matched fallbacks are pinned to the end instead:
+  // matching walks this list in order, and these match by URL *shape* rather than
+  // host, so they must be tried only after every host-based source. DirectAPKLink
+  // (accepts only .apk URLs) must precede HTML (the universal catch-all) — so HTML
+  // stays ALWAYS last. If you add another hostless catch-all source, order it so
+  // more-specific matchers come first.
   static final List<AppSource Function()> _sourceFactories =
       <AppSource Function()>[
-        () => GitHub(),
-        () => GitLab(),
-        () => Codeberg(),
-        () => FDroid(),
-        () => FDroidRepo(),
-        () => IzzyOnDroid(),
-        () => SourceHut(),
-        () => ItchIO(),
+        () => Apk4Free(),
+        () => APKMirror(),
         () => APKPure(),
         () => Aptoide(),
-        () => Uptodown(),
-        () => HuaweiAppGallery(),
-        () => Tencent(),
-        () => VivoAppStore(),
-        () => RuStore(),
-        () => Apk4Free(),
-        () => Farsroid(),
         () => CoolApk(),
-        () => RockMods(),
-        () => LiteAPKs(),
+        () => Farsroid(),
+        () => FDroid(),
+        () => FDroidRepo(),
+        () => Codeberg(), // "Forgejo (Codeberg)"
+        () => GitHub(),
+        () => GitLab(),
+        () => HuaweiAppGallery(), // "Huawei AppGallery"
+        () => ItchIO(), // "itch.io"
+        () => IzzyOnDroid(),
         () => Jenkins(),
-        () => APKMirror(),
-        () => TelegramApp(),
+        () => LiteAPKs(),
         () => NeutronCode(),
+        () => RockMods(),
+        () => RuStore(),
+        () => SourceHut(),
+        () => TelegramApp(), // "Telegram <app>"
+        () => Tencent(),
+        () => Uptodown(),
+        () => VivoAppStore(),
         () => DirectAPKLink(),
         () => HTML(),
       ];
@@ -1572,8 +1592,22 @@ class SourceProvider {
   List<AppSource> get sources =>
       _sourceFactories.map((factory) => factory()).toList();
 
-  // Add more mass url source classes here so they are available via the service
-  List<MassAppUrlSource> massUrlSources = [GitHubStars()];
+  // Read-only view for callers that only read source properties (name, hosts,
+  // sourceConfigSettingFormItems) and never mutate the instances — e.g. the
+  // settings source-specific section and the filter-by-source sheet. Returns
+  // the shared cached templates so these callers don't reconstruct all ~25
+  // sources (each running many tr() calls) on every build. Callers MUST NOT
+  // mutate the returned instances; use `sources` if you need a fresh copy.
+  List<AppSource> get sourceTemplates => _sourceTemplates;
+
+  // Add more mass url source classes here so they are available via the service.
+  // Lazily built and cached: constructing a MassAppUrlSource runs tr() calls,
+  // and SourceProvider() is instantiated per app-list row / per build, so an
+  // eager field initializer rebuilt GitHubStars on every one. Read-only at all
+  // call sites (only ever `.map`-ed over), so a shared cached list is safe.
+  static List<MassAppUrlSource>? _massUrlSourcesCache;
+  List<MassAppUrlSource> get massUrlSources =>
+      _massUrlSourcesCache ??= [GitHubStars()];
 
   // `naiveStandardVersionDetection` depends only on the resolved source (which is
   // a function of host + overrideSource), so cache it per host to avoid a
@@ -1747,7 +1781,10 @@ class SourceProvider {
     if (additionalSettings['autoApkFilterByArch'] == true) {
       apk.apkUrls = await filterApksByArch(apk.apkUrls);
     }
-    final String sourceName = apk.names.name.trim();
+    String sourceName = apk.names.name.trim();
+    if (sourceName.isNotEmpty) {
+      sourceName = toTitleCase(sourceName);
+    }
     var name = currentApp != null ? currentApp.name.trim() : '';
     if (name.isEmpty ||
         name == currentApp?.id ||

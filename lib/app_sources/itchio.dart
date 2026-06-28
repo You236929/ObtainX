@@ -3,7 +3,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:html/dom.dart';
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/providers/source_provider.dart';
-import 'package:html/parser.dart';
+import 'package:obtainium/services/html_parse_isolate.dart';
 
 /// AppSource implementation for itch.io.
 ///
@@ -63,8 +63,8 @@ class ItchIO extends AppSource {
   /// 1. Release name
   /// 2. Upload ID
   /// 3. Whether it is an Android download
-  List<(String, String, bool)> _extractDownload(String body) {
-    var parser = parse(body);
+  Future<List<(String, String, bool)>> _extractDownload(String body) async {
+    var parser = await parseHtmlOffIsolate(body);
 
     // Results containers
     List<(String, String, bool)> downloads = [];
@@ -227,7 +227,7 @@ class ItchIO extends AppSource {
     String? cookies = initialCookies;
 
     // Easy case: download buttons are on the first page.
-    var ids = _extractDownload(currentBody);
+    var ids = await _extractDownload(currentBody);
 
     // No buttons found, we need to bypass the "Name your price" lightbox
     if (ids.isEmpty) {
@@ -290,7 +290,7 @@ class ItchIO extends AppSource {
       );
 
       // Metadata extraction
-      Document storePage = parse(body);
+      Document storePage = await parseHtmlOffIsolate(body);
       String title = _parseTitle(storePage);
       String author = _parseAuthor(storePage, standardUrl);
       String? dateVersion = _getDateVersion(storePage);
@@ -306,7 +306,7 @@ class ItchIO extends AppSource {
       );
 
       // Fetch better version from the download page, if any
-      Document downloadPage = parse(downloadPageBody);
+      Document downloadPage = await parseHtmlOffIsolate(downloadPageBody);
       dateVersion ??= _getDateVersion(downloadPage);
       version ??= _parseVersion(downloadPage);
 
@@ -319,7 +319,7 @@ class ItchIO extends AppSource {
       // Create all relevant APK links
       List<MapEntry<String, String>> apkLinks = [];
 
-      var downloadIds = _extractDownload(downloadPageBody);
+      var downloadIds = await _extractDownload(downloadPageBody);
 
       for (var downloadInfo in downloadIds) {
         var (name, id, isAndroid) = downloadInfo;

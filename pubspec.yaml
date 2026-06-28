@@ -55,11 +55,7 @@ dependencies:
   permission_handler: ^12.0.3
   fluttertoast: ^9.1.0
   device_info_plus: ^13.1.0
-  # Pinned: 12.0.0-beta.7 fails to compile its Android sources (cascading
-  # "Unresolved reference 'FileUtils'" errors); beta.5 is the last known-good.
-  # The `^` caret let `pub upgrade` jump to the broken beta.7 — drop the pin
-  # once a fixed release ships. NOTE: upstream uses ^12.0.0-beta.7 — intentional pin, do not "fix".
-  file_picker: 12.0.0-beta.5
+  file_picker: ^12.0.0-beta.5
   animations: ^2.2.0
   android_package_installer: # TODO: See if PR will be accepted (dev may not be active), else remove this comment
     git:

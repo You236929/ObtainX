@@ -20,7 +20,7 @@
   "unexpectedError": "Beklenmedik hata",
   "ok": "Tamam",
   "and": "ve",
-  "githubPATLabel": "GitHub kişisel erişim anahtarı (limiti yükseltir)",
+  "githubPATLabel": "GitHub kişisel erişim anahtarı",
   "includePrereleases": "Ön sürümleri dahil et",
   "fallbackToOlderReleases": "Daha eski sürümleri alternatif olarak tut",
   "filterReleaseTitlesByRegEx": "Düzenli ifadelerle sürüm başlıklarını filtrele",

@@ -13,6 +13,7 @@ import 'package:obtainium/components/generated_form_modal.dart';
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/main.dart';
 import 'package:obtainium/pages/app.dart';
+import 'package:obtainium/pages/home.dart';
 import 'package:obtainium/pages/page_route_slide_up.dart';
 import 'package:obtainium/pages/settings.dart';
 import 'package:obtainium/providers/apps_provider.dart';
@@ -22,12 +23,14 @@ import 'package:obtainium/providers/source_provider.dart';
 import 'package:obtainium/store_source_icons.dart';
 import 'package:obtainium/theme/app_form_field_styles.dart';
 import 'package:obtainium/theme/app_page_icon_colors.dart';
+import 'package:obtainium/theme/app_segmented_button_theme.dart';
 import 'package:obtainium/theme/app_theme_accent.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 const double _appVaultFabBottomGap = 8.0;
 const double _fabHorizontalMargin = 16.0;
+const double _fabMinimumSafeBottomPadding = 16.0;
 
 enum _AddMode { byUrl, search, fromDevice }
 
@@ -340,7 +343,10 @@ class AddAppPageState extends State<AddAppPage> {
         ? coveredBottomInset
         : 0.0;
     final double appVaultFabBottomPadding =
-        bottomChromeClearance + _appVaultFabBottomGap;
+        (bottomChromeClearance > _fabMinimumSafeBottomPadding
+            ? bottomChromeClearance
+            : _fabMinimumSafeBottomPadding) +
+        _appVaultFabBottomGap;
     final bool urlHasInput =
         _mode == _AddMode.byUrl && userInput.trim().isNotEmpty;
     final bool showAppVaultFab =
@@ -544,6 +550,8 @@ class AddAppPageState extends State<AddAppPage> {
           if (appsProvider.apps.containsKey(app.id)) {
             throw ObtainiumError(tr('appAlreadyAdded'));
           }
+          app.additionalSettings['useVersionCodeAsOSVersion'] =
+              app.additionalSettings['versionDetection'] == 'versionCode';
           if (app.additionalSettings['trackOnly'] == true) {
             app.installedVersion = null;
             if (isTempId(app)) {
@@ -581,10 +589,18 @@ class AddAppPageState extends State<AddAppPage> {
           appWasAdded = true;
         }
         if (app != null) {
-          Navigator.push(
-            globalNavigatorKey.currentContext ?? context,
-            heroFriendlyAppPageRoute((_) => AppPage(appId: app!.id)),
-          );
+          final double screenWidth = MediaQuery.sizeOf(context).width;
+          final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint;
+          final homeState = context.findAncestorStateOfType<HomePageState>();
+          if (isLargeScreen && homeState != null) {
+            _resetUrlModeInput();
+            homeState.switchToAppsTabAndOpenApp(app.id);
+          } else {
+            Navigator.push(
+              globalNavigatorKey.currentContext ?? context,
+              heroFriendlyAppPageRoute((_) => AppPage(appId: app!.id)),
+            );
+          }
         }
       } catch (e) {
         if (!context.mounted) return;
@@ -1060,7 +1076,7 @@ class AddAppPageState extends State<AddAppPage> {
       // Key on the query *and* the selected sources, so changing the source
       // selection doesn't return the previous selection's results.
       final String cacheKey =
-          '${searchQuery.trim().toLowerCase()} '
+          '${searchQuery.trim().toLowerCase()} '
           '${(searchSelectedStores.toList()..sort()).join(',')}';
 
       if (cacheable && _searchCache.containsKey(cacheKey)) {
@@ -1471,21 +1487,21 @@ class AddAppPageState extends State<AddAppPage> {
     Widget buildModeSelector() {
       return Padding(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-        child: SegmentedButton<_AddMode>(
+        child: AppSegmentedButton<_AddMode>(
           segments: [
             ButtonSegment(
               value: _AddMode.byUrl,
-              label: Text(tr('addByUrl')),
+              label: AppSegmentedButtonLabel(tr('addByUrl')),
               icon: const Icon(Icons.link_rounded),
             ),
             ButtonSegment(
               value: _AddMode.search,
-              label: Text(tr('addBySearch')),
+              label: AppSegmentedButtonLabel(tr('addBySearch')),
               icon: const Icon(Icons.search_rounded),
             ),
             ButtonSegment(
               value: _AddMode.fromDevice,
-              label: Text(tr('addFromDevice')),
+              label: AppSegmentedButtonLabel(tr('addFromDevice')),
               icon: const Icon(Icons.phone_android_rounded),
             ),
           ],
@@ -1502,7 +1518,6 @@ class AddAppPageState extends State<AddAppPage> {
               _mode = nextMode;
             });
           },
-          style: const ButtonStyle(visualDensity: VisualDensity.compact),
         ),
       );
     }
@@ -1533,10 +1548,10 @@ class AddAppPageState extends State<AddAppPage> {
       );
     }
 
-    final double screenWidth = MediaQuery.of(context).size.width;
+    final double screenWidth = MediaQuery.sizeOf(context).width;
     final bool isLargeScreen = isLargeScreenLayout(
       screenWidth,
-      MediaQuery.of(context).orientation,
+      MediaQuery.orientationOf(context),
     );
 
     Widget buildModeTile(_AddMode modeObj, String title, IconData icon) {
@@ -1704,17 +1719,15 @@ class AddAppPageState extends State<AddAppPage> {
                     body: Builder(
                       builder: (context) {
                         if (_mode == _AddMode.fromDevice) {
-                          return SafeArea(
-                            top: true,
-                            bottom: false,
-                            child: BulkAddWidget(
-                              key: _bulkWidgetKey,
-                              isLargeScreen: isLargeScreen,
-                              onComplete: () => setState(() {
-                                _byUrlOpenedFromSearchPick = false;
-                                _mode = _AddMode.byUrl;
-                              }),
-                            ),
+                          return BulkAddWidget(
+                            key: _bulkWidgetKey,
+                            isLargeScreen: isLargeScreen,
+                            bottomActionBottomPadding:
+                                appVaultFabBottomPadding,
+                            onComplete: () => setState(() {
+                              _byUrlOpenedFromSearchPick = false;
+                              _mode = _AddMode.byUrl;
+                            }),
                           );
                         }
 
@@ -1838,6 +1851,7 @@ class AddAppPageState extends State<AddAppPage> {
                   child: BulkAddWidget(
                     key: _bulkWidgetKey,
                     isLargeScreen: isLargeScreen,
+                    bottomActionBottomPadding: appVaultFabBottomPadding,
                     onComplete: () => setState(() {
                       _byUrlOpenedFromSearchPick = false;
                       _mode = _AddMode.byUrl;
@@ -1852,6 +1866,11 @@ class AddAppPageState extends State<AddAppPage> {
     }
 
     return Scaffold(
+      // Don't let the keyboard resize the body (see the apps-list Scaffold): the
+      // per-frame resize repaint forces the app bar's progressive-blur
+      // BackdropFilter to re-rasterize every frame and stutters the keyboard
+      // slide. The URL / search field is at the top, so it stays visible.
+      resizeToAvoidBottomInset: false,
       backgroundColor: addScheme.surface,
       body: Stack(
         fit: StackFit.expand,

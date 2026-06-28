@@ -99,6 +99,12 @@ class SettingsProvider with ChangeNotifier {
   // on every getter call. Null value means the key exists but has no override.
   final Map<String, Map<String, dynamic>?> _folderViewCache = {};
 
+  // Decoded 'savedCustomSeedHexList' cache, keyed by the raw stored string so it
+  // self-invalidates whenever the pref changes (no matter which write path) and
+  // avoids re-running jsonDecode on every theme-picker rebuild.
+  String? _savedSeedHexesRaw;
+  List<String>? _savedSeedHexesDecoded;
+
   String sourceUrl = 'https://github.com/bikram-agarwal/ObtainX';
 
   // Not done in constructor as we want to be able to await it
@@ -360,7 +366,18 @@ class SettingsProvider with ChangeNotifier {
   }
 
   set theme(ThemeSettings t) {
+    if (theme == t) return;
     prefs?.setInt('theme', t.index);
+    notifyListeners();
+  }
+
+  void setThemeAppearance({
+    required ThemeSettings theme,
+    required bool useBlackTheme,
+  }) {
+    if (this.theme == theme && this.useBlackTheme == useBlackTheme) return;
+    prefs?.setInt('theme', theme.index);
+    prefs?.setBool('useBlackTheme', useBlackTheme);
     notifyListeners();
   }
 
@@ -444,16 +461,26 @@ class SettingsProvider with ChangeNotifier {
     if (raw == null || raw.isEmpty) {
       return [activeCustomSeedHex];
     }
-    try {
-      final List<dynamic> decoded = jsonDecode(raw) as List<dynamic>;
-      final List<String> out = decoded
-          .map((dynamic e) => normalizeCustomSeedHexOrNull(e.toString()))
-          .whereType<String>()
-          .toList();
-      return out.isNotEmpty ? out : [activeCustomSeedHex];
-    } catch (_) {
-      return [activeCustomSeedHex];
+    // Re-decode only when the raw pref string actually changes. The
+    // activeCustomSeedHex fallback stays outside the cache since it can change
+    // independently of this list.
+    List<String>? out = raw == _savedSeedHexesRaw
+        ? _savedSeedHexesDecoded
+        : null;
+    if (out == null) {
+      try {
+        final List<dynamic> decoded = jsonDecode(raw) as List<dynamic>;
+        out = decoded
+            .map((dynamic e) => normalizeCustomSeedHexOrNull(e.toString()))
+            .whereType<String>()
+            .toList();
+      } catch (_) {
+        return [activeCustomSeedHex];
+      }
+      _savedSeedHexesRaw = raw;
+      _savedSeedHexesDecoded = out;
     }
+    return out.isNotEmpty ? out : [activeCustomSeedHex];
   }
 
   void _persistSavedCustomSeedHexes(List<String> list) {
@@ -586,6 +613,7 @@ class SettingsProvider with ChangeNotifier {
   }
 
   set useBlackTheme(bool useBlackTheme) {
+    if (this.useBlackTheme == useBlackTheme) return;
     prefs?.setBool('useBlackTheme', useBlackTheme);
     notifyListeners();
   }
@@ -614,6 +642,15 @@ class SettingsProvider with ChangeNotifier {
 
   set showTrackedStoreBadge(bool value) {
     prefs?.setBool('showTrackedStoreBadge', value);
+    notifyListeners();
+  }
+
+  bool get showCategoriesBadge {
+    return prefs?.getBool('showCategoriesBadge') ?? false;
+  }
+
+  set showCategoriesBadge(bool value) {
+    prefs?.setBool('showCategoriesBadge', value);
     notifyListeners();
   }
 
@@ -824,9 +861,13 @@ class SettingsProvider with ChangeNotifier {
     if (_categoriesMemory != null) {
       return Map<String, int>.from(_categoriesMemory!);
     }
-    return Map<String, int>.from(
+    // Lazily populate the in-memory cache on first read (mirrors [appFolders]).
+    // Previously this decoded the 'categories' JSON on every read until a write
+    // happened — and categories is read on every apps-list / settings rebuild.
+    _categoriesMemory = Map<String, int>.from(
       jsonDecode(prefs?.getString('categories') ?? '{}'),
     );
+    return Map<String, int>.from(_categoriesMemory!);
   }
 
   void setCategories(Map<String, int> cats, {AppsProvider? appsProvider}) {

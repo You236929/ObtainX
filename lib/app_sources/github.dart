@@ -729,6 +729,15 @@ class GitHub extends AppSource {
             true
         ? additionalSettings['filterReleaseNotesByRegEx']
         : null;
+    // Compile the user filter patterns once, not once per release in the loop
+    // below (a release list can be long, and identical patterns were being
+    // recompiled on every iteration).
+    final RegExp? releaseTitleFilter = regexFilter != null
+        ? RegExp(regexFilter)
+        : null;
+    final RegExp? releaseNotesFilter = regexNotesFilter != null
+        ? RegExp(regexNotesFilter)
+        : null;
     bool verifyLatestTag = additionalSettings['verifyLatestTag'] == true;
     bool useLatestAssetDateAsReleaseDate =
         additionalSettings['useLatestAssetDateAsReleaseDate'] == true;
@@ -934,14 +943,14 @@ class GitHub extends AppSource {
           // Some leave titles empty so tag is used
           nameToFilter = releases[i]['tag_name'] as String;
         }
-        if (regexFilter != null &&
-            !RegExp(regexFilter).hasMatch(nameToFilter.trim())) {
+        if (releaseTitleFilter != null &&
+            !releaseTitleFilter.hasMatch(nameToFilter.trim())) {
           continue;
         }
-        if (regexNotesFilter != null &&
-            !RegExp(
-              regexNotesFilter,
-            ).hasMatch(((releases[i]['body'] as String?) ?? '').trim())) {
+        if (releaseNotesFilter != null &&
+            !releaseNotesFilter.hasMatch(
+              ((releases[i]['body'] as String?) ?? '').trim(),
+            )) {
           continue;
         }
         var allAssetsWithUrls = findReleaseAssetUrls(releases[i]);

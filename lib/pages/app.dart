@@ -13,6 +13,7 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:obtainium/app_sources/apkmirror.dart';
 import 'package:obtainium/app_sources/github.dart';
+import 'package:obtainium/components/app_bottom_sheet.dart';
 import 'package:obtainium/components/app_page_section_title.dart';
 import 'package:obtainium/components/category_action_chip.dart';
 import 'package:obtainium/pages/additional_options_page.dart';
@@ -62,8 +63,7 @@ bool _isInstalledVersionPseudo(AppInMemory appInMemory) {
   if (installedInfo == null) {
     return false;
   }
-  final String? realInstalledVersion =
-      appModel.additionalSettings['useVersionCodeAsOSVersion'] == true
+  final String? realInstalledVersion = _usesVersionCodeAsOsVersion(appModel)
       ? installedInfo.versionCode.toString()
       : installedInfo.versionName;
   if (realInstalledVersion == null || realInstalledVersion.isEmpty) {
@@ -75,6 +75,11 @@ bool _isInstalledVersionPseudo(AppInMemory appInMemory) {
   );
 }
 
+bool _usesVersionCodeAsOsVersion(App appModel) {
+  return appModel.additionalSettings['useVersionCodeAsOSVersion'] == true ||
+      appModel.additionalSettings['versionDetection'] == 'versionCode';
+}
+
 /// The real OS-reported installed version (versionName, or versionCode when the
 /// app uses useVersionCodeAsOSVersion). Null when nothing is installed. Surfaced
 /// on the app page only when the displayed version is a pseudo-version, so the
@@ -82,7 +87,7 @@ bool _isInstalledVersionPseudo(AppInMemory appInMemory) {
 String? _realOsInstalledVersion(AppInMemory appInMemory) {
   final installedInfo = appInMemory.installedInfo;
   if (installedInfo == null) return null;
-  return appInMemory.app.additionalSettings['useVersionCodeAsOSVersion'] == true
+  return _usesVersionCodeAsOsVersion(appInMemory.app)
       ? installedInfo.versionCode.toString()
       : installedInfo.versionName;
 }
@@ -242,7 +247,12 @@ int appPageAppsRebuildToken(AppsProvider provider, String appId) {
   return Object.hashAll([
     downloadsRunning,
     appId,
-    inMemory.downloadProgress,
+    // Only whether a download is active (start/stop) — NOT the live fraction.
+    // The fraction ticks ~4 Hz during a download; including it here forced the
+    // entire ~2700-line AppPage build to re-run on every tick. The live bar is
+    // now rendered by [_DownloadProgressAction], which subscribes to the
+    // fraction itself, so the page only rebuilds when the download begins/ends.
+    inMemory.downloadProgress != null,
     identityHashCode(inMemory.icon),
     inMemory.icon?.length,
     model.id,
@@ -281,8 +291,102 @@ int appPageSettingsRebuildToken(SettingsProvider settings) {
     settings.checkUpdateOnDetailPage,
     settings.highlightTouchTargets,
     settings.cardCornerScale,
-    settings.categories.hashCode,
+    Object.hashAll(settings.categories.entries.map((e) => '${e.key}=${e.value}')),
   );
+}
+
+/// The download/install progress button shown in the app action area.
+///
+/// Subscribes narrowly to its own app's [AppInMemory.downloadProgress] and
+/// [AppInMemory.downloadTotalBytes] via [context.select], so the ~4 Hz progress
+/// ticks rebuild only this small widget — not the whole ~2700-line [AppPage]
+/// build. The page-level rebuild token ([appPageAppsRebuildToken]) tracks only
+/// whether a download is active, so the page rebuilds once on start and once on
+/// finish; everything in between is this widget repainting alone.
+class _DownloadProgressAction extends StatelessWidget {
+  const _DownloadProgressAction({
+    required this.appId,
+    required this.actionTheme,
+    required this.expressiveRadius,
+  });
+
+  final String appId;
+  final ThemeData actionTheme;
+  final double expressiveRadius;
+
+  @override
+  Widget build(BuildContext context) {
+    final (double? dpOrNull, int? totalBytes) = context
+        .select<AppsProvider, (double?, int?)>((p) {
+          final a = p.apps[appId];
+          return (a?.downloadProgress, a?.downloadTotalBytes);
+        });
+    // Race guard: the download may have ended between the page rebuild that
+    // mounted this widget and this build. The page will rebuild and remove us.
+    if (dpOrNull == null) {
+      return const SizedBox.shrink();
+    }
+    final double dp = dpOrNull;
+    final bool isInstalling = dp < 0;
+    final String bytesLabel = !isInstalling && totalBytes != null
+        ? ' · ${formatBytesForDisplay((dp / 100 * totalBytes).round())} / ${formatBytesForDisplay(totalBytes)}'
+        : '';
+    final String label = isInstalling
+        ? '${tr('installing')}…'
+        : tr('downloadingX', args: ['${dp.round()}%$bytesLabel']);
+    final Widget progressBar = ClipRRect(
+      borderRadius: BorderRadius.circular(expressiveRadius),
+      child: SizedBox(
+        height: 52,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Container(color: actionTheme.colorScheme.onSurface.withAlpha(31)),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FractionallySizedBox(
+                widthFactor: isInstalling ? 1.0 : dp / 100,
+                child: Container(
+                  color: actionTheme.colorScheme.primary.withAlpha(
+                    isInstalling ? 55 : 220,
+                  ),
+                ),
+              ),
+            ),
+            if (isInstalling)
+              LinearProgressIndicator(
+                backgroundColor: Colors.transparent,
+                color: actionTheme.colorScheme.primary.withAlpha(120),
+              ),
+            Center(
+              child: Text(
+                label,
+                style: actionTheme.textTheme.labelLarge?.copyWith(
+                  color: actionTheme.colorScheme.onSurface.withAlpha(200),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        progressBar,
+        if (!isInstalling)
+          Center(
+            child: TextButton(
+              onPressed: () =>
+                  context.read<AppsProvider>().cancelDownload(appId),
+              child: Text(tr('cancel')),
+            ),
+          ),
+      ],
+    );
+  }
 }
 
 enum _UnsavedAction { keepEditing, discard, saveAndExit }
@@ -348,6 +452,13 @@ class _AppPageState extends State<AppPage> {
   String? _iconSchemeFailedCacheKey;
 
   final SourceProvider _sourceProvider = SourceProvider();
+
+  // Cache for the resolved AppSource. getSource() constructs a fresh source
+  // (running tr() in its constructor) on every call, but the result is a pure
+  // function of the app's url + overrideSource, which rarely change for an open
+  // page — so recompute only when that key changes instead of every build.
+  AppSource? _cachedSource;
+  String? _cachedSourceKey;
 
   /// Resolves to this app's store-availability map from [BulkScanCache], or null.
   Future<Map<String, String>?>? _storeAvailabilityCacheFuture;
@@ -555,6 +666,9 @@ class _AppPageState extends State<AppPage> {
   void _exitEditWithoutSaving() {
     _clearEditIconStaging();
     setState(() => _editMode = false);
+    if (_appPageScrollController.hasClients) {
+      _appPageScrollController.jumpTo(0);
+    }
   }
 
   // --- Unsaved changes dialog ---
@@ -763,6 +877,9 @@ class _AppPageState extends State<AppPage> {
     if (mounted) {
       _clearEditIconStaging();
       setState(() => _editMode = false);
+      if (_appPageScrollController.hasClients) {
+        _appPageScrollController.jumpTo(0);
+      }
     }
   }
 
@@ -1864,12 +1981,18 @@ class _AppPageState extends State<AppPage> {
         }
       });
     }
-    var source = app != null
-        ? _sourceProvider.getSource(
-            app.app.url,
-            overrideSource: app.app.overrideSource,
-          )
-        : null;
+    AppSource? source;
+    if (app != null) {
+      final String sourceKey = '${app.app.url} ${app.app.overrideSource ?? ''}';
+      if (sourceKey != _cachedSourceKey) {
+        _cachedSource = _sourceProvider.getSource(
+          app.app.url,
+          overrideSource: app.app.overrideSource,
+        );
+        _cachedSourceKey = sourceKey;
+      }
+      source = _cachedSource;
+    }
     final String? buildVerificationPersistentPageError =
         app != null &&
             source != null &&
@@ -1982,6 +2105,7 @@ class _AppPageState extends State<AppPage> {
     bool isVersionDetectionStandard =
         app?.app.additionalSettings['versionDetection'] == 'auto' ||
         app?.app.additionalSettings['versionDetection'] == 'standard' ||
+        app?.app.additionalSettings['versionDetection'] == 'versionCode' ||
         app?.app.additionalSettings['versionDetection'] == true ||
         app?.app.additionalSettings['versionDetection'] == null;
 
@@ -2046,8 +2170,33 @@ class _AppPageState extends State<AppPage> {
       String label,
       String value, {
       bool pseudoVersion = false,
+      bool versionCode = false,
       String? osInstalledVersion,
     }) {
+      Widget versionChip(String text) {
+        final ColorScheme scheme = Theme.of(ctx).colorScheme;
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            color: Color.alphaBlend(
+              scheme.primary.withValues(alpha: 0.08),
+              scheme.surfaceContainerHighest,
+            ),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: scheme.outlineVariant.withValues(alpha: 0.9),
+            ),
+          ),
+          child: Text(
+            text,
+            style: Theme.of(ctx).textTheme.labelSmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        );
+      }
+
       return Padding(
         padding: const EdgeInsets.only(bottom: 6),
         child: Row(
@@ -2082,26 +2231,8 @@ class _AppPageState extends State<AppPage> {
                       fontStyle: pseudoVersion ? FontStyle.italic : null,
                     ),
                   ),
-                  if (pseudoVersion)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Theme.of(
-                          ctx,
-                        ).colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        tr('pseudoVersion'),
-                        style: Theme.of(ctx).textTheme.labelSmall?.copyWith(
-                          color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
+                  if (pseudoVersion) versionChip(tr('pseudoVersion')),
+                  if (versionCode) versionChip(tr('versionCode')),
                   if (pseudoVersion &&
                       osInstalledVersion != null &&
                       osInstalledVersion.isNotEmpty)
@@ -2597,6 +2728,7 @@ class _AppPageState extends State<AppPage> {
               tr('installed'),
               app?.app.installedVersion ?? '',
               pseudoVersion: app != null && _isInstalledVersionPseudo(app),
+              versionCode: app != null && _usesVersionCodeAsOsVersion(app.app),
               osInstalledVersion: app == null
                   ? null
                   : _realOsInstalledVersion(app),
@@ -3391,6 +3523,7 @@ class _AppPageState extends State<AppPage> {
       const heroIconSize = 48.0;
       final double dialogIconSize = small ? 70 : heroIconSize;
       final double dialogIconRadius = small ? 12 : 16;
+      final double placeholderIconSize = small ? dialogIconSize : 30;
       final iconWidget = _tappableAppIconDisplay(
         themeContext: themeContext,
         appInMemory: app,
@@ -3399,12 +3532,31 @@ class _AppPageState extends State<AppPage> {
         iconMemoryBytes: _heroIconMemoryOverrideForEdit(app),
         exclusiveIconMemoryBytes: _editStagedClearOverride,
         emptyPlaceholder: small
-            ? const SizedBox(height: 70, width: 70)
+            ? SizedBox(
+                height: dialogIconSize,
+                width: dialogIconSize,
+                child: Center(
+                  child: Transform(
+                    alignment: Alignment.center,
+                    transform: Matrix4.rotationZ(0.31),
+                    child: Image(
+                      image: const AssetImage('assets/graphics/icon_small.png'),
+                      width: placeholderIconSize,
+                      height: placeholderIconSize,
+                      fit: BoxFit.contain,
+                      color: dialogColumnTheme.colorScheme.onSurfaceVariant
+                          .withValues(alpha: 0.5),
+                      colorBlendMode: BlendMode.modulate,
+                      gaplessPlayback: true,
+                    ),
+                  ),
+                ),
+              )
             : Container(
-                height: heroIconSize,
-                width: heroIconSize,
+                height: dialogIconSize,
+                width: dialogIconSize,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(dialogIconRadius),
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
@@ -3412,6 +3564,21 @@ class _AppPageState extends State<AppPage> {
                       dialogColumnTheme.colorScheme.primary,
                       dialogColumnTheme.colorScheme.primary.withAlpha(200),
                     ],
+                  ),
+                ),
+                child: Center(
+                  child: Transform(
+                    alignment: Alignment.center,
+                    transform: Matrix4.rotationZ(0.31),
+                    child: Image(
+                      image: const AssetImage('assets/graphics/icon_small.png'),
+                      width: placeholderIconSize,
+                      height: placeholderIconSize,
+                      fit: BoxFit.contain,
+                      color: Colors.white.withValues(alpha: 0.5),
+                      colorBlendMode: BlendMode.modulate,
+                      gaplessPlayback: true,
+                    ),
                   ),
                 ),
               ),
@@ -3625,69 +3792,15 @@ class _AppPageState extends State<AppPage> {
       final String markInstalledLabel = sizeAnnotated(tr('markInstalled'));
       final String markUpdatedLabel = sizeAnnotated(tr('markUpdated'));
 
-      // #2 — inline progress button replaces the action button while downloading/installing.
+      // #2 — inline progress button replaces the action button while
+      // downloading/installing. The live bar is its own widget so the ~4 Hz
+      // progress ticks don't rebuild the whole page (see [_DownloadProgressAction]
+      // and the note in [appPageAppsRebuildToken]).
       if (app?.downloadProgress != null) {
-        final double dp = app!.downloadProgress!;
-        final bool isInstalling = dp < 0;
-        final int? totalBytes = app.downloadTotalBytes;
-        final String bytesLabel = !isInstalling && totalBytes != null
-            ? ' · ${formatBytesForDisplay((dp / 100 * totalBytes).round())} / ${formatBytesForDisplay(totalBytes)}'
-            : '';
-        final String label = isInstalling
-            ? '${tr('installing')}…'
-            : tr('downloadingX', args: ['${dp.round()}%$bytesLabel']);
-        final Widget progressBar = ClipRRect(
-          borderRadius: BorderRadius.circular(expressiveRadius),
-          child: SizedBox(
-            height: 52,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                Container(
-                  color: actionTheme.colorScheme.onSurface.withAlpha(31),
-                ),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: FractionallySizedBox(
-                    widthFactor: isInstalling ? 1.0 : dp / 100,
-                    child: Container(
-                      color: actionTheme.colorScheme.primary.withAlpha(
-                        isInstalling ? 55 : 220,
-                      ),
-                    ),
-                  ),
-                ),
-                if (isInstalling)
-                  LinearProgressIndicator(
-                    backgroundColor: Colors.transparent,
-                    color: actionTheme.colorScheme.primary.withAlpha(120),
-                  ),
-                Center(
-                  child: Text(
-                    label,
-                    style: actionTheme.textTheme.labelLarge?.copyWith(
-                      color: actionTheme.colorScheme.onSurface.withAlpha(200),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            progressBar,
-            if (!isInstalling)
-              Center(
-                child: TextButton(
-                  onPressed: () => appsProvider.cancelDownload(app.app.id),
-                  child: Text(tr('cancel')),
-                ),
-              ),
-          ],
+        return _DownloadProgressAction(
+          appId: app!.app.id,
+          actionTheme: actionTheme,
+          expressiveRadius: expressiveRadius,
         );
       }
 
@@ -3999,7 +4112,7 @@ class _AppPageState extends State<AppPage> {
           MediaQuery.systemGestureInsetsOf(themeContext).bottom > 0;
       final bool isLandscapeEmbedded =
           widget.isEmbedded &&
-          MediaQuery.of(themeContext).orientation == Orientation.landscape;
+          MediaQuery.orientationOf(themeContext) == Orientation.landscape;
       Widget actionBarContent = Padding(
         padding: isLandscapeEmbedded
             ? const EdgeInsets.fromLTRB(16, 6, 16, 6)
@@ -4069,36 +4182,28 @@ class _AppPageState extends State<AppPage> {
                       color: Theme.of(themeContext).colorScheme.primary,
                       iconSize: 24,
                       onPressed: () {
-                        showModalBottomSheet<void>(
+                        showAppModalSheet<void>(
                           context: context,
-                          isScrollControlled: true,
-                          useSafeArea: true,
-                          showDragHandle: true,
+                          fullWidth: true,
                           backgroundColor: pageThemeForPage.colorScheme.surface,
-                          // Full width — override the M3 default that caps the
-                          // sheet width on wide screens.
-                          constraints: const BoxConstraints(
-                            maxWidth: double.infinity,
-                          ),
                           builder: (BuildContext sheetRouteContext) {
                             return Theme(
                               data: pageThemeForPage,
                               child: Builder(
                                 builder: (BuildContext sheetThemedContext) {
-                                  return SafeArea(
-                                    top: false,
-                                    child: SingleChildScrollView(
-                                      padding: const EdgeInsets.fromLTRB(
-                                        16,
-                                        0,
-                                        16,
-                                        16,
-                                      ),
-                                      child: getFullInfoColumn(
+                                  return AppSheetContent(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      0,
+                                      0,
+                                      0,
+                                      16,
+                                    ),
+                                    children: [
+                                      getFullInfoColumn(
                                         sheetThemedContext,
                                         small: true,
                                       ),
-                                    ),
+                                    ],
                                   );
                                 },
                               ),
@@ -4530,6 +4635,7 @@ class _AppPageState extends State<AppPage> {
               ),
               bottomNavigationBar: widget.isEmbedded
                   ? _ScrollLinkedAppPageFooter(
+                      key: ValueKey<bool>(_editMode),
                       scrollController: _appPageScrollController,
                       child: _MeasureSize(
                         onChange: _handleBottomActionBarSizeChanged,
@@ -4550,6 +4656,7 @@ class _AppPageState extends State<AppPage> {
 
 class _ScrollLinkedAppPageFooter extends StatefulWidget {
   const _ScrollLinkedAppPageFooter({
+    super.key,
     required this.scrollController,
     required this.child,
   });
