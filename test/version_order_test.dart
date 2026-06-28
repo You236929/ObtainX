@@ -600,6 +600,44 @@ void main() {
     );
   });
 
+  test('apk mirror release page changelog extracts whats new text', () async {
+    expect(
+      await apkMirrorChangeLogFromReleasePageHtml('''
+<html>
+  <body>
+    <h2>What's new in Example 2.0</h2>
+    <div>
+      <p>Bug fixes and stability improvements.</p>
+      <ul>
+        <li>Added support for new devices.</li>
+        <li>Improved startup performance.</li>
+      </ul>
+    </div>
+    <p>Verified safe to install</p>
+    <h2>About Example</h2>
+    <p>This app description should not be included.</p>
+  </body>
+</html>
+'''),
+      'Bug fixes and stability improvements.\n'
+      '- Added support for new devices.\n'
+      '- Improved startup performance.',
+    );
+  });
+
+  test('apk mirror release page changelog falls back to page text', () async {
+    expect(
+      await apkMirrorChangeLogFromReleasePageHtml('''
+What's new in Example 2.0
+Fixed update tracking.
+Verified safe to install
+About Example
+This app description should not be included.
+'''),
+      'Fixed update tracking.',
+    );
+  });
+
   test('app copy preserves known apk size when refreshed size is unknown', () {
     final currentApp = App(
       'app-id',

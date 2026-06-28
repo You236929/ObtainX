@@ -16,6 +16,8 @@ void main() {
       'izzysoft.de': StoreSourceIconPaths.izzydroid,
       'git.sr.ht': StoreSourceIconPaths.sourcehut,
       'sourceforge.net': StoreSourceIconPaths.sourceforge,
+      'itch.io': StoreSourceIconPaths.itchio,
+      'example.itch.io': StoreSourceIconPaths.itchio,
       'apkpure.net': StoreSourceIconPaths.apkpure,
       'apkpure.com': StoreSourceIconPaths.apkpure,
       'apkmirror.com': StoreSourceIconPaths.apkmirror,
@@ -55,6 +57,11 @@ void main() {
         reason: assetPath,
       );
     }
+
+    expect(
+      storeSourceAssetPathForClassName('ItchIO'),
+      StoreSourceIconPaths.itchio,
+    );
   });
 
   test('custom hosts do not resolve to bundled icons', () {

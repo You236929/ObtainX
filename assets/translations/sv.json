@@ -20,7 +20,7 @@
   "unexpectedError": "Oväntat fel",
   "ok": "Okej",
   "and": "och",
-  "githubPATLabel": "GitHub Personal Access Token (ökar hastighetsgräns)",
+  "githubPATLabel": "GitHub PAT",
   "includePrereleases": "Inkludera förreleaser",
   "fallbackToOlderReleases": "Fall tillbaka till äldre releaser",
   "filterReleaseTitlesByRegEx": "Filtrera utgivningstitlar efter reguljärt uttryck",

@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:obtainium/layout_breakpoints.dart';
 import 'package:obtainium/widgets/help_hint_icon.dart';
+import 'package:obtainium/components/app_bottom_sheet.dart';
 import 'package:obtainium/components/app_dropdown_field.dart';
 import 'package:obtainium/components/custom_app_bar.dart';
 import 'package:obtainium/components/themes_settings_section.dart';
@@ -19,6 +20,7 @@ import 'package:obtainium/components/generated_form_modal.dart';
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/main.dart';
 import 'package:obtainium/app_sources/github.dart';
+import 'package:obtainium/app_sources/gitlab.dart';
 import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/providers/installer_provider.dart' as installer;
 import 'package:obtainium/providers/logs_provider.dart';
@@ -26,6 +28,7 @@ import 'package:obtainium/providers/native_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
 import 'package:obtainium/theme/app_theme_accent.dart';
+import 'package:obtainium/theme/app_segmented_button_theme.dart';
 import 'package:obtainium/theme/m3e_expressive_list.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -60,7 +63,7 @@ class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
 
   @override
-  State<SettingsPage> createState() => _SettingsPageState();
+  State<SettingsPage> createState() => SettingsPageState();
 }
 
 /// One entry in the large-screen settings master list (and its detail pane).
@@ -78,9 +81,14 @@ class _SettingsCategory {
   final Widget widget;
 }
 
-class _SettingsPageState extends State<SettingsPage> {
+class SettingsPageState extends State<SettingsPage> {
+  final GlobalKey<_SourceSpecificSectionState> _sourceSpecificKey =
+      GlobalKey<_SourceSpecificSectionState>();
   late final Future<AndroidDeviceInfo> _androidInfo =
       DeviceInfoPlugin().androidInfo;
+  final ValueNotifier<Map<String, bool>> _expandedSettingsSections =
+      ValueNotifier<Map<String, bool>>(<String, bool>{});
+  bool _expandedSettingsSectionsLoaded = false;
 
   String? _selectedCategory;
 
@@ -121,6 +129,58 @@ class _SettingsPageState extends State<SettingsPage> {
   ];
 
   @override
+  void dispose() {
+    _expandedSettingsSections.dispose();
+    super.dispose();
+  }
+
+  Future<bool> confirmDiscardUnsavedChanges() async {
+    final sourceSpecificState = _sourceSpecificKey.currentState;
+    if (sourceSpecificState != null) {
+      if (sourceSpecificState.isGithubDirty || sourceSpecificState.isGitlabDirty) {
+        final bool? discard = await showDialog<bool>(
+          context: context,
+          builder: (BuildContext dialogContext) {
+            return AlertDialog(
+              title: Text(tr('discardUnsavedChangesQuestion')),
+              content: Text(tr('discardUnsavedPATChangesExplanation')),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: Text(tr('cancel')),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: Text(tr('continue')),
+                ),
+              ],
+            );
+          },
+        );
+        if (discard == true) {
+          sourceSpecificState.discardChanges();
+          return true;
+        }
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void _loadExpandedSettingsSections(SettingsProvider sp) {
+    if (_expandedSettingsSectionsLoaded || sp.prefs == null) return;
+    _expandedSettingsSections.value = <String, bool>{
+      for (final key in _settingsSectionKeys)
+        key: sp.prefs?.getBool('settingsSection_$key') ?? true,
+    };
+    _expandedSettingsSectionsLoaded = true;
+  }
+
+  static bool _sectionExpanded(Map<String, bool> expandedState, String key) {
+    return expandedState[key] ?? true;
+  }
+
+  @override
   Widget build(BuildContext context) {
     // Narrow watch: register a dependency only on the values needed for the
     // Scaffold chrome (via context.select) so this page rebuilds when those
@@ -133,30 +193,28 @@ class _SettingsPageState extends State<SettingsPage> {
 
     // One-time initialization guard.
     if (sp.prefs == null) sp.initializeSettings();
-
-    // Collapse state: persisted in SharedPreferences but toggled via local
-    // setState so toggling a section header does NOT trigger a global
-    // notifyListeners / full-page rebuild.
-    final Map<String, bool> expandedState = <String, bool>{
-      for (final key in _settingsSectionKeys)
-        key: sp.prefs?.getBool('settingsSection_$key') ?? true,
-    };
+    _loadExpandedSettingsSections(sp);
 
     void setSectionExpanded(String key, bool value) {
       sp.prefs?.setBool('settingsSection_$key', value);
-      setState(() {});
+      _expandedSettingsSections.value = <String, bool>{
+        ..._expandedSettingsSections.value,
+        key: value,
+      };
     }
 
     void setAllSettingsSectionsExpanded(bool value) {
       for (final sectionKey in _settingsSectionKeys) {
         sp.prefs?.setBool('settingsSection_$sectionKey', value);
       }
-      setState(() {});
+      _expandedSettingsSections.value = <String, bool>{
+        for (final sectionKey in _settingsSectionKeys) sectionKey: value,
+      };
     }
 
     final List<String> visibleSettingsSectionKeys = [
       'updates',
-      if (sourceProvider.sources.any(
+      if (sourceProvider.sourceTemplates.any(
         (source) => source.sourceConfigSettingFormItems.isNotEmpty,
       ))
         'sourceSpecific',
@@ -166,39 +224,50 @@ class _SettingsPageState extends State<SettingsPage> {
       'interaction',
       'categories',
     ];
-    final bool allSettingsSectionsExpanded = visibleSettingsSectionKeys.every(
-      (k) => expandedState[k] ?? true,
-    );
-
+    // Each section is wrapped in a RepaintBoundary so it composites to its own
+    // cached layer. The settings body is one eager Column inside a single
+    // SliverToBoxAdapter (unlike the apps list, which is a lazy ListView.builder
+    // that gets per-row RepaintBoundaries for free). Without boundaries the whole
+    // visible tree re-rasterizes every scroll frame — and because the scroll
+    // offset lands on sub-pixels, text/border anti-aliasing differs frame to
+    // frame, which reads as a shimmer/shiver while scrolling (made worse by the
+    // app bar's BackdropFilter, which forces the content beneath it to re-raster
+    // every frame). Cached layers just translate rigidly instead.
     Widget settingsCard(List<Widget> children) {
-      return m3eExpressiveSettingsCard(
-        context: context,
-        colorScheme: cs,
-        items: children,
+      return RepaintBoundary(
+        child: m3eExpressiveSettingsCard(
+          context: context,
+          colorScheme: cs,
+          items: children,
+        ),
       );
     }
 
     Widget collapsibleCard(String key, Widget child) {
-      final bool expanded = expandedState[key] ?? true;
-      return ClipRect(
-        clipper: _SettingsSectionShadowClipper(expanded: expanded),
-        child: AnimatedAlign(
-          duration: const Duration(milliseconds: 360),
-          curve: Curves.easeInOutCubicEmphasized,
-          alignment: Alignment.topCenter,
-          heightFactor: expanded ? 1.0 : 0.0,
-          child: AnimatedOpacity(
-            duration: Duration(milliseconds: expanded ? 260 : 140),
-            curve: expanded ? Curves.easeOutCubic : Curves.easeInCubic,
-            opacity: expanded ? 1.0 : 0.0,
-            child: child,
-          ),
+      // RepaintBoundary: see settingsCard above for why each section is its own
+      // cached layer.
+      return RepaintBoundary(
+        child: ValueListenableBuilder<Map<String, bool>>(
+          valueListenable: _expandedSettingsSections,
+          child: child,
+          builder: (context, expandedState, child) {
+            final bool expanded = _sectionExpanded(expandedState, key);
+            return ClipRect(
+              clipper: _SettingsSectionShadowClipper(expanded: expanded),
+              child: AnimatedAlign(
+                duration: const Duration(milliseconds: 360),
+                curve: Curves.easeInOutCubicEmphasized,
+                alignment: Alignment.topCenter,
+                heightFactor: expanded ? 1.0 : 0.0,
+                child: child,
+              ),
+            );
+          },
         ),
       );
     }
 
     Widget sectionHeader(String title, IconData icon, String key) {
-      final bool expanded = expandedState[key] ?? true;
       const Duration headerTransitionDuration = Duration(milliseconds: 300);
       const Curve headerTransitionCurve = Curves.easeInOutCubicEmphasized;
       final Color collapsedHeaderColor = Color.lerp(
@@ -207,155 +276,172 @@ class _SettingsPageState extends State<SettingsPage> {
         0.30,
       )!;
       final Color collapsedHeaderContentColor = cs.onSecondaryContainer;
-      final Color headerContentColor = expanded
-          ? cs.primary
-          : collapsedHeaderContentColor;
-      final BorderSide outlineSide = expanded
-          ? BorderSide.none
-          : m3ePureBlackOutlineSide(cs, alpha: 0.16);
 
-      return AnimatedPadding(
-        duration: headerTransitionDuration,
-        curve: headerTransitionCurve,
-        padding: EdgeInsets.fromLTRB(0, expanded ? 20 : 16, 0, 8),
-        child: AnimatedContainer(
-          duration: headerTransitionDuration,
-          curve: headerTransitionCurve,
-          decoration: BoxDecoration(
-            color: expanded ? Colors.transparent : collapsedHeaderColor,
-            borderRadius: BorderRadius.circular(expanded ? 8 : 28),
-            border: outlineSide == BorderSide.none
-                ? null
-                : Border.fromBorderSide(outlineSide),
-          ),
-          child: Material(
-            type: MaterialType.transparency,
-            child: InkWell(
-              onTap: () => setSectionExpanded(key, !expanded),
-              borderRadius: BorderRadius.circular(expanded ? 8 : 28),
-              splashFactory: NoSplash.splashFactory,
-              splashColor: Colors.transparent,
-              highlightColor: Colors.transparent,
-              hoverColor: Colors.transparent,
-              child: AnimatedPadding(
+      // RepaintBoundary: see settingsCard above for why each section is its own
+      // cached layer.
+      return RepaintBoundary(
+        child: ValueListenableBuilder<Map<String, bool>>(
+          valueListenable: _expandedSettingsSections,
+          builder: (context, expandedState, _) {
+            final bool expanded = _sectionExpanded(expandedState, key);
+            final Color headerContentColor = expanded
+                ? cs.primary
+                : collapsedHeaderContentColor;
+            final BorderSide outlineSide = expanded
+                ? BorderSide.none
+                : m3ePureBlackOutlineSide(cs, alpha: 0.16);
+
+            return AnimatedPadding(
+              duration: headerTransitionDuration,
+              curve: headerTransitionCurve,
+              padding: EdgeInsets.fromLTRB(0, expanded ? 20 : 16, 0, 8),
+              child: AnimatedContainer(
                 duration: headerTransitionDuration,
                 curve: headerTransitionCurve,
-                padding: EdgeInsets.symmetric(
-                  horizontal: expanded ? 4 : 12,
-                  vertical: expanded ? 4 : 8,
+                decoration: BoxDecoration(
+                  color: expanded ? Colors.transparent : collapsedHeaderColor,
+                  borderRadius: BorderRadius.circular(expanded ? 8 : 28),
+                  border: outlineSide == BorderSide.none
+                      ? null
+                      : Border.fromBorderSide(outlineSide),
                 ),
-                child: Row(
-                  children: [
-                    AnimatedContainer(
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: InkWell(
+                    onTap: () => setSectionExpanded(key, !expanded),
+                    borderRadius: BorderRadius.circular(expanded ? 8 : 28),
+                    splashFactory: NoSplash.splashFactory,
+                    splashColor: Colors.transparent,
+                    highlightColor: Colors.transparent,
+                    hoverColor: Colors.transparent,
+                    child: AnimatedPadding(
                       duration: headerTransitionDuration,
                       curve: headerTransitionCurve,
-                      width: expanded ? 20 : 30,
-                      height: expanded ? 20 : 30,
-                      decoration: BoxDecoration(
-                        color: expanded
-                            ? Colors.transparent
-                            : cs.primary.withValues(alpha: 0.16),
-                        shape: BoxShape.circle,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: expanded ? 4 : 12,
+                        vertical: expanded ? 4 : 8,
                       ),
-                      child: Icon(
-                        icon,
-                        color: headerContentColor,
-                        size: expanded ? 16 : 17,
+                      child: Row(
+                        children: [
+                          AnimatedContainer(
+                            duration: headerTransitionDuration,
+                            curve: headerTransitionCurve,
+                            width: expanded ? 20 : 30,
+                            height: expanded ? 20 : 30,
+                            decoration: BoxDecoration(
+                              color: expanded
+                                  ? Colors.transparent
+                                  : cs.primary.withValues(alpha: 0.16),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              icon,
+                              color: headerContentColor,
+                              size: expanded ? 16 : 17,
+                            ),
+                          ),
+                          SizedBox(width: expanded ? 8 : 10),
+                          Expanded(
+                            child: AnimatedDefaultTextStyle(
+                              duration: headerTransitionDuration,
+                              curve: headerTransitionCurve,
+                              style: TextStyle(
+                                fontWeight: expanded
+                                    ? FontWeight.w600
+                                    : FontWeight.w700,
+                                color: headerContentColor,
+                                fontSize: 13,
+                                letterSpacing: expanded ? 0 : 0.1,
+                                decoration: TextDecoration.none,
+                              ),
+                              child: Text(
+                                title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
+                          AnimatedContainer(
+                            duration: headerTransitionDuration,
+                            curve: headerTransitionCurve,
+                            width: expanded ? 20 : 32,
+                            height: expanded ? 20 : 32,
+                            decoration: BoxDecoration(
+                              color: expanded
+                                  ? Colors.transparent
+                                  : cs.surfaceContainerHighest,
+                              shape: BoxShape.circle,
+                            ),
+                            child: AnimatedRotation(
+                              turns: expanded ? 0.25 : 0,
+                              duration: headerTransitionDuration,
+                              curve: headerTransitionCurve,
+                              child: Icon(
+                                Icons.chevron_right_rounded,
+                                color: expanded
+                                    ? cs.primary
+                                    : cs.onSurfaceVariant,
+                                size: expanded ? 18 : 20,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    SizedBox(width: expanded ? 8 : 10),
-                    Expanded(
-                      child: AnimatedDefaultTextStyle(
-                        duration: headerTransitionDuration,
-                        curve: headerTransitionCurve,
-                        style: TextStyle(
-                          fontWeight: expanded
-                              ? FontWeight.w600
-                              : FontWeight.w700,
-                          color: headerContentColor,
-                          fontSize: 13,
-                          letterSpacing: expanded ? 0 : 0.1,
-                          decoration: TextDecoration.none,
-                        ),
-                        child: Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ),
-                    AnimatedContainer(
-                      duration: headerTransitionDuration,
-                      curve: headerTransitionCurve,
-                      width: expanded ? 20 : 32,
-                      height: expanded ? 20 : 32,
-                      decoration: BoxDecoration(
-                        color: expanded
-                            ? Colors.transparent
-                            : cs.surfaceContainerHighest,
-                        shape: BoxShape.circle,
-                      ),
-                      child: AnimatedRotation(
-                        turns: expanded ? 0.25 : 0,
-                        duration: headerTransitionDuration,
-                        curve: headerTransitionCurve,
-                        child: Icon(
-                          Icons.chevron_right_rounded,
-                          color: expanded ? cs.primary : cs.onSurfaceVariant,
-                          size: expanded ? 18 : 20,
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
+            );
+          },
+        ),
+      );
+    }
+
+    Widget aboutSectionHeader() {
+      // RepaintBoundary: see settingsCard above for why each section is its own
+      // cached layer.
+      return RepaintBoundary(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(0, 20, 0, 4),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 0),
+            child: Row(
+              children: [
+                Icon(Icons.info_rounded, color: cs.primary, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    tr('about'),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: cs.primary,
+                      fontSize: 13,
+                      decoration: TextDecoration.none,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => _openLogsDialog(context),
+                  icon: const Icon(Icons.bug_report_outlined),
+                  tooltip: tr('appLogs'),
+                  color: cs.primary,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 40,
+                    height: 40,
+                  ),
+                  style: IconButton.styleFrom(
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
       );
     }
 
-    Widget aboutSectionHeader() {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(0, 20, 0, 4),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(4, 0, 4, 0),
-          child: Row(
-            children: [
-              Icon(Icons.info_rounded, color: cs.primary, size: 16),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  tr('about'),
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: cs.primary,
-                    fontSize: 13,
-                    decoration: TextDecoration.none,
-                  ),
-                ),
-              ),
-              IconButton(
-                onPressed: () => _openLogsDialog(context),
-                icon: const Icon(Icons.bug_report_outlined),
-                tooltip: tr('appLogs'),
-                color: cs.primary,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(
-                  width: 40,
-                  height: 40,
-                ),
-                style: IconButton.styleFrom(
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    final double screenWidth = MediaQuery.of(context).size.width;
+    final double screenWidth = MediaQuery.sizeOf(context).width;
     final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint;
 
     final List<_SettingsCategory> categoriesList = [
@@ -365,14 +451,14 @@ class _SettingsPageState extends State<SettingsPage> {
         icon: Icons.update_rounded,
         widget: _UpdatesSection(cs: cs, androidInfo: _androidInfo),
       ),
-      if (sourceProvider.sources.any(
+      if (sourceProvider.sourceTemplates.any(
         (s) => s.sourceConfigSettingFormItems.isNotEmpty,
       ))
         _SettingsCategory(
           key: 'sourceSpecific',
           title: tr('sourceSpecific'),
           icon: Icons.dns_rounded,
-          widget: const _SourceSpecificSection(),
+          widget: _SourceSpecificSection(key: _sourceSpecificKey),
         ),
       _SettingsCategory(
         key: 'themes',
@@ -389,7 +475,7 @@ class _SettingsPageState extends State<SettingsPage> {
       _SettingsCategory(
         key: 'warnings',
         title: tr('warnings'),
-        icon: Icons.warning_amber_rounded,
+        icon: Icons.warning_rounded,
         widget: const _WarningsSection(),
       ),
       _SettingsCategory(
@@ -443,10 +529,12 @@ class _SettingsPageState extends State<SettingsPage> {
           child: Material(
             type: MaterialType.transparency,
             child: InkWell(
-              onTap: () {
-                setState(() {
-                  _selectedCategory = key;
-                });
+              onTap: () async {
+                if (await confirmDiscardUnsavedChanges()) {
+                  setState(() {
+                    _selectedCategory = key;
+                  });
+                }
               },
               borderRadius: BorderRadius.circular(28),
               child: Padding(
@@ -674,18 +762,27 @@ class _SettingsPageState extends State<SettingsPage> {
                 title: tr('settings'),
                 matchGradientBackground: sp.useGradientBackground,
                 actions: [
-                  IconButton(
-                    tooltip: allSettingsSectionsExpanded
-                        ? tr('collapseAll')
-                        : tr('expandAll'),
-                    icon: Icon(
-                      allSettingsSectionsExpanded
-                          ? Icons.unfold_less_rounded
-                          : Icons.unfold_more_rounded,
-                    ),
-                    onPressed: () {
-                      setAllSettingsSectionsExpanded(
-                        !allSettingsSectionsExpanded,
+                  ValueListenableBuilder<Map<String, bool>>(
+                    valueListenable: _expandedSettingsSections,
+                    builder: (context, expandedState, _) {
+                      final bool allSettingsSectionsExpanded =
+                          visibleSettingsSectionKeys.every(
+                            (key) => _sectionExpanded(expandedState, key),
+                          );
+                      return IconButton(
+                        tooltip: allSettingsSectionsExpanded
+                            ? tr('collapseAll')
+                            : tr('expandAll'),
+                        icon: Icon(
+                          allSettingsSectionsExpanded
+                              ? Icons.unfold_less_rounded
+                              : Icons.unfold_more_rounded,
+                        ),
+                        onPressed: () {
+                          setAllSettingsSectionsExpanded(
+                            !allSettingsSectionsExpanded,
+                          );
+                        },
                       );
                     },
                   ),
@@ -713,7 +810,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               ),
                             ),
                             // ── Source-specific ───────────────────────────
-                            if (sourceProvider.sources.any(
+                            if (sourceProvider.sourceTemplates.any(
                               (s) => s.sourceConfigSettingFormItems.isNotEmpty,
                             )) ...[
                               sectionHeader(
@@ -723,7 +820,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               ),
                               collapsibleCard(
                                 'sourceSpecific',
-                                const _SourceSpecificSection(),
+                                _SourceSpecificSection(key: _sourceSpecificKey),
                               ),
                             ],
                             // ── Themes ───────────────────────────────────
@@ -751,7 +848,7 @@ class _SettingsPageState extends State<SettingsPage> {
                             // ── Warnings ─────────────────────────────────
                             sectionHeader(
                               tr('warnings'),
-                              Icons.warning_amber_rounded,
+                              Icons.warning_rounded,
                               'warnings',
                             ),
                             collapsibleCard(
@@ -1021,19 +1118,21 @@ class _UpdatesSection extends StatelessWidget {
             const SizedBox(height: 4),
             SizedBox(
               width: double.infinity,
-              child: SegmentedButton<String>(
+              child: AppSegmentedButton<String>(
                 segments: [
                   ButtonSegment<String>(
                     value: 'stock',
-                    label: Text(tr('installerModeStock')),
+                    label: AppSegmentedButtonLabel(tr('installerModeStock')),
                   ),
                   ButtonSegment<String>(
                     value: 'shizuku',
-                    label: Text(tr('installerModeShizuku')),
+                    label: AppSegmentedButtonLabel(tr('installerModeShizuku')),
                   ),
                   ButtonSegment<String>(
                     value: 'legacy',
-                    label: Text(tr('installerModeThirdParty')),
+                    label: AppSegmentedButtonLabel(
+                      tr('installerModeThirdParty'),
+                    ),
                   ),
                 ],
                 selected: {sp.installerMode},
@@ -1123,12 +1222,12 @@ class _UpdateIntervalSliderState extends State<_UpdateIntervalSlider> {
   int _intervalForVal(double val) {
     final int index = val.round().clamp(
       0,
-      _SettingsPageState.updateIntervalNodes.length,
+      SettingsPageState.updateIntervalNodes.length,
     );
     if (index == 0) {
       return 0;
     }
-    return _SettingsPageState.updateIntervalNodes[index - 1];
+    return SettingsPageState.updateIntervalNodes[index - 1];
   }
 
   String _labelForVal(double val) {
@@ -1194,11 +1293,11 @@ class _UpdateIntervalSliderState extends State<_UpdateIntervalSlider> {
                   child: Slider(
                     value: sliderVal.clamp(
                       0,
-                      _SettingsPageState.updateIntervalNodes.length.toDouble(),
+                      SettingsPageState.updateIntervalNodes.length.toDouble(),
                     ),
-                    max: _SettingsPageState.updateIntervalNodes.length
+                    max: SettingsPageState.updateIntervalNodes.length
                         .toDouble(),
-                    divisions: _SettingsPageState.updateIntervalNodes.length,
+                    divisions: SettingsPageState.updateIntervalNodes.length,
                     label: label,
                     onChanged: (double value) {
                       setState(() => _dragValue = value);
@@ -1222,70 +1321,322 @@ class _UpdateIntervalSliderState extends State<_UpdateIntervalSlider> {
 }
 
 /// Source-specific settings section — reads/writes generic source config.
-class _SourceSpecificSection extends StatelessWidget {
-  const _SourceSpecificSection();
+class _SourceSpecificSection extends StatefulWidget {
+  const _SourceSpecificSection({super.key});
+
+  @override
+  State<_SourceSpecificSection> createState() => _SourceSpecificSectionState();
+}
+
+class _SourceSpecificSectionState extends State<_SourceSpecificSection> {
+  late final TextEditingController _githubPatController;
+  late final TextEditingController _hubProxyController;
+  late final TextEditingController _gitlabPatController;
+  bool _githubChecking = false;
+  bool _gitlabChecking = false;
+
+  bool get isGithubDirty {
+    final String currentText = _githubPatController.text.trim();
+    final SettingsProvider sp = context.read<SettingsProvider>();
+    final String savedText = sp.getSettingString(GitHub.githubCredsKey) ?? '';
+    return currentText != savedText;
+  }
+
+  bool get isGitlabDirty {
+    final String currentText = _gitlabPatController.text.trim();
+    final SettingsProvider sp = context.read<SettingsProvider>();
+    final String savedText = sp.getSettingString('gitlab-creds') ?? '';
+    return currentText != savedText;
+  }
+
+  void discardChanges() {
+    final SettingsProvider sp = context.read<SettingsProvider>();
+    _githubPatController.text = sp.getSettingString(GitHub.githubCredsKey) ?? '';
+    _gitlabPatController.text = sp.getSettingString('gitlab-creds') ?? '';
+    setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final SettingsProvider sp = context.read<SettingsProvider>();
+    _githubPatController = TextEditingController(
+      text: sp.getSettingString(GitHub.githubCredsKey) ?? '',
+    );
+    _hubProxyController = TextEditingController(
+      text: sp.getSettingString(GitHub.githubReqPrefixKey) ?? '',
+    );
+    _gitlabPatController = TextEditingController(
+      text: sp.getSettingString('gitlab-creds') ?? '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _githubPatController.dispose();
+    _hubProxyController.dispose();
+    _gitlabPatController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Subscribe to any change in stored source settings.
-    context.select<SettingsProvider, bool>((s) => s.prefs != null);
-    final SettingsProvider sp = context.read<SettingsProvider>();
-    final SourceProvider sourceProvider = SourceProvider();
+    final SettingsProvider sp = context.watch<SettingsProvider>();
     final ColorScheme cs = Theme.of(context).colorScheme;
-
-    final sources = sourceProvider.sources
-        .where((s) => s.sourceConfigSettingFormItems.isNotEmpty)
-        .toList();
-
-    final forms = sources.map((source) {
-      return GeneratedForm(
-        outlinedInputFields: true,
-        items: source.sourceConfigSettingFormItems.map((item) {
-          final formItem = item.clone();
-          if (formItem is GeneratedFormSwitch) {
-            formItem.defaultValue = sp.getSettingBool(formItem.key);
-          } else {
-            formItem.defaultValue = sp.getSettingString(formItem.key);
-          }
-          return [formItem];
-        }).toList(),
-        onValueChanges: (values, valid, isBuilding) {
-          if (valid && !isBuilding) {
-            if (source is GitHub) {
-              final String? githubCreds = values[GitHub.githubCredsKey]
-                  ?.toString();
-              if (!GitHub.hasValidatedPAT(githubCreds, sp)) {
-                GitHub.clearPATValidation(sp);
-              }
-            }
-            values.forEach((key, value) {
-              final formItem = source.sourceConfigSettingFormItems
-                  .where((i) => i.key == key)
-                  .firstOrNull;
-              if (formItem is GeneratedFormSwitch) {
-                sp.setSettingBool(key, value == true);
-              } else {
-                sp.setSettingString(key, value ?? '');
-              }
-            });
-          }
-        },
-      );
-    }).toList();
 
     return m3eExpressiveSettingsCard(
       context: context,
       colorScheme: cs,
       items: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              for (int i = 0; i < forms.length; i++) ...[
-                if (i > 0) const SizedBox(height: 12),
-                forms[i],
-              ],
+              Row(
+                children: [
+                  Text(
+                    tr('personalAccessTokenPAT'),
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  HelpHintIcon(
+                    message: tr('patExplanationTooltip'),
+                    size: 18,
+                    padding: const EdgeInsets.only(left: 8),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _githubPatController,
+                      obscureText: true,
+                      decoration: InputDecoration(
+                        labelText: tr('githubPATLabel'),
+                        border: const OutlineInputBorder(),
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.open_in_new_rounded),
+                          onPressed: () => launchUrlString(
+                            'https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens',
+                            mode: LaunchMode.externalApplication,
+                          ),
+                          tooltip: tr('about'),
+                        ),
+                      ),
+                      onChanged: (val) {
+                        setState(() {});
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Builder(
+                    builder: (context) {
+                      final String enteredText = _githubPatController.text.trim();
+                      final String savedText = sp.getSettingString(GitHub.githubCredsKey) ?? '';
+                      final bool isDirty = enteredText != savedText;
+                      final bool isValidated = GitHub.hasValidatedPAT(enteredText, sp);
+                      final bool buttonIsEnabled = isDirty || (enteredText.isNotEmpty && !isValidated);
+
+                      return SizedBox(
+                        width: 48,
+                        height: 56,
+                        child: Center(
+                          child: _githubChecking
+                              ? SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: ExpressiveLoadingIndicator(
+                                    color: cs.primary,
+                                    constraints: const BoxConstraints.tightFor(width: 20, height: 20),
+                                  ),
+                                )
+                              : (GitHub.hasValidatedPAT(enteredText, sp)
+                                  ? Tooltip(
+                                      message: tr('githubPATValidated'),
+                                      child: Icon(
+                                        Icons.verified_user,
+                                        color: cs.primary,
+                                      ),
+                                    )
+                                  : IconButton.filledTonal(
+                                      icon: const Icon(Icons.save_rounded),
+                                      onPressed: buttonIsEnabled
+                                          ? () async {
+                                              FocusManager.instance.primaryFocus?.unfocus();
+                                              if (enteredText.isEmpty) {
+                                                sp.setSettingString(GitHub.githubCredsKey, '');
+                                                GitHub.clearPATValidation(sp);
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  SnackBar(content: Text(tr('dismiss'))),
+                                                );
+                                                setState(() {});
+                                                return;
+                                              }
+                                              setState(() {
+                                                _githubChecking = true;
+                                              });
+                                              final String? error = await GitHub.validatePAT(enteredText);
+                                              if (!mounted) return;
+                                              setState(() {
+                                                _githubChecking = false;
+                                              });
+                                              if (error == null) {
+                                                sp.setSettingString(GitHub.githubCredsKey, enteredText);
+                                                GitHub.storePATValidation(enteredText, sp);
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  SnackBar(content: Text(tr('githubPATValidated'))),
+                                                );
+                                              } else {
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  SnackBar(content: Text(error)),
+                                                );
+                                              }
+                                            }
+                                          : null,
+                                    )),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _hubProxyController,
+                decoration: InputDecoration(
+                  labelText: tr('GHReqPrefix'),
+                  hintText: 'gh-proxy.org',
+                  border: const OutlineInputBorder(),
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.open_in_new_rounded),
+                    onPressed: () => launchUrlString(
+                      'https://github.com/sky22333/hubproxy',
+                      mode: LaunchMode.externalApplication,
+                    ),
+                    tooltip: tr('about'),
+                  ),
+                ),
+                onChanged: (val) {
+                  sp.setSettingString(GitHub.githubReqPrefixKey, val.trim());
+                },
+              ),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                title: Text(tr('GHReqPrefixUseToken')),
+                value: sp.getSettingBool(GitHub.githubReqPrefixUseTokenKey) ?? false,
+                onChanged: (val) {
+                  sp.setSettingBool(GitHub.githubReqPrefixUseTokenKey, val);
+                },
+                contentPadding: EdgeInsets.zero,
+              ),
+              SwitchListTile(
+                title: Text(tr('repoRenamedCheck')),
+                value: sp.getSettingBool('checkRepoRename') ?? false,
+                onChanged: (val) {
+                  sp.setSettingBool('checkRepoRename', val);
+                },
+                contentPadding: EdgeInsets.zero,
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _gitlabPatController,
+                      obscureText: true,
+                      decoration: InputDecoration(
+                        labelText: tr('gitlabPATLabel'),
+                        border: const OutlineInputBorder(),
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.open_in_new_rounded),
+                          onPressed: () => launchUrlString(
+                            'https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html#create-a-personal-access-token',
+                            mode: LaunchMode.externalApplication,
+                          ),
+                          tooltip: tr('about'),
+                        ),
+                      ),
+                      onChanged: (val) {
+                        setState(() {});
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Builder(
+                    builder: (context) {
+                      final String enteredText = _gitlabPatController.text.trim();
+                      final String savedText = sp.getSettingString('gitlab-creds') ?? '';
+                      final bool isDirty = enteredText != savedText;
+                      final bool isValidated = GitLab.hasValidatedPAT(enteredText, sp);
+                      final bool buttonIsEnabled = isDirty || (enteredText.isNotEmpty && !isValidated);
+
+                      return SizedBox(
+                        width: 48,
+                        height: 56,
+                        child: Center(
+                          child: _gitlabChecking
+                              ? SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: ExpressiveLoadingIndicator(
+                                    color: cs.primary,
+                                    constraints: const BoxConstraints.tightFor(width: 20, height: 20),
+                                  ),
+                                )
+                              : (GitLab.hasValidatedPAT(enteredText, sp)
+                                  ? Tooltip(
+                                      message: tr('gitlabPATValidated'),
+                                      child: Icon(
+                                        Icons.verified_user,
+                                        color: cs.primary,
+                                      ),
+                                    )
+                                  : IconButton.filledTonal(
+                                      icon: const Icon(Icons.save_rounded),
+                                      onPressed: buttonIsEnabled
+                                          ? () async {
+                                              FocusManager.instance.primaryFocus?.unfocus();
+                                              if (enteredText.isEmpty) {
+                                                sp.setSettingString('gitlab-creds', '');
+                                                GitLab.clearPATValidation(sp);
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  SnackBar(content: Text(tr('dismiss'))),
+                                                );
+                                                setState(() {});
+                                                return;
+                                              }
+                                              setState(() {
+                                                _gitlabChecking = true;
+                                              });
+                                              final String? error = await GitLab.validatePAT(enteredText);
+                                              if (!mounted) return;
+                                              setState(() {
+                                                _gitlabChecking = false;
+                                              });
+                                              if (error == null) {
+                                                sp.setSettingString('gitlab-creds', enteredText);
+                                                GitLab.storePATValidation(enteredText, sp);
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  SnackBar(content: Text(tr('gitlabPATValidated'))),
+                                                );
+                                              } else {
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  SnackBar(content: Text(error)),
+                                                );
+                                              }
+                                            }
+                                          : null,
+                                    )),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
             ],
           ),
         ),
@@ -1698,7 +2049,7 @@ class _InteractionSection extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(_swipeActionIcon(action), size: 18),
+              Icon(_swipeActionIcon(action), size: 18, color: cs.primary),
               const SizedBox(width: 12),
               Text(tr('swipeAction_${action.name}')),
             ],
@@ -1785,7 +2136,7 @@ class AboutSectionContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final SettingsProvider sp = context.read<SettingsProvider>();
     final TextTheme textTheme = Theme.of(context).textTheme;
-    final double screenWidth = MediaQuery.of(context).size.width;
+    final double screenWidth = MediaQuery.sizeOf(context).width;
     final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint;
 
     return Stack(
@@ -1915,7 +2266,7 @@ class AboutSectionContent extends StatelessWidget {
                     const SizedBox(height: 10),
                     _AboutAppPromo(
                       colorScheme: colorScheme,
-                      assetPath: 'assets/graphics/remember_logo.png',
+                      assetPath: 'assets/graphics/logo_remember.png',
                       accentColor: const Color(0xFF74B84A),
                       name: tr('aboutRememberName'),
                       tagline: tr('aboutRememberTagline'),
@@ -1924,7 +2275,7 @@ class AboutSectionContent extends StatelessWidget {
                     const SizedBox(height: 10),
                     _AboutAppPromo(
                       colorScheme: colorScheme,
-                      assetPath: 'assets/graphics/filepipe_logo.png',
+                      assetPath: 'assets/graphics/logo_filepipe.png',
                       accentColor: const Color(0xFF5967D8),
                       name: tr('aboutFilePipeName'),
                       tagline: tr('aboutFilePipeTagline'),
@@ -2736,95 +3087,82 @@ class _ThirdPartyInstallerSelectorState
         ? '$currentPkg|$currentAct'
         : null;
 
-    showModalBottomSheet(
+    showAppModalSheet<void>(
       context: context,
-      isScrollControlled: true,
       builder: (sheetContext) {
         String? selectedValue = currentValue;
         return StatefulBuilder(
           builder: (builderContext, setSheetState) {
-            return DraggableScrollableSheet(
-              expand: false,
-              initialChildSize: 0.5,
-              maxChildSize: 0.85,
-              builder: (_, scrollController) {
-                return RadioGroup<String>(
-                  groupValue: selectedValue,
-                  onChanged: (String? value) {
-                    setSheetState(() => selectedValue = value);
-                    if (value != null) {
-                      final selected = _installerApps!.firstWhere(
-                        (a) => '${a.packageName}|${a.activityName}' == value,
-                      );
-                      widget.settingsProvider.legacyInstallerPackage =
-                          selected.packageName;
-                      widget.settingsProvider.legacyInstallerActivity =
-                          selected.activityName;
-                    }
-                    Navigator.pop(sheetContext);
-                  },
-                  child: Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Text(
-                          tr('thirdPartyInstallerSelect'),
-                          style: Theme.of(builderContext).textTheme.titleMedium,
-                        ),
-                      ),
-                      Expanded(
-                        child: ListView.builder(
-                          controller: scrollController,
-                          itemCount: _installerApps!.length,
-                          itemBuilder: (_, index) {
-                            final app = _installerApps![index];
-                            final radioValue =
-                                '${app.packageName}|${app.activityName}';
-                            return RadioListTile<String>(
-                              secondary:
-                                  app.icon != null && app.icon!.isNotEmpty
-                                  ? ClipRRect(
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: Image.memory(
-                                        app.icon!,
-                                        width: 40,
-                                        height: 40,
-                                        fit: BoxFit.contain,
-                                        // Decode at the rendered size × DPR
-                                        // so a 512×512 launcher icon doesn't
-                                        // sit at full resolution in the
-                                        // raster cache for a 40-px row.
-                                        cacheWidth:
-                                            (40 *
-                                                    MediaQuery.devicePixelRatioOf(
-                                                      context,
-                                                    ))
-                                                .round(),
-                                        cacheHeight:
-                                            (40 *
-                                                    MediaQuery.devicePixelRatioOf(
-                                                      context,
-                                                    ))
-                                                .round(),
-                                        errorBuilder: (_, _, _) =>
-                                            const Icon(Icons.android, size: 40),
-                                      ),
-                                    )
-                                  : const Icon(Icons.android, size: 40),
-                              title: Text(app.label),
-                              subtitle: Text(
-                                app.packageName,
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                              value: radioValue,
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                );
+            return RadioGroup<String>(
+              groupValue: selectedValue,
+              onChanged: (String? value) {
+                setSheetState(() => selectedValue = value);
+                if (value != null) {
+                  final selected = _installerApps!.firstWhere(
+                    (a) => '${a.packageName}|${a.activityName}' == value,
+                  );
+                  widget.settingsProvider.legacyInstallerPackage =
+                      selected.packageName;
+                  widget.settingsProvider.legacyInstallerActivity =
+                      selected.activityName;
+                }
+                Navigator.pop(sheetContext);
               },
+              child: AppSheetContent(
+                padding: const EdgeInsets.only(bottom: 8),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(
+                        tr('thirdPartyInstallerSelect'),
+                        style: Theme.of(builderContext).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                  ..._installerApps!.map((app) {
+                    final radioValue = '${app.packageName}|${app.activityName}';
+                    return RadioListTile<String>(
+                      secondary: app.icon != null && app.icon!.isNotEmpty
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.memory(
+                                app.icon!,
+                                width: 40,
+                                height: 40,
+                                fit: BoxFit.contain,
+                                // Decode at the rendered size × DPR so a
+                                // 512×512 launcher icon doesn't sit at full
+                                // resolution in the raster cache for a 40-px row.
+                                cacheWidth:
+                                    (40 *
+                                            MediaQuery.devicePixelRatioOf(
+                                              context,
+                                            ))
+                                        .round(),
+                                cacheHeight:
+                                    (40 *
+                                            MediaQuery.devicePixelRatioOf(
+                                              context,
+                                            ))
+                                        .round(),
+                                errorBuilder: (_, _, _) =>
+                                    const Icon(Icons.android, size: 40),
+                              ),
+                            )
+                          : const Icon(Icons.android, size: 40),
+                      title: Text(app.label),
+                      subtitle: Text(
+                        app.packageName,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      value: radioValue,
+                    );
+                  }),
+                ],
+              ),
             );
           },
         );

@@ -124,6 +124,7 @@ class StoreSourceIconPaths {
   static const String codeberg = 'assets/graphics/ic_codeberg.png';
   static const String sourcehut = 'assets/graphics/ic_sourcehut.png';
   static const String sourceforge = 'assets/graphics/ic_sourceforge.png';
+  static const String itchio = 'assets/graphics/ic_itchio.png';
   static const String apkcombo = 'assets/graphics/ic_apkcombo.png';
   static const String aptoide = 'assets/graphics/ic_aptoide.png';
   static const String uptodown = 'assets/graphics/ic_uptodown.png';
@@ -177,6 +178,9 @@ String? storeSourceAssetPathForHost(String host) {
   }
   if (normalized.contains('sourceforge.net')) {
     return StoreSourceIconPaths.sourceforge;
+  }
+  if (normalized.contains('itch.io')) {
+    return StoreSourceIconPaths.itchio;
   }
   if (normalized.contains('apkcombo.com')) {
     return StoreSourceIconPaths.apkcombo;
@@ -257,6 +261,8 @@ String? storeSourceAssetPathForClassName(String className) {
       return StoreSourceIconPaths.sourcehut;
     case 'SourceForge':
       return StoreSourceIconPaths.sourceforge;
+    case 'ItchIO':
+      return StoreSourceIconPaths.itchio;
     case 'APKCombo':
       return StoreSourceIconPaths.apkcombo;
     case 'Aptoide':
