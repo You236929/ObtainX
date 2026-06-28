@@ -474,7 +474,7 @@
   "cardCorners": "卡片圓角",
   "insecureConnection": "不安全連線",
   "cleartextWarningExplanation": "該 URL 使用未加密連線。所有資料傳輸（包括 APK 下載）將不安全。\n\n確定要繼續嗎？",
-  "insecureDownloadUrl": "不安全的下载連結",
+  "insecureDownloadUrl": "不安全的下載連結",
   "cleartextDownloadWarningExplanation": "APK 下載連結使用未加密的 HTTP。透過不安全連線下載應用不安全，檔案可能被竄改。\n\n確定要繼續下載嗎？",
   "batteryOptimizationWarningTitle": "電池最佳化已開啟",
   "batteryOptimizationWarningBody": "計畫/背景更新檢查可能會被延遲，並且在 ObtainX 離開畫面後下載可能會停止。\n\n請為 ObtainX 關閉電池最佳化。",
