@@ -357,7 +357,7 @@
   "includeZips": "包含 ZIP 文件",
   "zippedApkFilterRegEx": "在 ZIP 內過濾 APK",
   "includeTarballs": "包括 tar 歸檔檔案（例如 .tar.gz 格式等）",
-  "tarballedApkFilterRegEx": "在 tar 套件中篩選 APK 檔案",
+  "tarballedApkFilterRegEx": "篩選 tar 歸檔檔案內的 APK",
   "googleVerificationWarningP1": "Google 已宣布，自 2026／2027 年起，所有在「通過認證（certified）」的 Android 裝置上執行的應用程式，都必須由開發者直接向 Google 提交個人身分資訊。\n\n由於本應用程式的開發者不同意此一要求，ObtainX 在該時間點之後將無法再於通過認證的 Android 裝置上運作。",
   "googleVerificationWarningP2": "如需更多資訊，請前往 https://keepandroidopen.org/.",
   "googleVerificationWarningP3": "請注意，從短期來看，Google 表示在其公告引發廣泛反彈後，可能仍可透過其承諾實作的「進階流程（advanced flow）」來安裝「未經驗證」（不符合規範）的應用程式；然而，Google 尚未說明此流程的具體運作方式，因此無法確定它是否能在實務上真正維護使用者的自由。\n\n無論如何，Google 的這項作法，都是朝向終結個人自由、通用運算的一大步。\n\n只要仍被允許持續存在，像 GrapheneOS 這類未通過認證的作業系統，理論上不會受到此政策影響。",
