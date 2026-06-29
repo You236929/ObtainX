@@ -551,7 +551,8 @@ class _AppListItem extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final double screenWidth = MediaQuery.sizeOf(context).width;
-    final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint;
+    final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint &&
+        !context.read<SettingsProvider>().isTV;
     final bool hideVersionAndChangelog =
         isLargeScreen &&
         MediaQuery.orientationOf(context) == Orientation.portrait;
@@ -1051,7 +1052,8 @@ Future<void> _openAdditionalOptionsModal(
   if (!context.mounted) return;
 
   final double screenWidth = MediaQuery.sizeOf(context).width;
-  final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint;
+  final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint &&
+      !context.read<SettingsProvider>().isTV;
 
   if (isLargeScreen) {
     final appsPageState = context.findAncestorStateOfType<AppsPageState>();
@@ -1198,10 +1200,12 @@ class _SwipeableListItemState extends State<_SwipeableListItem>
       case SwipeAction.edit:
         if (context.mounted) {
           final double screenWidth = MediaQuery.sizeOf(context).width;
-          final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint;
+          final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint &&
+              !context.read<SettingsProvider>().isTV;
 
           if (isLargeScreen) {
-            final appsPageState = context.findAncestorStateOfType<AppsPageState>();
+            final appsPageState = context
+                .findAncestorStateOfType<AppsPageState>();
             if (appsPageState != null) {
               appsPageState.openAppInEditMode(widget.appId, autoScroll: false);
             }
@@ -1654,9 +1658,7 @@ Null Function()? getChangeLogFn(BuildContext context, App app) {
   String? changeLog = app.changeLog;
   if (changeLog?.split('\n').length == 1) {
     if (_changeLogUrlRegExp.hasMatch(changeLog!)) {
-      changesUrl = appSource is APKMirror
-          ? changeLog
-          : changesUrl ?? changeLog;
+      changesUrl = appSource is APKMirror ? changeLog : changesUrl ?? changeLog;
       changeLog = null;
     }
   }
@@ -3105,7 +3107,8 @@ class AppsPageState extends State<AppsPage> {
     var listedApps = _listedAppsCache;
 
     final double screenWidth = MediaQuery.sizeOf(context).width;
-    final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint;
+    final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint &&
+        !context.read<SettingsProvider>().isTV;
 
     // The two-panel layout needs an effective selection, but mutating
     // [selectedAppId] during build is a Flutter anti-pattern. Derive it locally
@@ -3631,7 +3634,8 @@ class AppsPageState extends State<AppsPage> {
           : null;
 
       final double screenWidth = MediaQuery.sizeOf(context).width;
-      final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint;
+      final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint &&
+          !context.read<SettingsProvider>().isTV;
 
       // Builds the row visual given the callback that should fire when the
       // user taps a non-selected row. Used by both the OpenContainer path
@@ -5686,7 +5690,8 @@ class AppsPageState extends State<AppsPage> {
                                     effectiveSelectedAppId,
                                   ),
                                   onGenerateRoute: (RouteSettings settings) {
-                                    final bool openEdit = _openSelectedInEditMode;
+                                    final bool openEdit =
+                                        _openSelectedInEditMode;
                                     if (_openSelectedInEditMode) {
                                       _openSelectedInEditMode = false;
                                     }
@@ -5721,7 +5726,8 @@ class AppsPageState extends State<AppsPage> {
     }
 
     final double screenWidth = MediaQuery.sizeOf(context).width;
-    final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint;
+    final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint &&
+        !context.read<SettingsProvider>().isTV;
 
     if (isLargeScreen) {
       setState(() {
@@ -5758,7 +5764,8 @@ class AppsPageState extends State<AppsPage> {
 
     if (groupBy == AppsListGroupBy.none) {
       // Flat list
-      final showUpdatesGroupSection = _effectiveGroupUpdatesSeparately(sp) &&
+      final showUpdatesGroupSection =
+          _effectiveGroupUpdatesSeparately(sp) &&
           _updatesGroupListedIndices.isNotEmpty;
       final pinUpdatesEnabled = _effectivePinUpdates(sp);
       if (showUpdatesGroupSection) {
@@ -5794,10 +5801,12 @@ class AppsPageState extends State<AppsPage> {
           offset += catAppIndex * itemHeight;
           break;
         } else {
-          final folderPrefix =
-              widget.folderId != null ? 'folder_${widget.folderId}_' : '';
-          final isCollapsed =
-              _collapsedGroups.contains('${folderPrefix}cat:$categoryMapKey');
+          final folderPrefix = widget.folderId != null
+              ? 'folder_${widget.folderId}_'
+              : '';
+          final isCollapsed = _collapsedGroups.contains(
+            '${folderPrefix}cat:$categoryMapKey',
+          );
           if (!isCollapsed) {
             offset += indices.length * itemHeight;
           }
@@ -5814,10 +5823,12 @@ class AppsPageState extends State<AppsPage> {
           offset += srcAppIndex * itemHeight;
           break;
         } else {
-          final folderPrefix =
-              widget.folderId != null ? 'folder_${widget.folderId}_' : '';
-          final isCollapsed =
-              _collapsedGroups.contains('${folderPrefix}src:$src');
+          final folderPrefix = widget.folderId != null
+              ? 'folder_${widget.folderId}_'
+              : '';
+          final isCollapsed = _collapsedGroups.contains(
+            '${folderPrefix}src:$src',
+          );
           if (!isCollapsed) {
             offset += indices.length * itemHeight;
           }
@@ -5834,10 +5845,12 @@ class AppsPageState extends State<AppsPage> {
           offset += typeAppIndex * itemHeight;
           break;
         } else {
-          final folderPrefix =
-              widget.folderId != null ? 'folder_${widget.folderId}_' : '';
-          final isCollapsed =
-              _collapsedGroups.contains('${folderPrefix}appType:${type.name}');
+          final folderPrefix = widget.folderId != null
+              ? 'folder_${widget.folderId}_'
+              : '';
+          final isCollapsed = _collapsedGroups.contains(
+            '${folderPrefix}appType:${type.name}',
+          );
           if (!isCollapsed) {
             offset += indices.length * itemHeight;
           }

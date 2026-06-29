@@ -17,6 +17,7 @@ import 'package:obtainium/components/custom_app_bar.dart';
 import 'package:obtainium/components/themes_settings_section.dart';
 import 'package:obtainium/components/generated_form.dart';
 import 'package:obtainium/components/generated_form_modal.dart';
+import 'package:obtainium/components/tv_slider_wrapper.dart';
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/main.dart';
 import 'package:obtainium/app_sources/github.dart';
@@ -137,7 +138,8 @@ class SettingsPageState extends State<SettingsPage> {
   Future<bool> confirmDiscardUnsavedChanges() async {
     final sourceSpecificState = _sourceSpecificKey.currentState;
     if (sourceSpecificState != null) {
-      if (sourceSpecificState.isGithubDirty || sourceSpecificState.isGitlabDirty) {
+      if (sourceSpecificState.isGithubDirty ||
+          sourceSpecificState.isGitlabDirty) {
         final bool? discard = await showDialog<bool>(
           context: context,
           builder: (BuildContext dialogContext) {
@@ -1212,12 +1214,20 @@ class _UpdateIntervalSlider extends StatefulWidget {
 }
 
 class _UpdateIntervalSliderState extends State<_UpdateIntervalSlider> {
-  // Non-null only while the user is actively dragging; otherwise the displayed
-  // value comes from the provider (so external changes propagate and the
-  // committed value is reflected once onChangeEnd clears it). context.select
-  // MUST be read in build(), not didChangeDependencies, or Provider asserts
-  // ("Tried to use context.select outside of the build method").
   double? _dragValue;
+  late final FocusNode _sliderFocusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _sliderFocusNode = FocusNode(canRequestFocus: false, skipTraversal: true);
+  }
+
+  @override
+  void dispose() {
+    _sliderFocusNode.dispose();
+    super.dispose();
+  }
 
   int _intervalForVal(double val) {
     final int index = val.round().clamp(
@@ -1252,6 +1262,7 @@ class _UpdateIntervalSliderState extends State<_UpdateIntervalSlider> {
           (s) => s.updateIntervalSliderVal,
         );
     final String label = _labelForVal(sliderVal);
+    final isTV = context.read<SettingsProvider>().isTV;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
       child: Row(
@@ -1272,43 +1283,60 @@ class _UpdateIntervalSliderState extends State<_UpdateIntervalSlider> {
                     ],
                   ),
                 ),
-                SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 16,
-                    trackShape: const _GappedTrackShape(),
-                    thumbShape: const _VerticalBarThumbShape(),
-                    tickMarkShape: const RoundSliderTickMarkShape(
-                      tickMarkRadius: 3,
+                TVSliderWrapper(
+                  value: sliderVal,
+                  min: 0,
+                  max: SettingsPageState.updateIntervalNodes.length.toDouble(),
+                  divisions: SettingsPageState.updateIntervalNodes.length,
+                  onChanged: (double value) {
+                    setState(() => _dragValue = value);
+                  },
+                  onChangeEnd: (double value) {
+                    final SettingsProvider sp = context
+                        .read<SettingsProvider>();
+                    sp.updateIntervalSliderVal = value;
+                    sp.updateInterval = _intervalForVal(value);
+                    setState(() => _dragValue = null);
+                  },
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 16,
+                      trackShape: const _GappedTrackShape(),
+                      thumbShape: const _VerticalBarThumbShape(),
+                      tickMarkShape: const RoundSliderTickMarkShape(
+                        tickMarkRadius: 3,
+                      ),
+                      activeTickMarkColor: Theme.of(
+                        context,
+                      ).colorScheme.onPrimary,
+                      inactiveTickMarkColor: Theme.of(
+                        context,
+                      ).colorScheme.primary,
+                      overlayShape: const RoundSliderOverlayShape(
+                        overlayRadius: 20,
+                      ),
                     ),
-                    activeTickMarkColor: Theme.of(
-                      context,
-                    ).colorScheme.onPrimary,
-                    inactiveTickMarkColor: Theme.of(
-                      context,
-                    ).colorScheme.primary,
-                    overlayShape: const RoundSliderOverlayShape(
-                      overlayRadius: 20,
+                    child: Slider(
+                      focusNode: isTV ? _sliderFocusNode : null,
+                      value: sliderVal.clamp(
+                        0,
+                        SettingsPageState.updateIntervalNodes.length.toDouble(),
+                      ),
+                      max: SettingsPageState.updateIntervalNodes.length
+                          .toDouble(),
+                      divisions: SettingsPageState.updateIntervalNodes.length,
+                      label: label,
+                      onChanged: (double value) {
+                        setState(() => _dragValue = value);
+                      },
+                      onChangeEnd: (double value) {
+                        final SettingsProvider sp = context
+                            .read<SettingsProvider>();
+                        sp.updateIntervalSliderVal = value;
+                        sp.updateInterval = _intervalForVal(value);
+                        setState(() => _dragValue = null);
+                      },
                     ),
-                  ),
-                  child: Slider(
-                    value: sliderVal.clamp(
-                      0,
-                      SettingsPageState.updateIntervalNodes.length.toDouble(),
-                    ),
-                    max: SettingsPageState.updateIntervalNodes.length
-                        .toDouble(),
-                    divisions: SettingsPageState.updateIntervalNodes.length,
-                    label: label,
-                    onChanged: (double value) {
-                      setState(() => _dragValue = value);
-                    },
-                    onChangeEnd: (double value) {
-                      final SettingsProvider sp = context
-                          .read<SettingsProvider>();
-                      sp.updateIntervalSliderVal = value;
-                      sp.updateInterval = _intervalForVal(value);
-                      setState(() => _dragValue = null);
-                    },
                   ),
                 ),
               ],
@@ -1351,7 +1379,8 @@ class _SourceSpecificSectionState extends State<_SourceSpecificSection> {
 
   void discardChanges() {
     final SettingsProvider sp = context.read<SettingsProvider>();
-    _githubPatController.text = sp.getSettingString(GitHub.githubCredsKey) ?? '';
+    _githubPatController.text =
+        sp.getSettingString(GitHub.githubCredsKey) ?? '';
     _gitlabPatController.text = sp.getSettingString('gitlab-creds') ?? '';
     setState(() {});
   }
@@ -1435,11 +1464,17 @@ class _SourceSpecificSectionState extends State<_SourceSpecificSection> {
                   const SizedBox(width: 8),
                   Builder(
                     builder: (context) {
-                      final String enteredText = _githubPatController.text.trim();
-                      final String savedText = sp.getSettingString(GitHub.githubCredsKey) ?? '';
+                      final String enteredText = _githubPatController.text
+                          .trim();
+                      final String savedText =
+                          sp.getSettingString(GitHub.githubCredsKey) ?? '';
                       final bool isDirty = enteredText != savedText;
-                      final bool isValidated = GitHub.hasValidatedPAT(enteredText, sp);
-                      final bool buttonIsEnabled = isDirty || (enteredText.isNotEmpty && !isValidated);
+                      final bool isValidated = GitHub.hasValidatedPAT(
+                        enteredText,
+                        sp,
+                      );
+                      final bool buttonIsEnabled =
+                          isDirty || (enteredText.isNotEmpty && !isValidated);
 
                       return SizedBox(
                         width: 48,
@@ -1451,53 +1486,89 @@ class _SourceSpecificSectionState extends State<_SourceSpecificSection> {
                                   height: 20,
                                   child: ExpressiveLoadingIndicator(
                                     color: cs.primary,
-                                    constraints: const BoxConstraints.tightFor(width: 20, height: 20),
+                                    constraints: const BoxConstraints.tightFor(
+                                      width: 20,
+                                      height: 20,
+                                    ),
                                   ),
                                 )
                               : (GitHub.hasValidatedPAT(enteredText, sp)
-                                  ? Tooltip(
-                                      message: tr('githubPATValidated'),
-                                      child: Icon(
-                                        Icons.verified_user,
-                                        color: cs.primary,
-                                      ),
-                                    )
-                                  : IconButton.filledTonal(
-                                      icon: const Icon(Icons.save_rounded),
-                                      onPressed: buttonIsEnabled
-                                          ? () async {
-                                              FocusManager.instance.primaryFocus?.unfocus();
-                                              if (enteredText.isEmpty) {
-                                                sp.setSettingString(GitHub.githubCredsKey, '');
-                                                GitHub.clearPATValidation(sp);
-                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                  SnackBar(content: Text(tr('dismiss'))),
-                                                );
-                                                setState(() {});
-                                                return;
+                                    ? Tooltip(
+                                        message: tr('githubPATValidated'),
+                                        child: Icon(
+                                          Icons.verified_user,
+                                          color: cs.primary,
+                                        ),
+                                      )
+                                    : IconButton.filledTonal(
+                                        icon: const Icon(Icons.save_rounded),
+                                        onPressed: buttonIsEnabled
+                                            ? () async {
+                                                FocusManager
+                                                    .instance
+                                                    .primaryFocus
+                                                    ?.unfocus();
+                                                if (enteredText.isEmpty) {
+                                                  sp.setSettingString(
+                                                    GitHub.githubCredsKey,
+                                                    '',
+                                                  );
+                                                  GitHub.clearPATValidation(sp);
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(
+                                                        tr('dismiss'),
+                                                      ),
+                                                    ),
+                                                  );
+                                                  setState(() {});
+                                                  return;
+                                                }
+                                                setState(() {
+                                                  _githubChecking = true;
+                                                });
+                                                final String? error =
+                                                    await GitHub.validatePAT(
+                                                      enteredText,
+                                                    );
+                                                if (!context.mounted) return;
+                                                setState(() {
+                                                  _githubChecking = false;
+                                                });
+                                                if (error == null) {
+                                                  sp.setSettingString(
+                                                    GitHub.githubCredsKey,
+                                                    enteredText,
+                                                  );
+                                                  GitHub.storePATValidation(
+                                                    enteredText,
+                                                    sp,
+                                                  );
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(
+                                                        tr(
+                                                          'githubPATValidated',
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  );
+                                                } else {
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(error),
+                                                    ),
+                                                  );
+                                                }
                                               }
-                                              setState(() {
-                                                _githubChecking = true;
-                                              });
-                                              final String? error = await GitHub.validatePAT(enteredText);
-                                              if (!mounted) return;
-                                              setState(() {
-                                                _githubChecking = false;
-                                              });
-                                              if (error == null) {
-                                                sp.setSettingString(GitHub.githubCredsKey, enteredText);
-                                                GitHub.storePATValidation(enteredText, sp);
-                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                  SnackBar(content: Text(tr('githubPATValidated'))),
-                                                );
-                                              } else {
-                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                  SnackBar(content: Text(error)),
-                                                );
-                                              }
-                                            }
-                                          : null,
-                                    )),
+                                            : null,
+                                      )),
                         ),
                       );
                     },
@@ -1527,7 +1598,9 @@ class _SourceSpecificSectionState extends State<_SourceSpecificSection> {
               const SizedBox(height: 8),
               SwitchListTile(
                 title: Text(tr('GHReqPrefixUseToken')),
-                value: sp.getSettingBool(GitHub.githubReqPrefixUseTokenKey) ?? false,
+                value:
+                    sp.getSettingBool(GitHub.githubReqPrefixUseTokenKey) ??
+                    false,
                 onChanged: (val) {
                   sp.setSettingBool(GitHub.githubReqPrefixUseTokenKey, val);
                 },
@@ -1568,11 +1641,17 @@ class _SourceSpecificSectionState extends State<_SourceSpecificSection> {
                   const SizedBox(width: 8),
                   Builder(
                     builder: (context) {
-                      final String enteredText = _gitlabPatController.text.trim();
-                      final String savedText = sp.getSettingString('gitlab-creds') ?? '';
+                      final String enteredText = _gitlabPatController.text
+                          .trim();
+                      final String savedText =
+                          sp.getSettingString('gitlab-creds') ?? '';
                       final bool isDirty = enteredText != savedText;
-                      final bool isValidated = GitLab.hasValidatedPAT(enteredText, sp);
-                      final bool buttonIsEnabled = isDirty || (enteredText.isNotEmpty && !isValidated);
+                      final bool isValidated = GitLab.hasValidatedPAT(
+                        enteredText,
+                        sp,
+                      );
+                      final bool buttonIsEnabled =
+                          isDirty || (enteredText.isNotEmpty && !isValidated);
 
                       return SizedBox(
                         width: 48,
@@ -1584,53 +1663,89 @@ class _SourceSpecificSectionState extends State<_SourceSpecificSection> {
                                   height: 20,
                                   child: ExpressiveLoadingIndicator(
                                     color: cs.primary,
-                                    constraints: const BoxConstraints.tightFor(width: 20, height: 20),
+                                    constraints: const BoxConstraints.tightFor(
+                                      width: 20,
+                                      height: 20,
+                                    ),
                                   ),
                                 )
                               : (GitLab.hasValidatedPAT(enteredText, sp)
-                                  ? Tooltip(
-                                      message: tr('gitlabPATValidated'),
-                                      child: Icon(
-                                        Icons.verified_user,
-                                        color: cs.primary,
-                                      ),
-                                    )
-                                  : IconButton.filledTonal(
-                                      icon: const Icon(Icons.save_rounded),
-                                      onPressed: buttonIsEnabled
-                                          ? () async {
-                                              FocusManager.instance.primaryFocus?.unfocus();
-                                              if (enteredText.isEmpty) {
-                                                sp.setSettingString('gitlab-creds', '');
-                                                GitLab.clearPATValidation(sp);
-                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                  SnackBar(content: Text(tr('dismiss'))),
-                                                );
-                                                setState(() {});
-                                                return;
+                                    ? Tooltip(
+                                        message: tr('gitlabPATValidated'),
+                                        child: Icon(
+                                          Icons.verified_user,
+                                          color: cs.primary,
+                                        ),
+                                      )
+                                    : IconButton.filledTonal(
+                                        icon: const Icon(Icons.save_rounded),
+                                        onPressed: buttonIsEnabled
+                                            ? () async {
+                                                FocusManager
+                                                    .instance
+                                                    .primaryFocus
+                                                    ?.unfocus();
+                                                if (enteredText.isEmpty) {
+                                                  sp.setSettingString(
+                                                    'gitlab-creds',
+                                                    '',
+                                                  );
+                                                  GitLab.clearPATValidation(sp);
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(
+                                                        tr('dismiss'),
+                                                      ),
+                                                    ),
+                                                  );
+                                                  setState(() {});
+                                                  return;
+                                                }
+                                                setState(() {
+                                                  _gitlabChecking = true;
+                                                });
+                                                final String? error =
+                                                    await GitLab.validatePAT(
+                                                      enteredText,
+                                                    );
+                                                if (!context.mounted) return;
+                                                setState(() {
+                                                  _gitlabChecking = false;
+                                                });
+                                                if (error == null) {
+                                                  sp.setSettingString(
+                                                    'gitlab-creds',
+                                                    enteredText,
+                                                  );
+                                                  GitLab.storePATValidation(
+                                                    enteredText,
+                                                    sp,
+                                                  );
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(
+                                                        tr(
+                                                          'gitlabPATValidated',
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  );
+                                                } else {
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(error),
+                                                    ),
+                                                  );
+                                                }
                                               }
-                                              setState(() {
-                                                _gitlabChecking = true;
-                                              });
-                                              final String? error = await GitLab.validatePAT(enteredText);
-                                              if (!mounted) return;
-                                              setState(() {
-                                                _gitlabChecking = false;
-                                              });
-                                              if (error == null) {
-                                                sp.setSettingString('gitlab-creds', enteredText);
-                                                GitLab.storePATValidation(enteredText, sp);
-                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                  SnackBar(content: Text(tr('gitlabPATValidated'))),
-                                                );
-                                              } else {
-                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                  SnackBar(content: Text(error)),
-                                                );
-                                              }
-                                            }
-                                          : null,
-                                    )),
+                                            : null,
+                                      )),
                         ),
                       );
                     },
@@ -1807,10 +1922,20 @@ class _UiScaleSlider extends StatefulWidget {
 }
 
 class _UiScaleSliderState extends State<_UiScaleSlider> {
-  // See _UpdateIntervalSliderState: drag value overrides the provider value only
-  // while dragging; context.select is read in build(), never in
-  // didChangeDependencies.
   double? _dragValue;
+  late final FocusNode _sliderFocusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _sliderFocusNode = FocusNode(canRequestFocus: false, skipTraversal: true);
+  }
+
+  @override
+  void dispose() {
+    _sliderFocusNode.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1818,6 +1943,7 @@ class _UiScaleSliderState extends State<_UiScaleSlider> {
     final double value =
         _dragValue ??
         context.select<SettingsProvider, double>((s) => s.appUiScale);
+    final isTV = context.read<SettingsProvider>().isTV;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
       child: Row(
@@ -1838,40 +1964,58 @@ class _UiScaleSliderState extends State<_UiScaleSlider> {
                     ],
                   ),
                 ),
-                SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 16,
-                    trackShape: const _GappedTrackShape(),
-                    thumbShape: const _VerticalBarThumbShape(),
-                    tickMarkShape: const RoundSliderTickMarkShape(
-                      tickMarkRadius: 3,
+                TVSliderWrapper(
+                  value: value,
+                  min: SettingsProvider.appUiScaleMin,
+                  max: SettingsProvider.appUiScaleMax,
+                  divisions:
+                      ((SettingsProvider.appUiScaleMax -
+                                  SettingsProvider.appUiScaleMin) /
+                              0.05)
+                          .round(),
+                  onChanged: (double v) {
+                    setState(() => _dragValue = v);
+                  },
+                  onChangeEnd: (double v) {
+                    context.read<SettingsProvider>().appUiScale = v;
+                    setState(() => _dragValue = null);
+                  },
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 16,
+                      trackShape: const _GappedTrackShape(),
+                      thumbShape: const _VerticalBarThumbShape(),
+                      tickMarkShape: const RoundSliderTickMarkShape(
+                        tickMarkRadius: 3,
+                      ),
+                      activeTickMarkColor: cs.onPrimary,
+                      inactiveTickMarkColor: cs.primary,
+                      overlayShape: const RoundSliderOverlayShape(
+                        overlayRadius: 20,
+                      ),
                     ),
-                    activeTickMarkColor: cs.onPrimary,
-                    inactiveTickMarkColor: cs.primary,
-                    overlayShape: const RoundSliderOverlayShape(
-                      overlayRadius: 20,
+                    child: Slider(
+                      focusNode: isTV ? _sliderFocusNode : null,
+                      min: SettingsProvider.appUiScaleMin,
+                      max: SettingsProvider.appUiScaleMax,
+                      divisions:
+                          ((SettingsProvider.appUiScaleMax -
+                                      SettingsProvider.appUiScaleMin) /
+                                  0.05)
+                              .round(),
+                      label: '${(value * 100).round()}%',
+                      value: value.clamp(
+                        SettingsProvider.appUiScaleMin,
+                        SettingsProvider.appUiScaleMax,
+                      ),
+                      onChanged: (double v) {
+                        setState(() => _dragValue = v);
+                      },
+                      onChangeEnd: (double v) {
+                        context.read<SettingsProvider>().appUiScale = v;
+                        setState(() => _dragValue = null);
+                      },
                     ),
-                  ),
-                  child: Slider(
-                    min: SettingsProvider.appUiScaleMin,
-                    max: SettingsProvider.appUiScaleMax,
-                    divisions:
-                        ((SettingsProvider.appUiScaleMax -
-                                    SettingsProvider.appUiScaleMin) /
-                                0.05)
-                            .round(),
-                    label: '${(value * 100).round()}%',
-                    value: value.clamp(
-                      SettingsProvider.appUiScaleMin,
-                      SettingsProvider.appUiScaleMax,
-                    ),
-                    onChanged: (double v) {
-                      setState(() => _dragValue = v);
-                    },
-                    onChangeEnd: (double v) {
-                      context.read<SettingsProvider>().appUiScale = v;
-                      setState(() => _dragValue = null);
-                    },
                   ),
                 ),
               ],
@@ -1891,10 +2035,20 @@ class _CardCornerScaleSlider extends StatefulWidget {
 }
 
 class _CardCornerScaleSliderState extends State<_CardCornerScaleSlider> {
-  // See _UpdateIntervalSliderState: drag value overrides the provider value only
-  // while dragging; context.select is read in build(), never in
-  // didChangeDependencies.
   double? _dragValue;
+  late final FocusNode _sliderFocusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _sliderFocusNode = FocusNode(canRequestFocus: false, skipTraversal: true);
+  }
+
+  @override
+  void dispose() {
+    _sliderFocusNode.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1902,6 +2056,7 @@ class _CardCornerScaleSliderState extends State<_CardCornerScaleSlider> {
     final double value =
         _dragValue ??
         context.select<SettingsProvider, double>((s) => s.cardCornerScale);
+    final isTV = context.read<SettingsProvider>().isTV;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
       child: Row(
@@ -1922,40 +2077,58 @@ class _CardCornerScaleSliderState extends State<_CardCornerScaleSlider> {
                     ],
                   ),
                 ),
-                SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 16,
-                    trackShape: const _GappedTrackShape(),
-                    thumbShape: const _VerticalBarThumbShape(),
-                    tickMarkShape: const RoundSliderTickMarkShape(
-                      tickMarkRadius: 3,
+                TVSliderWrapper(
+                  value: value,
+                  min: SettingsProvider.cardCornerScaleMin,
+                  max: SettingsProvider.cardCornerScaleMax,
+                  divisions:
+                      ((SettingsProvider.cardCornerScaleMax -
+                                  SettingsProvider.cardCornerScaleMin) /
+                              0.10)
+                          .round(),
+                  onChanged: (double v) {
+                    setState(() => _dragValue = v);
+                  },
+                  onChangeEnd: (double v) {
+                    context.read<SettingsProvider>().cardCornerScale = v;
+                    setState(() => _dragValue = null);
+                  },
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 16,
+                      trackShape: const _GappedTrackShape(),
+                      thumbShape: const _VerticalBarThumbShape(),
+                      tickMarkShape: const RoundSliderTickMarkShape(
+                        tickMarkRadius: 3,
+                      ),
+                      activeTickMarkColor: cs.onPrimary,
+                      inactiveTickMarkColor: cs.primary,
+                      overlayShape: const RoundSliderOverlayShape(
+                        overlayRadius: 20,
+                      ),
                     ),
-                    activeTickMarkColor: cs.onPrimary,
-                    inactiveTickMarkColor: cs.primary,
-                    overlayShape: const RoundSliderOverlayShape(
-                      overlayRadius: 20,
+                    child: Slider(
+                      focusNode: isTV ? _sliderFocusNode : null,
+                      min: SettingsProvider.cardCornerScaleMin,
+                      max: SettingsProvider.cardCornerScaleMax,
+                      divisions:
+                          ((SettingsProvider.cardCornerScaleMax -
+                                      SettingsProvider.cardCornerScaleMin) /
+                                  0.10)
+                              .round(),
+                      label: '${(value * 100).round()}%',
+                      value: value.clamp(
+                        SettingsProvider.cardCornerScaleMin,
+                        SettingsProvider.cardCornerScaleMax,
+                      ),
+                      onChanged: (double v) {
+                        setState(() => _dragValue = v);
+                      },
+                      onChangeEnd: (double v) {
+                        context.read<SettingsProvider>().cardCornerScale = v;
+                        setState(() => _dragValue = null);
+                      },
                     ),
-                  ),
-                  child: Slider(
-                    min: SettingsProvider.cardCornerScaleMin,
-                    max: SettingsProvider.cardCornerScaleMax,
-                    divisions:
-                        ((SettingsProvider.cardCornerScaleMax -
-                                    SettingsProvider.cardCornerScaleMin) /
-                                0.10)
-                            .round(),
-                    label: '${(value * 100).round()}%',
-                    value: value.clamp(
-                      SettingsProvider.cardCornerScaleMin,
-                      SettingsProvider.cardCornerScaleMax,
-                    ),
-                    onChanged: (double v) {
-                      setState(() => _dragValue = v);
-                    },
-                    onChangeEnd: (double v) {
-                      context.read<SettingsProvider>().cardCornerScale = v;
-                      setState(() => _dragValue = null);
-                    },
                   ),
                 ),
               ],

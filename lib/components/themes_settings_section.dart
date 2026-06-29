@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:obtainium/components/theme_accent_settings_section.dart'
     show buildThemeAccentSettingsCardItems;
 import 'package:obtainium/providers/settings_provider.dart';
+import 'package:obtainium/components/tv_slider_wrapper.dart';
 import 'package:obtainium/theme/app_segmented_button_theme.dart';
 import 'package:obtainium/widgets/help_hint_icon.dart';
 import 'package:provider/provider.dart';
@@ -91,18 +92,12 @@ List<Widget> buildThemesSettingsCardItems(
             ),
             ButtonSegment<_ThemeBrightnessSegment>(
               value: _ThemeBrightnessSegment.light,
-              label: AppSegmentedButtonLabel(
-                tr('light'),
-                fontSize: 11.5,
-              ),
+              label: AppSegmentedButtonLabel(tr('light'), fontSize: 11.5),
               icon: const Icon(Icons.light_mode_outlined, size: 18),
             ),
             ButtonSegment<_ThemeBrightnessSegment>(
               value: _ThemeBrightnessSegment.dark,
-              label: AppSegmentedButtonLabel(
-                tr('dark'),
-                fontSize: 11.5,
-              ),
+              label: AppSegmentedButtonLabel(tr('dark'), fontSize: 11.5),
               icon: const Icon(Icons.dark_mode_outlined, size: 18),
             ),
             ButtonSegment<_ThemeBrightnessSegment>(
@@ -227,22 +222,42 @@ List<Widget> buildThemesSettingsCardItems(
   ];
 }
 
-class _ShadingIntensityTile extends StatelessWidget {
+class _ShadingIntensityTile extends StatefulWidget {
   const _ShadingIntensityTile({required this.settings});
 
   final SettingsProvider settings;
 
   @override
+  State<_ShadingIntensityTile> createState() => _ShadingIntensityTileState();
+}
+
+class _ShadingIntensityTileState extends State<_ShadingIntensityTile> {
+  late final FocusNode _sliderFocusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _sliderFocusNode = FocusNode(canRequestFocus: false, skipTraversal: true);
+  }
+
+  @override
+  void dispose() {
+    _sliderFocusNode.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final ColorScheme colorScheme = Theme.of(context).colorScheme;
-    final bool enabled = !settings.useBlackTheme;
+    final bool enabled = !widget.settings.useBlackTheme;
     final Color titleColor = enabled
         ? colorScheme.onSurface
         : colorScheme.onSurface.withValues(alpha: 0.38);
     final Color subtitleColor = enabled
         ? colorScheme.onSurfaceVariant
         : colorScheme.onSurfaceVariant.withValues(alpha: 0.38);
-    final double sliderValue = settings.shadingIntensity;
+    final double sliderValue = widget.settings.shadingIntensity;
+    final isTV = context.read<SettingsProvider>().isTV;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
@@ -275,27 +290,39 @@ class _ShadingIntensityTile extends StatelessWidget {
             ).textTheme.bodySmall?.copyWith(color: subtitleColor),
           ),
           const SizedBox(height: 10),
-          SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              trackHeight: 16,
-              trackShape: const _ShadingGappedTrackShape(),
-              thumbShape: const _ShadingVerticalBarThumbShape(),
-              tickMarkShape: const RoundSliderTickMarkShape(tickMarkRadius: 3),
-              activeTickMarkColor: colorScheme.onPrimary,
-              inactiveTickMarkColor: colorScheme.primary,
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 20),
-            ),
-            child: Slider(
-              value: sliderValue,
-              min: 0,
-              max: 2,
-              divisions: 20,
-              label: _shadingIntensityLabel(sliderValue),
-              onChanged: enabled
-                  ? (double value) {
-                      settings.shadingIntensity = value;
-                    }
-                  : null,
+          TVSliderWrapper(
+            value: sliderValue,
+            min: 0,
+            max: 2,
+            divisions: 20,
+            onChanged: enabled
+                ? (double value) {
+                    widget.settings.shadingIntensity = value;
+                  }
+                : (double value) {},
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 16,
+                trackShape: const _ShadingGappedTrackShape(),
+                thumbShape: const _ShadingVerticalBarThumbShape(),
+                tickMarkShape: const RoundSliderTickMarkShape(tickMarkRadius: 3),
+                activeTickMarkColor: colorScheme.onPrimary,
+                inactiveTickMarkColor: colorScheme.primary,
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 20),
+              ),
+              child: Slider(
+                focusNode: isTV ? _sliderFocusNode : null,
+                value: sliderValue,
+                min: 0,
+                max: 2,
+                divisions: 20,
+                label: _shadingIntensityLabel(sliderValue),
+                onChanged: enabled
+                    ? (double value) {
+                        widget.settings.shadingIntensity = value;
+                      }
+                    : null,
+              ),
             ),
           ),
         ],

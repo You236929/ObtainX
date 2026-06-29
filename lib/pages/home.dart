@@ -312,8 +312,7 @@ class HomePageState extends State<HomePage> {
           true;
     }
     if (currentKey is GlobalKey<SettingsPageState>) {
-      return currentKey.currentState?.confirmDiscardUnsavedChanges() ??
-          true;
+      return currentKey.currentState?.confirmDiscardUnsavedChanges() ?? true;
     }
     return true;
   }

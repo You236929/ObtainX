@@ -267,7 +267,8 @@ class GitLab extends AppSource {
     return sha256.convert(utf8.encode(creds)).toString();
   }
 
-  static const String validatedPATFingerprintKey = 'gitlab-validated-pat-fingerprint';
+  static const String validatedPATFingerprintKey =
+      'gitlab-validated-pat-fingerprint';
 
   static bool hasValidatedPAT(
     String? creds,

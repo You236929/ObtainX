@@ -589,6 +589,7 @@ class AddAppPageState extends State<AddAppPage> {
           appWasAdded = true;
         }
         if (app != null) {
+          if (!context.mounted) return;
           final double screenWidth = MediaQuery.sizeOf(context).width;
           final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint;
           final homeState = context.findAncestorStateOfType<HomePageState>();
@@ -1722,8 +1723,7 @@ class AddAppPageState extends State<AddAppPage> {
                           return BulkAddWidget(
                             key: _bulkWidgetKey,
                             isLargeScreen: isLargeScreen,
-                            bottomActionBottomPadding:
-                                appVaultFabBottomPadding,
+                            bottomActionBottomPadding: appVaultFabBottomPadding,
                             onComplete: () => setState(() {
                               _byUrlOpenedFromSearchPick = false;
                               _mode = _AddMode.byUrl;

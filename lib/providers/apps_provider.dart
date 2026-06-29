@@ -4206,7 +4206,9 @@ class AppsProvider with ChangeNotifier {
               icon = await info?.applicationInfo?.getAppIcon();
               if (icon != null) {
                 icon = await _resizeIconForCache(icon);
-                await File('${iconsCacheDir.path}/${app.id}.png').writeAsBytes(icon);
+                await File(
+                  '${iconsCacheDir.path}/${app.id}.png',
+                ).writeAsBytes(icon);
               }
             } catch (e) {
               logs.add('App icon unavailable while saving ${app.id}: $e');
