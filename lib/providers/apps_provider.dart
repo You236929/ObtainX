@@ -1387,9 +1387,16 @@ Future<PackageInfo?> getInstalledInfo(
   return null;
 }
 
-Future<Directory> getAppStorageDir() async =>
-    await getExternalStorageDirectory() ??
-    await getApplicationDocumentsDirectory();
+Future<Directory> getAppStorageDir() async {
+  try {
+    final Directory? externalDir = await getExternalStorageDirectory();
+    if (externalDir != null) {
+      await externalDir.create(recursive: true);
+      return externalDir;
+    }
+  } catch (_) {}
+  return await getApplicationDocumentsDirectory();
+}
 
 /// Outcome of [AppsProvider.removeAppsWithModal].
 class RemoveAppsWithModalResult {
@@ -1641,9 +1648,22 @@ class AppsProvider with ChangeNotifier {
       if (!await userAppIconsDir.exists()) {
         await userAppIconsDir.create(recursive: true);
       }
+      // The external cache dir lives under /Android/data/<pkg>/cache, whose
+      // /Android/data/<pkg> parent some devices (e.g. Xiaomi/HyperOS) fail to
+      // provision — getExternalCacheDirectories() still returns the path, but
+      // creating it throws PathAccessException (errno 13). Verify it's actually
+      // creatable before committing to it; otherwise fall back to internal
+      // storage like getAppStorageDir() does.
+      Directory? usableCacheDir;
       if (cacheDirs?.isNotEmpty ?? false) {
-        apkDir = cacheDirs!.first;
-        iconsCacheDir = Directory('${cacheDirs.first.path}/icons');
+        try {
+          await cacheDirs!.first.create(recursive: true);
+          usableCacheDir = cacheDirs.first;
+        } catch (_) {}
+      }
+      if (usableCacheDir != null) {
+        apkDir = usableCacheDir;
+        iconsCacheDir = Directory('${usableCacheDir.path}/icons');
         if (!await iconsCacheDir.exists()) {
           await iconsCacheDir.create(recursive: true);
         }
@@ -2737,7 +2757,11 @@ class AppsProvider with ChangeNotifier {
   }
 
   Future<String> getStorageRootPath() async {
-    return '/${(await getAppStorageDir()).uri.pathSegments.sublist(0, 3).join('/')}';
+    final Directory appStorageDir = await getAppStorageDir();
+    if (appStorageDir.path.startsWith('/storage/emulated/')) {
+      return '/${appStorageDir.uri.pathSegments.sublist(0, 3).join('/')}';
+    }
+    return '/storage/emulated/0';
   }
 
   Future<void> moveObbFile(File file, String appId) async {
