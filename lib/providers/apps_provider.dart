@@ -4662,6 +4662,133 @@ class AppsProvider with ChangeNotifier {
     return appIds;
   }
 
+  Future<void> _processBatchGroup(
+    List<BatchGetAPKInfo> batchInfos,
+    List<String> groupIds,
+    SourceProvider sourceProvider,
+    AppSource src,
+    List<App> updates,
+    MultiAppMultiError errors,
+    Map<String, PackageInfo> prefetchedInstalledInfo,
+  ) async {
+    try {
+      Map<String, APKDetails> batchResults =
+          await src.batchGetLatestAPKDetails(batchInfos);
+      for (final info in batchInfos) {
+        final apkDetails = batchResults[info.appId];
+        if (apkDetails == null) {
+          final app = apps[info.appId]?.app;
+          if (app != null) {
+            try {
+              final newApp = await sourceProvider.getApp(
+                src,
+                app.url,
+                info.additionalSettings,
+                currentApp: app,
+              );
+              final appToSave = await _saveUpdatedApp(
+                info.appId,
+                app,
+                newApp,
+                prefetchedInstalledInfo,
+              );
+              if (appToSave != null &&
+                  appToSave.latestVersion != app.latestVersion) {
+                updates.add(appToSave);
+              }
+            } catch (e) {
+              _handleUpdateError(info.appId, e, errors);
+            }
+          }
+          continue;
+        }
+        final app = apps[info.appId]!.app;
+        try {
+          final newApp = await sourceProvider.getApp(
+            src,
+            app.url,
+            info.additionalSettings,
+            currentApp: app,
+            prefetchedAPKDetails: apkDetails,
+          );
+          final appToSave = await _saveUpdatedApp(
+            info.appId,
+            app,
+            newApp,
+            prefetchedInstalledInfo,
+          );
+          if (appToSave != null &&
+              appToSave.latestVersion != app.latestVersion) {
+            updates.add(appToSave);
+          }
+        } catch (e) {
+          _handleUpdateError(info.appId, e, errors);
+        }
+      }
+    } catch (e) {
+      for (final appId in groupIds) {
+        _handleUpdateError(appId, e, errors);
+      }
+    }
+  }
+
+  Future<App?> _saveUpdatedApp(
+    String appId,
+    App currentApp,
+    App newApp,
+    Map<String, PackageInfo> prefetchedInstalledInfo,
+  ) async {
+    final App? latestAppBeforeSave = apps[appId]?.app;
+    if (latestAppBeforeSave == null) {
+      return null;
+    }
+    if (latestAppBeforeSave.url != currentApp.url ||
+        latestAppBeforeSave.overrideSource != currentApp.overrideSource) {
+      return null;
+    }
+    final App appToSave = latestAppBeforeSave.deepCopy()
+      ..author = newApp.author
+      ..name = newApp.name
+      ..latestVersion = newApp.latestVersion
+      ..apkUrls = newApp.apkUrls
+      ..preferredApkIndex =
+          latestAppBeforeSave.preferredApkIndex < newApp.apkUrls.length
+          ? latestAppBeforeSave.preferredApkIndex
+          : newApp.preferredApkIndex
+      ..lastUpdateCheck = newApp.lastUpdateCheck
+      ..releaseDate = newApp.releaseDate
+      ..changeLog = newApp.changeLog
+      ..otherAssetUrls = newApp.otherAssetUrls
+      ..iconUrl = newApp.iconUrl
+      ..rawLatestVersionFromSource = newApp.rawLatestVersionFromSource
+      ..rawApkNamesFromSource = newApp.rawApkNamesFromSource
+      ..rawReleaseTitlesFromSource = newApp.rawReleaseTitlesFromSource
+      ..apkSizeBytes = newApp.apkSizeBytes
+      ..pendingRepoRenameUrl = newApp.pendingRepoRenameUrl
+      ..latestIsReproducible = newApp.latestIsReproducible
+      ..latestReproducibleStatus = newApp.latestReproducibleStatus
+      ..latestAttestationStatus = newApp.latestAttestationStatus;
+    await saveApps(
+      [appToSave],
+      notifyListenersAfterSave: false,
+      autoExportAfterSave: false,
+      prefetchedInstalledInfo: prefetchedInstalledInfo,
+    );
+    return appToSave;
+  }
+
+  void _handleUpdateError(
+    String appId,
+    dynamic error,
+    MultiAppMultiError errors,
+  ) {
+    if (error is RepositoryRenamedError) {
+      updatePendingRepoRename(appId, error.newUrl);
+    } else {
+      errors.add(appId, error, appName: apps[appId]?.name);
+    }
+  }
+
   Future<List<App>> checkUpdates({
     DateTime? ignoreAppsCheckedAfter,
     bool throwErrorsForRetry = false,
@@ -4713,13 +4840,8 @@ class AppsProvider with ChangeNotifier {
         const progressNotificationInterval = Duration(milliseconds: 250);
         final maxParallelUpdateChecks =
             await _maxParallelUpdateChecksForDevice();
-        final workerCount = appIds.length < maxParallelUpdateChecks
-            ? appIds.length
-            : maxParallelUpdateChecks;
-        // Enumerate installed packages ONCE for the whole scan. Each per-app
-        // saveApps would otherwise call getInstalledInfo(), which re-enumerates
-        // every device package — O(apps × devicePackages). The snapshot still
-        // holds current device versions, so external updates are still detected.
+
+        // Enumerate installed packages ONCE for the whole scan.
         final List<PackageInfo> allInstalledForScan = await getAllInstalledInfo(
           light: true,
         );
@@ -4727,6 +4849,73 @@ class AppsProvider with ChangeNotifier {
           for (final info in allInstalledForScan)
             if (info.packageName != null) info.packageName!: info,
         };
+
+        // Process batch-update-capable sources first
+        final sourceProvider = SourceProvider();
+        final Set<String> batchProcessedIds = {};
+        final Map<String, List<String>> sourceGroups = {};
+        for (final appId in appIds) {
+          final app = apps[appId]?.app;
+          if (app == null) continue;
+          final src = sourceProvider.getSource(
+            app.url,
+            overrideSource: app.overrideSource,
+          );
+          if (!src.supportsBatchUpdate) continue;
+          final key = src.name;
+          sourceGroups.putIfAbsent(key, () => []).add(appId);
+        }
+        for (final entry in sourceGroups.entries) {
+          if (entry.value.length < 2) continue;
+          final src = sourceProvider.getSource(
+            apps[entry.value.first]!.app.url,
+            overrideSource: apps[entry.value.first]!.app.overrideSource,
+          );
+          var batchInfos = <BatchGetAPKInfo>[];
+          var groupIds = <String>[];
+          for (final appId in entry.value) {
+            final app = apps[appId]!.app;
+            if (batchInfos.length >= src.batchUpdateChunkSize && src.batchUpdateChunkSize > 0) {
+              await _processBatchGroup(
+                batchInfos,
+                groupIds,
+                sourceProvider,
+                src,
+                updates,
+                errors,
+                prefetchedInstalledInfo,
+              );
+              batchProcessedIds.addAll(groupIds);
+              appSaveCompleted = true;
+              batchInfos = [];
+              groupIds = [];
+            }
+            batchInfos.add(BatchGetAPKInfo(
+              appId: appId,
+              url: app.url,
+              additionalSettings: Map<String, dynamic>.from(app.additionalSettings),
+            ));
+            groupIds.add(appId);
+          }
+          if (batchInfos.isNotEmpty) {
+            await _processBatchGroup(
+              batchInfos,
+              groupIds,
+              sourceProvider,
+              src,
+              updates,
+              errors,
+              prefetchedInstalledInfo,
+            );
+            batchProcessedIds.addAll(groupIds);
+            appSaveCompleted = true;
+          }
+        }
+        appIds = appIds.where((id) => !batchProcessedIds.contains(id)).toList();
+
+        final workerCount = appIds.length < maxParallelUpdateChecks
+            ? appIds.length
+            : maxParallelUpdateChecks;
 
         Future<void> runUpdateCheckWorker() async {
           while (true) {

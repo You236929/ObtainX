@@ -122,6 +122,18 @@ bool looksLikeAndroidPackageId(String value) {
   ).hasMatch(value.trim());
 }
 
+class BatchGetAPKInfo {
+  final String appId;
+  final String url;
+  final Map<String, dynamic> additionalSettings;
+
+  BatchGetAPKInfo({
+    required this.appId,
+    required this.url,
+    required this.additionalSettings,
+  });
+}
+
 class APKDetails {
   late String version;
   late List<MapEntry<String, String>> apkUrls;
@@ -954,6 +966,8 @@ abstract class AppSource {
   bool urlsAlwaysHaveExtension = false;
   bool allowIncludeZips = false;
   bool allowIncludeTarballs = false;
+  bool supportsBatchUpdate = false;
+  int batchUpdateChunkSize = 0;
 
   /// Transient per-check context: the app as it was known before this update
   /// check, set by [SourceProvider.getApp] right before [getLatestAPKDetails].
@@ -1045,6 +1059,12 @@ abstract class AppSource {
     Map<String, dynamic> additionalSettings,
   ) {
     throw NotImplementedError();
+  }
+
+  Future<Map<String, APKDetails>> batchGetLatestAPKDetails(
+    List<BatchGetAPKInfo> infos,
+  ) {
+    throw UnsupportedError('$name does not support batch update checking');
   }
 
   // Different Sources may need different kinds of additional data for Apps
@@ -1731,19 +1751,23 @@ class SourceProvider {
     bool trackOnlyOverride = false,
     bool sourceIsOverriden = false,
     bool inferAppIdIfOptional = false,
+    APKDetails? prefetchedAPKDetails,
   }) async {
     if (trackOnlyOverride || source.enforceTrackOnly) {
       additionalSettings['trackOnly'] = true;
     }
     syncVersionStringSourceSettings(additionalSettings);
     String standardUrl = source.standardizeUrl(url);
-    // Hand the source the previously-known app so it can skip redundant
-    // verification round-trips when the upstream release hasn't changed.
-    source.previouslyCheckedApp = currentApp;
-    APKDetails apk = await source.getLatestAPKDetails(
-      standardUrl,
-      additionalSettings,
-    );
+    APKDetails apk;
+    if (prefetchedAPKDetails != null) {
+      apk = prefetchedAPKDetails;
+    } else {
+      source.previouslyCheckedApp = currentApp;
+      apk = await source.getLatestAPKDetails(
+        standardUrl,
+        additionalSettings,
+      );
+    }
     final String? rawApkNamesFromSource = encodeRawAssistLines(
       apk.apkUrls.map((MapEntry<String, String> entry) => entry.key),
     );
