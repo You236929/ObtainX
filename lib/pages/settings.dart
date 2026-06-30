@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:obtainium/app_distribution.dart';
 import 'package:obtainium/layout_breakpoints.dart';
 import 'package:obtainium/widgets/help_hint_icon.dart';
 import 'package:obtainium/components/app_bottom_sheet.dart';
@@ -47,16 +48,11 @@ IconData _swipeActionIcon(SwipeAction action) => switch (action) {
   SwipeAction.none => Icons.block_rounded,
 };
 
-const String _aboutObtainXWebsiteUrl =
-    'https://bikram-agarwal.github.io/obtainx/';
-const String _aboutObtainXPrivacyUrl =
-    'https://bikram-agarwal.github.io/obtainx/privacy/';
-const String _aboutObtainXTermsUrl =
-    'https://bikram-agarwal.github.io/obtainx/terms/';
-const String _aboutRememberUrl =
-    'https://github.com/bikram-agarwal/Remember/releases/latest';
-const String _aboutFilePipeUrl =
-    'https://github.com/bikram-agarwal/FilePipe/releases/latest';
+String get _aboutObtainXWebsiteUrl => tr('aboutObtainXWebsiteUrl');
+String get _aboutObtainXPrivacyUrl => tr('aboutObtainXPrivacyUrl');
+String get _aboutObtainXTermsUrl => tr('aboutObtainXTermsUrl');
+String get _aboutRememberUrl => tr('aboutRememberUrl');
+String get _aboutFilePipeUrl => tr('aboutFilePipeUrl');
 const String _aboutAuthorUrl = 'https://github.com/bikram-agarwal';
 const String _aboutWikiUrl = 'https://wiki.obtainium.imranr.dev/';
 
@@ -2411,8 +2407,8 @@ class AboutSectionContent extends StatelessWidget {
                       child: FilledButton.tonalIcon(
                         style: _aboutSecondaryButtonStyle(colorScheme),
                         onPressed: () =>
-                            _shareAboutUrl(sp.sourceUrl, 'ObtainX'),
-                        onLongPress: () => _copyAboutUrl(context, sp.sourceUrl),
+                            _shareAboutUrl(_aboutObtainXWebsiteUrl, 'ObtainX'),
+                        onLongPress: () => _copyAboutUrl(context, _aboutObtainXWebsiteUrl),
                         icon: const Icon(Icons.share_rounded),
                         label: Text(tr('share')),
                       ),
@@ -2444,6 +2440,7 @@ class AboutSectionContent extends StatelessWidget {
                       name: tr('aboutRememberName'),
                       tagline: tr('aboutRememberTagline'),
                       url: _aboutRememberUrl,
+                      appId: tr('aboutRememberPackageId'),
                     ),
                     const SizedBox(height: 10),
                     _AboutAppPromo(
@@ -2453,6 +2450,7 @@ class AboutSectionContent extends StatelessWidget {
                       name: tr('aboutFilePipeName'),
                       tagline: tr('aboutFilePipeTagline'),
                       url: _aboutFilePipeUrl,
+                      appId: tr('aboutFilePipePackageId'),
                     ),
                     const SizedBox(height: 8),
                     _AboutLegalLinks(colorScheme: colorScheme),
@@ -2614,6 +2612,7 @@ class _AboutAppPromo extends StatelessWidget {
     required this.name,
     required this.tagline,
     required this.url,
+    this.appId,
   });
 
   final ColorScheme colorScheme;
@@ -2622,6 +2621,7 @@ class _AboutAppPromo extends StatelessWidget {
   final String name;
   final String tagline;
   final String url;
+  final String? appId;
 
   @override
   Widget build(BuildContext context) {
@@ -2639,7 +2639,9 @@ class _AboutAppPromo extends StatelessWidget {
       shape: shape,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => _openAboutUrl(url),
+        onTap: () => appId != null
+            ? _openPromoApp(appId!, url)
+            : _openAboutUrl(url),
         onLongPress: () => _copyAboutUrl(context, url),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -2770,6 +2772,25 @@ class _AboutLinkSeparator extends StatelessWidget {
 
 Future<void> _openAboutUrl(String url) async {
   await launchUrlString(url, mode: LaunchMode.externalApplication);
+}
+
+Future<void> _openPromoApp(String appId, String webUrl) async {
+  if (AppDistribution.fdroid) {
+    try {
+      final String deepLink = 'fdroid.app:$appId';
+      final bool launched = await launchUrlString(
+        deepLink,
+        mode: LaunchMode.externalNonBrowserApplication,
+      );
+      if (!launched) {
+        await launchUrlString(webUrl, mode: LaunchMode.externalApplication);
+      }
+    } catch (_) {
+      await launchUrlString(webUrl, mode: LaunchMode.externalApplication);
+    }
+  } else {
+    await launchUrlString(webUrl, mode: LaunchMode.externalApplication);
+  }
 }
 
 Future<void> _copyAboutUrl(BuildContext context, String url) async {

@@ -15,11 +15,10 @@ ObtainX is a modern and supercharged fork of Obtainium. Re-engineered with a stu
 </p>
 
 ## 📦 Installation
-
+[<img src="assets/graphics/badge_fdroid.png" alt="Get it on F-Droid" height="80">](https://f-droid.org/packages/dev.bikram.obtainx)
 [<img src="assets/graphics/badge_github.png" alt="Get it on GitHub" height="80">](https://github.com/bikram-agarwal/ObtainX/releases/latest)
 <!-- Coming soon. Placeholder code.
 [<img src="assets/graphics/badge_IzzyOnDroid.png" alt="Get it on IzzyOnDroid" height="80">](https://apt.izzysoft.de/fdroid/index/apk/dev.bikram.obtainx)
-[<img src="assets/graphics/badge_fdroid.png" alt="Get it on F-Droid" height="80">](https://f-droid.org/packages/dev.bikram.obtainx)
 -->
 
 ## 🔄 Seamlessly bring your data from Obtainium
