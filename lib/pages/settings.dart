@@ -2284,7 +2284,8 @@ class _IntegrationsSection extends StatefulWidget {
   State<_IntegrationsSection> createState() => _IntegrationsSectionState();
 }
 
-class _IntegrationsSectionState extends State<_IntegrationsSection> {
+class _IntegrationsSectionState extends State<_IntegrationsSection>
+    with WidgetsBindingObserver {
   bool _appManagerInstalled = false;
   bool _appVerifierInstalled = false;
   bool _letMeDowngradeInstalled = false;
@@ -2293,7 +2294,21 @@ class _IntegrationsSectionState extends State<_IntegrationsSection> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _checkInstalledApps();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkInstalledApps();
+    }
   }
 
   Future<void> _checkInstalledApps() async {
