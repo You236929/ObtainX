@@ -102,10 +102,11 @@ class SettingsPageState extends State<SettingsPage> {
 
   static const List<String> _settingsSectionKeys = [
     'updates',
+    'integrations',
+    'warnings',
     'sourceSpecific',
     'themes',
     'appearance',
-    'warnings',
     'interaction',
     'categories',
   ];
@@ -212,13 +213,14 @@ class SettingsPageState extends State<SettingsPage> {
 
     final List<String> visibleSettingsSectionKeys = [
       'updates',
+      'integrations',
+      'warnings',
       if (sourceProvider.sourceTemplates.any(
         (source) => source.sourceConfigSettingFormItems.isNotEmpty,
       ))
         'sourceSpecific',
       'themes',
       'appearance',
-      'warnings',
       'interaction',
       'categories',
     ];
@@ -449,6 +451,18 @@ class SettingsPageState extends State<SettingsPage> {
         icon: Icons.update_rounded,
         widget: _UpdatesSection(cs: cs, androidInfo: _androidInfo),
       ),
+      _SettingsCategory(
+        key: 'integrations',
+        title: tr('integrations'),
+        icon: Icons.extension_rounded,
+        widget: const _IntegrationsSection(),
+      ),
+      _SettingsCategory(
+        key: 'warnings',
+        title: tr('warnings'),
+        icon: Icons.warning_rounded,
+        widget: const _WarningsSection(),
+      ),
       if (sourceProvider.sourceTemplates.any(
         (s) => s.sourceConfigSettingFormItems.isNotEmpty,
       ))
@@ -469,12 +483,6 @@ class SettingsPageState extends State<SettingsPage> {
         title: tr('appearance'),
         icon: Icons.tune_rounded,
         widget: _AppearanceSection(androidInfo: _androidInfo),
-      ),
-      _SettingsCategory(
-        key: 'warnings',
-        title: tr('warnings'),
-        icon: Icons.warning_rounded,
-        widget: const _WarningsSection(),
       ),
       _SettingsCategory(
         key: 'interaction',
@@ -596,33 +604,103 @@ class SettingsPageState extends State<SettingsPage> {
       // that darkness into the right end of the master title bar (the two-panel
       // "dark smudge"). Painting an opaque page background first gives the blur
       // real pixels to sample at the seam. See custom_app_bar.dart's _buildBlur.
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          Positioned.fill(
-            child: sp.useGradientBackground
-                ? DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: cs.schemePageBackgroundGradient,
-                    ),
-                  )
-                : ColoredBox(color: cs.surface),
+      return Theme(
+        data: Theme.of(context).copyWith(
+          listTileTheme: const ListTileThemeData(
+            contentPadding: EdgeInsets.only(left: 16, right: 8),
           ),
-          Row(
-            children: [
-              Expanded(
-                flex: 3,
-                child: Theme(
-                  data: Theme.of(context).copyWith(
-                    scrollbarTheme: const ScrollbarThemeData(
-                      thumbColor: WidgetStatePropertyAll(Colors.transparent),
-                      trackColor: WidgetStatePropertyAll(Colors.transparent),
-                      trackBorderColor: WidgetStatePropertyAll(
-                        Colors.transparent,
+        ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Positioned.fill(
+              child: sp.useGradientBackground
+                  ? DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: cs.schemePageBackgroundGradient,
                       ),
-                      minThumbLength: 0,
+                    )
+                  : ColoredBox(color: cs.surface),
+            ),
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: Theme(
+                    data: Theme.of(context).copyWith(
+                      scrollbarTheme: const ScrollbarThemeData(
+                        thumbColor: WidgetStatePropertyAll(Colors.transparent),
+                        trackColor: WidgetStatePropertyAll(Colors.transparent),
+                        trackBorderColor: WidgetStatePropertyAll(
+                          Colors.transparent,
+                        ),
+                        minThumbLength: 0,
+                      ),
+                    ),
+                    child: Scaffold(
+                      backgroundColor: sp.useGradientBackground
+                          ? Colors.transparent
+                          : cs.surface,
+                      body: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          if (sp.useGradientBackground)
+                            Positioned.fill(
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: cs.schemePageBackgroundGradient,
+                                ),
+                              ),
+                            ),
+                          ScrollConfiguration(
+                            behavior: const _NoScrollbarBehavior(),
+                            child: CustomScrollView(
+                              key: const PageStorageKey<String>(
+                                'settings-master-scroll',
+                              ),
+                              slivers: [
+                                CustomAppBar(
+                                  title: tr('settings'),
+                                  matchGradientBackground:
+                                      sp.useGradientBackground,
+                                  progressiveBlurOverlayColor: isLargeScreen
+                                      ? cs.surface.withValues(alpha: 0.72)
+                                      : null,
+                                ),
+                                SliverPadding(
+                                  padding: const EdgeInsets.all(16),
+                                  sliver: SliverList(
+                                    delegate: SliverChildBuilderDelegate(
+                                      (context, index) => buildCategoryTile(
+                                        categoriesList[index],
+                                      ),
+                                      childCount: categoriesList.length,
+                                    ),
+                                  ),
+                                ),
+                                if (sp.progressiveBlurEnabled)
+                                  SliverToBoxAdapter(
+                                    child: SizedBox(
+                                      height: MediaQuery.paddingOf(
+                                        context,
+                                      ).bottom,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
+                ),
+                VerticalDivider(
+                  width: 1,
+                  thickness: 1,
+                  color: cs.outlineVariant.withAlpha(50),
+                ),
+                Expanded(
+                  flex: 4,
                   child: Scaffold(
                     backgroundColor: sp.useGradientBackground
                         ? Colors.transparent
@@ -638,256 +716,215 @@ class SettingsPageState extends State<SettingsPage> {
                               ),
                             ),
                           ),
-                        ScrollConfiguration(
-                          behavior: const _NoScrollbarBehavior(),
-                          child: CustomScrollView(
-                            key: const PageStorageKey<String>(
-                              'settings-master-scroll',
-                            ),
-                            slivers: [
-                              CustomAppBar(
-                                title: tr('settings'),
-                                matchGradientBackground:
-                                    sp.useGradientBackground,
-                                progressiveBlurOverlayColor: isLargeScreen
-                                    ? cs.surface.withValues(alpha: 0.72)
-                                    : null,
-                              ),
-                              SliverPadding(
-                                padding: const EdgeInsets.all(16),
-                                sliver: SliverList(
-                                  delegate: SliverChildBuilderDelegate(
-                                    (context, index) => buildCategoryTile(
-                                      categoriesList[index],
-                                    ),
-                                    childCount: categoriesList.length,
-                                  ),
-                                ),
-                              ),
-                              if (sp.progressiveBlurEnabled)
-                                SliverToBoxAdapter(
-                                  child: SizedBox(
-                                    height: MediaQuery.paddingOf(
-                                      context,
-                                    ).bottom,
-                                  ),
-                                ),
-                            ],
+                        CustomScrollView(
+                          key: ValueKey(
+                            'settings-detail-${selectedCategoryObj.key}',
                           ),
+                          slivers: [
+                            // No top app bar in the detail pane: it carried no
+                            // title, so it only added a blank frosted strip. The
+                            // status-bar inset is preserved with SliverSafeArea so
+                            // the content doesn't slide under the system bar.
+                            SliverSafeArea(
+                              top: true,
+                              bottom: false,
+                              sliver: SliverPadding(
+                                padding: const EdgeInsets.all(16),
+                                sliver: SliverToBoxAdapter(
+                                  child: selectedCategoryObj.widget,
+                                ),
+                              ),
+                            ),
+                            if (sp.progressiveBlurEnabled)
+                              SliverToBoxAdapter(
+                                child: SizedBox(
+                                  height: MediaQuery.paddingOf(context).bottom,
+                                ),
+                              ),
+                          ],
                         ),
                       ],
                     ),
                   ),
                 ),
-              ),
-              VerticalDivider(
-                width: 1,
-                thickness: 1,
-                color: cs.outlineVariant.withAlpha(50),
-              ),
-              Expanded(
-                flex: 4,
-                child: Scaffold(
-                  backgroundColor: sp.useGradientBackground
-                      ? Colors.transparent
-                      : cs.surface,
-                  body: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      if (sp.useGradientBackground)
-                        Positioned.fill(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              gradient: cs.schemePageBackgroundGradient,
-                            ),
-                          ),
-                        ),
-                      CustomScrollView(
-                        key: ValueKey(
-                          'settings-detail-${selectedCategoryObj.key}',
-                        ),
-                        slivers: [
-                          // No top app bar in the detail pane: it carried no
-                          // title, so it only added a blank frosted strip. The
-                          // status-bar inset is preserved with SliverSafeArea so
-                          // the content doesn't slide under the system bar.
-                          SliverSafeArea(
-                            top: true,
-                            bottom: false,
-                            sliver: SliverPadding(
-                              padding: const EdgeInsets.all(16),
-                              sliver: SliverToBoxAdapter(
-                                child: selectedCategoryObj.widget,
-                              ),
-                            ),
-                          ),
-                          if (sp.progressiveBlurEnabled)
-                            SliverToBoxAdapter(
-                              child: SizedBox(
-                                height: MediaQuery.paddingOf(context).bottom,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       );
     }
 
-    return Scaffold(
-      backgroundColor: cs.surface,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (sp.useGradientBackground)
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: cs.schemePageBackgroundGradient,
+    return Theme(
+      data: Theme.of(context).copyWith(
+        listTileTheme: const ListTileThemeData(
+          contentPadding: EdgeInsets.only(left: 16, right: 8),
+        ),
+      ),
+      child: Scaffold(
+        backgroundColor: cs.surface,
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (sp.useGradientBackground)
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: cs.schemePageBackgroundGradient,
+                  ),
                 ),
               ),
-            ),
-          CustomScrollView(
-            scrollCacheExtent: const ScrollCacheExtent.pixels(1600),
-            key: const PageStorageKey<String>('settings-tab-scroll'),
-            slivers: <Widget>[
-              CustomAppBar(
-                title: tr('settings'),
-                matchGradientBackground: sp.useGradientBackground,
-                actions: [
-                  ValueListenableBuilder<Map<String, bool>>(
-                    valueListenable: _expandedSettingsSections,
-                    builder: (context, expandedState, _) {
-                      final bool allSettingsSectionsExpanded =
-                          visibleSettingsSectionKeys.every(
-                            (key) => _sectionExpanded(expandedState, key),
-                          );
-                      return IconButton(
-                        tooltip: allSettingsSectionsExpanded
-                            ? tr('collapseAll')
-                            : tr('expandAll'),
-                        icon: Icon(
-                          allSettingsSectionsExpanded
-                              ? Icons.unfold_less_rounded
-                              : Icons.unfold_more_rounded,
-                        ),
-                        onPressed: () {
-                          setAllSettingsSectionsExpanded(
-                            !allSettingsSectionsExpanded,
-                          );
-                        },
-                      );
-                    },
-                  ),
-                ],
-              ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: sp.prefs == null
-                      ? const SizedBox()
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // ── Updates ───────────────────────────────────
-                            sectionHeader(
-                              tr('updates'),
-                              Icons.update_rounded,
-                              'updates',
-                            ),
-                            collapsibleCard(
-                              'updates',
-                              _UpdatesSection(
-                                cs: cs,
-                                androidInfo: _androidInfo,
-                              ),
-                            ),
-                            // ── Source-specific ───────────────────────────
-                            if (sourceProvider.sourceTemplates.any(
-                              (s) => s.sourceConfigSettingFormItems.isNotEmpty,
-                            )) ...[
+            CustomScrollView(
+              scrollCacheExtent: const ScrollCacheExtent.pixels(1600),
+              key: const PageStorageKey<String>('settings-tab-scroll'),
+              slivers: <Widget>[
+                CustomAppBar(
+                  title: tr('settings'),
+                  matchGradientBackground: sp.useGradientBackground,
+                  actions: [
+                    ValueListenableBuilder<Map<String, bool>>(
+                      valueListenable: _expandedSettingsSections,
+                      builder: (context, expandedState, _) {
+                        final bool allSettingsSectionsExpanded =
+                            visibleSettingsSectionKeys.every(
+                              (key) => _sectionExpanded(expandedState, key),
+                            );
+                        return IconButton(
+                          tooltip: allSettingsSectionsExpanded
+                              ? tr('collapseAll')
+                              : tr('expandAll'),
+                          icon: Icon(
+                            allSettingsSectionsExpanded
+                                ? Icons.unfold_less_rounded
+                                : Icons.unfold_more_rounded,
+                          ),
+                          onPressed: () {
+                            setAllSettingsSectionsExpanded(
+                              !allSettingsSectionsExpanded,
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ],
+                ),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: sp.prefs == null
+                        ? const SizedBox()
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // ── Updates ───────────────────────────────────
                               sectionHeader(
-                                tr('sourceSpecific'),
-                                Icons.dns_rounded,
-                                'sourceSpecific',
+                                tr('updates'),
+                                Icons.update_rounded,
+                                'updates',
                               ),
                               collapsibleCard(
-                                'sourceSpecific',
-                                _SourceSpecificSection(key: _sourceSpecificKey),
+                                'updates',
+                                _UpdatesSection(
+                                  cs: cs,
+                                  androidInfo: _androidInfo,
+                                ),
                               ),
+                              // ── Integrations ─────────────────────────────
+                              sectionHeader(
+                                tr('integrations'),
+                                Icons.extension_rounded,
+                                'integrations',
+                              ),
+                              collapsibleCard(
+                                'integrations',
+                                const _IntegrationsSection(),
+                              ),
+                              // ── Warnings ─────────────────────────────────
+                              sectionHeader(
+                                tr('warnings'),
+                                Icons.warning_rounded,
+                                'warnings',
+                              ),
+                              collapsibleCard(
+                                'warnings',
+                                const _WarningsSection(),
+                              ),
+                              // ── Source-specific ───────────────────────────
+                              if (sourceProvider.sourceTemplates.any(
+                                (s) =>
+                                    s.sourceConfigSettingFormItems.isNotEmpty,
+                              )) ...[
+                                sectionHeader(
+                                  tr('sourceSpecific'),
+                                  Icons.dns_rounded,
+                                  'sourceSpecific',
+                                ),
+                                collapsibleCard(
+                                  'sourceSpecific',
+                                  _SourceSpecificSection(
+                                    key: _sourceSpecificKey,
+                                  ),
+                                ),
+                              ],
+                              // ── Themes ───────────────────────────────────
+                              sectionHeader(
+                                tr('settingsThemesSection'),
+                                Icons.palette_rounded,
+                                'themes',
+                              ),
+                              collapsibleCard(
+                                'themes',
+                                _ThemesSettingsSection(
+                                  androidInfoFuture: _androidInfo,
+                                ),
+                              ),
+                              // ── Appearance ────────────────────────────────
+                              sectionHeader(
+                                tr('appearance'),
+                                Icons.tune_rounded,
+                                'appearance',
+                              ),
+                              collapsibleCard(
+                                'appearance',
+                                _AppearanceSection(androidInfo: _androidInfo),
+                              ),
+                              // ── Interaction ──────────────────────────────
+                              sectionHeader(
+                                tr('interaction'),
+                                Icons.touch_app_rounded,
+                                'interaction',
+                              ),
+                              collapsibleCard(
+                                'interaction',
+                                const _InteractionSection(),
+                              ),
+                              // ── Categories ───────────────────────────────
+                              sectionHeader(
+                                tr('categories'),
+                                Icons.label_rounded,
+                                'categories',
+                              ),
+                              collapsibleCard(
+                                'categories',
+                                const _CategoriesSection(),
+                              ),
+                              aboutSectionHeader(),
+                              settingsCard([
+                                AboutSectionContent(colorScheme: cs),
+                              ]),
                             ],
-                            // ── Themes ───────────────────────────────────
-                            sectionHeader(
-                              tr('settingsThemesSection'),
-                              Icons.palette_rounded,
-                              'themes',
-                            ),
-                            collapsibleCard(
-                              'themes',
-                              _ThemesSettingsSection(
-                                androidInfoFuture: _androidInfo,
-                              ),
-                            ),
-                            // ── Appearance ────────────────────────────────
-                            sectionHeader(
-                              tr('appearance'),
-                              Icons.tune_rounded,
-                              'appearance',
-                            ),
-                            collapsibleCard(
-                              'appearance',
-                              _AppearanceSection(androidInfo: _androidInfo),
-                            ),
-                            // ── Warnings ─────────────────────────────────
-                            sectionHeader(
-                              tr('warnings'),
-                              Icons.warning_rounded,
-                              'warnings',
-                            ),
-                            collapsibleCard(
-                              'warnings',
-                              const _WarningsSection(),
-                            ),
-                            // ── Interaction ──────────────────────────────
-                            sectionHeader(
-                              tr('interaction'),
-                              Icons.touch_app_rounded,
-                              'interaction',
-                            ),
-                            collapsibleCard(
-                              'interaction',
-                              const _InteractionSection(),
-                            ),
-                            // ── Categories ───────────────────────────────
-                            sectionHeader(
-                              tr('categories'),
-                              Icons.label_rounded,
-                              'categories',
-                            ),
-                            collapsibleCard(
-                              'categories',
-                              const _CategoriesSection(),
-                            ),
-                            aboutSectionHeader(),
-                            settingsCard([
-                              AboutSectionContent(colorScheme: cs),
-                            ]),
-                          ],
-                        ),
+                          ),
+                  ),
                 ),
-              ),
-              if (sp.progressiveBlurEnabled)
-                SliverToBoxAdapter(
-                  child: SizedBox(height: MediaQuery.paddingOf(context).bottom),
-                ),
-            ],
-          ),
-        ],
+                if (sp.progressiveBlurEnabled)
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: MediaQuery.paddingOf(context).bottom,
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -954,7 +991,6 @@ class _UpdatesSection extends StatelessWidget {
     sp.onlyCheckInstalledOrTrackOnlyApps,
     sp.removeOnExternalUninstall,
     sp.parallelDownloads,
-    sp.beforeNewInstallsShareToAppVerifier,
     sp.installerMode,
     sp.shizukuPretendToBeGooglePlay,
     sp.includePrereleasesByDefault,
@@ -1074,37 +1110,6 @@ class _UpdatesSection extends StatelessWidget {
         title: Text(tr('parallelDownloads')),
         value: sp.parallelDownloads,
         onChanged: (bool value) => sp.parallelDownloads = value,
-      ),
-      ListTile(
-        title: Text(tr('beforeNewInstallsShareToAppVerifier')),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              tooltip: tr('about'),
-              onPressed: () {
-                launchUrlString(
-                  'https://github.com/soupslurpr/AppVerifier',
-                  mode: LaunchMode.externalApplication,
-                );
-              },
-              style: IconButton.styleFrom(
-                foregroundColor: cs.onSurfaceVariant,
-                iconSize: 20,
-                padding: const EdgeInsets.all(4),
-                minimumSize: const Size(32, 32),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.compact,
-              ),
-              icon: const Icon(Icons.open_in_new_rounded),
-            ),
-            Switch(
-              value: sp.beforeNewInstallsShareToAppVerifier,
-              onChanged: (bool value) =>
-                  sp.beforeNewInstallsShareToAppVerifier = value,
-            ),
-          ],
-        ),
       ),
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -2272,6 +2277,195 @@ class _InteractionSection extends StatelessWidget {
   }
 }
 
+class _IntegrationsSection extends StatefulWidget {
+  const _IntegrationsSection();
+
+  @override
+  State<_IntegrationsSection> createState() => _IntegrationsSectionState();
+}
+
+class _IntegrationsSectionState extends State<_IntegrationsSection> {
+  bool _appManagerInstalled = false;
+  bool _appVerifierInstalled = false;
+  bool _letMeDowngradeInstalled = false;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkInstalledApps();
+  }
+
+  Future<void> _checkInstalledApps() async {
+    final results = await Future.wait([
+      getInstalledInfo('io.github.muntashirakon.AppManager'),
+      getInstalledInfo('dev.soupslurpr.appverifier'),
+      getInstalledInfo('com.berdik.letmedowngrade'),
+    ]);
+    if (mounted) {
+      setState(() {
+        _appManagerInstalled = results[0] != null;
+        _appVerifierInstalled = results[1] != null;
+        _letMeDowngradeInstalled = results[2] != null;
+        _loading = false;
+      });
+    }
+  }
+
+  static int _integrationsSettingsHash(SettingsProvider sp) => Object.hash(
+    sp.openAppInfoInAppManager,
+    sp.beforeNewInstallsShareToAppVerifier,
+    sp.enableLetMeDowngrade,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    context.select<SettingsProvider, int>(_integrationsSettingsHash);
+    final SettingsProvider sp = context.read<SettingsProvider>();
+    final ColorScheme cs = Theme.of(context).colorScheme;
+
+    return m3eExpressiveSettingsCard(
+      context: context,
+      colorScheme: cs,
+      items: [
+        ListTile(
+          title: Text(
+            tr('openAppInfoInAppManager'),
+            style: TextStyle(
+              color: _loading
+                  ? cs.onSurface.withValues(alpha: 0.38)
+                  : _appManagerInstalled
+                  ? null
+                  : cs.onSurface.withValues(alpha: 0.38),
+            ),
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: tr('about'),
+                onPressed: () {
+                  launchUrlString(
+                    tr('aboutAppManagerUrl'),
+                    mode: LaunchMode.externalApplication,
+                  );
+                },
+                style: IconButton.styleFrom(
+                  foregroundColor: cs.onSurfaceVariant,
+                  iconSize: 20,
+                  padding: const EdgeInsets.all(4),
+                  minimumSize: const Size(32, 32),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                ),
+                icon: const Icon(Icons.open_in_new_rounded),
+              ),
+              Switch(
+                value:
+                    !_loading &&
+                    _appManagerInstalled &&
+                    sp.openAppInfoInAppManager,
+                onChanged: !_loading && _appManagerInstalled
+                    ? (bool value) => sp.openAppInfoInAppManager = value
+                    : null,
+              ),
+            ],
+          ),
+        ),
+        ListTile(
+          title: Text(
+            tr('beforeNewInstallsShareToAppVerifier'),
+            style: TextStyle(
+              color: _loading
+                  ? cs.onSurface.withValues(alpha: 0.38)
+                  : _appVerifierInstalled
+                  ? null
+                  : cs.onSurface.withValues(alpha: 0.38),
+            ),
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: tr('about'),
+                onPressed: () {
+                  launchUrlString(
+                    tr('aboutAppVerifierUrl'),
+                    mode: LaunchMode.externalApplication,
+                  );
+                },
+                style: IconButton.styleFrom(
+                  foregroundColor: cs.onSurfaceVariant,
+                  iconSize: 20,
+                  padding: const EdgeInsets.all(4),
+                  minimumSize: const Size(32, 32),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                ),
+                icon: const Icon(Icons.open_in_new_rounded),
+              ),
+              Switch(
+                value:
+                    !_loading &&
+                    _appVerifierInstalled &&
+                    sp.beforeNewInstallsShareToAppVerifier,
+                onChanged: !_loading && _appVerifierInstalled
+                    ? (bool value) =>
+                          sp.beforeNewInstallsShareToAppVerifier = value
+                    : null,
+              ),
+            ],
+          ),
+        ),
+        ListTile(
+          title: Text(
+            tr('enableLetMeDowngrade'),
+            style: TextStyle(
+              color: _loading
+                  ? cs.onSurface.withValues(alpha: 0.38)
+                  : _letMeDowngradeInstalled
+                  ? null
+                  : cs.onSurface.withValues(alpha: 0.38),
+            ),
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: tr('about'),
+                onPressed: () {
+                  launchUrlString(
+                    tr('aboutLetMeDowngradeUrl'),
+                    mode: LaunchMode.externalApplication,
+                  );
+                },
+                style: IconButton.styleFrom(
+                  foregroundColor: cs.onSurfaceVariant,
+                  iconSize: 20,
+                  padding: const EdgeInsets.all(4),
+                  minimumSize: const Size(32, 32),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                ),
+                icon: const Icon(Icons.open_in_new_rounded),
+              ),
+              Switch(
+                value:
+                    !_loading &&
+                    _letMeDowngradeInstalled &&
+                    sp.enableLetMeDowngrade,
+                onChanged: !_loading && _letMeDowngradeInstalled
+                    ? (bool value) => sp.enableLetMeDowngrade = value
+                    : null,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// Categories section — delegates to CategoryEditorSelector.
 class _CategoriesSection extends StatelessWidget {
   const _CategoriesSection();
@@ -2408,7 +2602,8 @@ class AboutSectionContent extends StatelessWidget {
                         style: _aboutSecondaryButtonStyle(colorScheme),
                         onPressed: () =>
                             _shareAboutUrl(_aboutObtainXWebsiteUrl, 'ObtainX'),
-                        onLongPress: () => _copyAboutUrl(context, _aboutObtainXWebsiteUrl),
+                        onLongPress: () =>
+                            _copyAboutUrl(context, _aboutObtainXWebsiteUrl),
                         icon: const Icon(Icons.share_rounded),
                         label: Text(tr('share')),
                       ),
@@ -2639,9 +2834,8 @@ class _AboutAppPromo extends StatelessWidget {
       shape: shape,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => appId != null
-            ? _openPromoApp(appId!, url)
-            : _openAboutUrl(url),
+        onTap: () =>
+            appId != null ? _openPromoApp(appId!, url) : _openAboutUrl(url),
         onLongPress: () => _copyAboutUrl(context, url),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),

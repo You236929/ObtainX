@@ -2155,6 +2155,7 @@ class AppsProvider with ChangeNotifier {
   }
 
   Future<bool> canDowngradeApps() async =>
+      settingsProvider.enableLetMeDowngrade &&
       (await getInstalledInfo('com.berdik.letmedowngrade')) != null;
 
   Future<void> unzipFile(String filePath, String destinationPath) async {
@@ -4562,6 +4563,18 @@ class AppsProvider with ChangeNotifier {
   }
 
   Future<void> openAppSettings(String appId) async {
+    if (settingsProvider.openAppInfoInAppManager) {
+      try {
+        final AndroidIntent intent = AndroidIntent(
+          action: 'android.intent.action.VIEW',
+          data: 'app-manager://details?id=$appId',
+        );
+        await intent.launch();
+        return;
+      } catch (_) {
+        // Fall back to standard settings if App Manager is not installed or launch fails
+      }
+    }
     final AndroidIntent intent = AndroidIntent(
       action: 'action_application_details_settings',
       data: 'package:$appId',

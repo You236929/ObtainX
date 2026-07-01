@@ -551,7 +551,8 @@ class _AppListItem extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final double screenWidth = MediaQuery.sizeOf(context).width;
-    final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint &&
+    final bool isLargeScreen =
+        screenWidth >= kLargeScreenWidthBreakpoint &&
         !context.read<SettingsProvider>().isTV;
     final bool hideVersionAndChangelog =
         isLargeScreen &&
@@ -1052,7 +1053,8 @@ Future<void> _openAdditionalOptionsModal(
   if (!context.mounted) return;
 
   final double screenWidth = MediaQuery.sizeOf(context).width;
-  final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint &&
+  final bool isLargeScreen =
+      screenWidth >= kLargeScreenWidthBreakpoint &&
       !context.read<SettingsProvider>().isTV;
 
   if (isLargeScreen) {
@@ -1200,7 +1202,8 @@ class _SwipeableListItemState extends State<_SwipeableListItem>
       case SwipeAction.edit:
         if (context.mounted) {
           final double screenWidth = MediaQuery.sizeOf(context).width;
-          final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint &&
+          final bool isLargeScreen =
+              screenWidth >= kLargeScreenWidthBreakpoint &&
               !context.read<SettingsProvider>().isTV;
 
           if (isLargeScreen) {
@@ -3107,7 +3110,8 @@ class AppsPageState extends State<AppsPage> {
     var listedApps = _listedAppsCache;
 
     final double screenWidth = MediaQuery.sizeOf(context).width;
-    final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint &&
+    final bool isLargeScreen =
+        screenWidth >= kLargeScreenWidthBreakpoint &&
         !context.read<SettingsProvider>().isTV;
 
     // The two-panel layout needs an effective selection, but mutating
@@ -3634,7 +3638,8 @@ class AppsPageState extends State<AppsPage> {
           : null;
 
       final double screenWidth = MediaQuery.sizeOf(context).width;
-      final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint &&
+      final bool isLargeScreen =
+          screenWidth >= kLargeScreenWidthBreakpoint &&
           !context.read<SettingsProvider>().isTV;
 
       // Builds the row visual given the callback that should fire when the
@@ -5726,7 +5731,8 @@ class AppsPageState extends State<AppsPage> {
     }
 
     final double screenWidth = MediaQuery.sizeOf(context).width;
-    final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint &&
+    final bool isLargeScreen =
+        screenWidth >= kLargeScreenWidthBreakpoint &&
         !context.read<SettingsProvider>().isTV;
 
     if (isLargeScreen) {

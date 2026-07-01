@@ -305,7 +305,9 @@ class _ShadingIntensityTileState extends State<_ShadingIntensityTile> {
                 trackHeight: 16,
                 trackShape: const _ShadingGappedTrackShape(),
                 thumbShape: const _ShadingVerticalBarThumbShape(),
-                tickMarkShape: const RoundSliderTickMarkShape(tickMarkRadius: 3),
+                tickMarkShape: const RoundSliderTickMarkShape(
+                  tickMarkRadius: 3,
+                ),
                 activeTickMarkColor: colorScheme.onPrimary,
                 inactiveTickMarkColor: colorScheme.primary,
                 overlayShape: const RoundSliderOverlayShape(overlayRadius: 20),

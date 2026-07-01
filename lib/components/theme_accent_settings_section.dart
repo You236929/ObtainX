@@ -571,8 +571,8 @@ class _HueColorSliderState extends State<_HueColorSlider> {
         scheme.surfaceContainerHighest.computeLuminance() > 0.5;
     final double gapWidth = widget.showHandleGap
         ? lightPanel
-            ? _HueSliderTrackBackground.lightGapWidth
-            : _HueSliderTrackBackground.defaultGapWidth
+              ? _HueSliderTrackBackground.lightGapWidth
+              : _HueSliderTrackBackground.defaultGapWidth
         : 0;
     final double handleWidth = lightPanel
         ? _HueSliderThumbShape.lightWidth
@@ -600,8 +600,10 @@ class _HueColorSliderState extends State<_HueColorSlider> {
             min: 0,
             max: 360,
             divisions: 72,
-            onChanged: (double value) => widget.onChanged(_colorHexFromHue(value)),
-            onChangeEnd: (double value) => widget.onChangeEnd(_colorHexFromHue(value)),
+            onChanged: (double value) =>
+                widget.onChanged(_colorHexFromHue(value)),
+            onChangeEnd: (double value) =>
+                widget.onChangeEnd(_colorHexFromHue(value)),
             child: SliderTheme(
               data: SliderTheme.of(context).copyWith(
                 trackHeight: _HueSliderTrackBackground.trackHeight,
@@ -620,7 +622,8 @@ class _HueColorSliderState extends State<_HueColorSlider> {
                 min: 0,
                 max: 360,
                 value: hue.clamp(0, 360).toDouble(),
-                onChanged: (double value) => widget.onChanged(_colorHexFromHue(value)),
+                onChanged: (double value) =>
+                    widget.onChanged(_colorHexFromHue(value)),
                 onChangeEnd: (double value) =>
                     widget.onChangeEnd(_colorHexFromHue(value)),
               ),

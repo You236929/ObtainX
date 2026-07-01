@@ -45,8 +45,10 @@ class _TVSliderWrapperState extends State<TVSliderWrapper> {
   void _adjustValue(double delta) {
     final int divs = widget.divisions ?? 20;
     final double step = (widget.max - widget.min) / divs;
-    final double newValue =
-        (widget.value + delta * step).clamp(widget.min, widget.max);
+    final double newValue = (widget.value + delta * step).clamp(
+      widget.min,
+      widget.max,
+    );
     widget.onChanged(newValue);
     if (widget.onChangeEnd != null) {
       widget.onChangeEnd!(newValue);
@@ -84,18 +86,12 @@ class _TVSliderWrapperState extends State<TVSliderWrapper> {
             padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
             decoration: hasFocus
                 ? BoxDecoration(
-                    border: Border.all(
-                      color: scheme.primary,
-                      width: 2,
-                    ),
+                    border: Border.all(color: scheme.primary, width: 2),
                     borderRadius: BorderRadius.circular(12),
                     color: scheme.primary.withValues(alpha: 0.08),
                   )
                 : null,
-            child: ExcludeFocus(
-              excluding: true,
-              child: widget.child,
-            ),
+            child: ExcludeFocus(excluding: true, child: widget.child),
           );
         },
       ),
