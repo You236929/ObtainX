@@ -699,6 +699,7 @@ class _ObtainiumState extends State<Obtainium> {
               scaffoldBackgroundColor: themeColorScheme.surface,
               canvasColor: themeColorScheme.surface,
               cardColor: themeColorScheme.surfaceContainer,
+              focusColor: themeColorScheme.primary.withValues(alpha: 0.12),
               fontFamily: settingsProvider.useSystemFont
                   ? 'SystemFont'
                   : 'Montserrat',
@@ -723,6 +724,7 @@ class _ObtainiumState extends State<Obtainium> {
               scaffoldBackgroundColor: darkThemeColorScheme.surface,
               canvasColor: darkThemeColorScheme.surface,
               cardColor: darkThemeColorScheme.surfaceContainer,
+              focusColor: darkThemeColorScheme.primary.withValues(alpha: 0.24),
               fontFamily: settingsProvider.useSystemFont
                   ? 'SystemFont'
                   : 'Montserrat',

@@ -1079,6 +1079,24 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  bool get openAppInfoInAppManager {
+    return prefs?.getBool('openAppInfoInAppManager') ?? false;
+  }
+
+  set openAppInfoInAppManager(bool value) {
+    prefs?.setBool('openAppInfoInAppManager', value);
+    notifyListeners();
+  }
+
+  bool get enableLetMeDowngrade {
+    return prefs?.getBool('enableLetMeDowngrade') ?? true;
+  }
+
+  set enableLetMeDowngrade(bool value) {
+    prefs?.setBool('enableLetMeDowngrade', value);
+    notifyListeners();
+  }
+
   bool get checkUpdateOnDetailPage {
     return prefs?.getBool('checkUpdateOnDetailPage') ?? false;
   }

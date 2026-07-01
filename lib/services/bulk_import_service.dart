@@ -853,14 +853,26 @@ class BulkImportService {
               if (repo is! Map<String, dynamic>) continue;
               final String? repoName = repo['name'] as String?;
               final String? htmlUrl = repo['html_url'] as String?;
-              if (htmlUrl == null || !htmlUrl.contains('github.com') || repoName == null) {
+              if (htmlUrl == null ||
+                  !htmlUrl.contains('github.com') ||
+                  repoName == null) {
                 continue;
               }
               repoScores.putIfAbsent(htmlUrl, () {
                 final String lowerRepo = repoName.toLowerCase();
-                final List<String> pkgSegments = searchPkg.toLowerCase().split('.');
+                final List<String> pkgSegments = searchPkg.toLowerCase().split(
+                  '.',
+                );
                 final Set<String> ignoreSegments = {
-                  'com', 'org', 'net', 'dev', 'github', 'android', 'app', 'apps', 'application'
+                  'com',
+                  'org',
+                  'net',
+                  'dev',
+                  'github',
+                  'android',
+                  'app',
+                  'apps',
+                  'application',
                 };
                 int score = 0;
                 for (final String segment in pkgSegments) {
@@ -893,7 +905,8 @@ class BulkImportService {
               final String? htmlUrl = repo['html_url'] as String?;
               if (htmlUrl == null || !htmlUrl.contains('github.com')) continue;
 
-              final bool isDefinitionFile = path.contains('androidmanifest') ||
+              final bool isDefinitionFile =
+                  path.contains('androidmanifest') ||
                   path.endsWith('build.gradle') ||
                   path.endsWith('build.gradle.kts');
 
@@ -919,7 +932,9 @@ class BulkImportService {
             result[pkg] = null;
           }
         } else {
-          debugPrint('GitHub search failed for $pkg: status ${response.statusCode}, body: ${response.body}');
+          debugPrint(
+            'GitHub search failed for $pkg: status ${response.statusCode}, body: ${response.body}',
+          );
           if (response.statusCode == 401 ||
               response.statusCode == 403 ||
               response.statusCode == 429) {

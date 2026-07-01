@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:obtainium/app_distribution.dart';
 import 'package:obtainium/layout_breakpoints.dart';
 import 'package:obtainium/widgets/help_hint_icon.dart';
 import 'package:obtainium/components/app_bottom_sheet.dart';
@@ -17,6 +18,7 @@ import 'package:obtainium/components/custom_app_bar.dart';
 import 'package:obtainium/components/themes_settings_section.dart';
 import 'package:obtainium/components/generated_form.dart';
 import 'package:obtainium/components/generated_form_modal.dart';
+import 'package:obtainium/components/tv_slider_wrapper.dart';
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/main.dart';
 import 'package:obtainium/app_sources/github.dart';
@@ -46,16 +48,11 @@ IconData _swipeActionIcon(SwipeAction action) => switch (action) {
   SwipeAction.none => Icons.block_rounded,
 };
 
-const String _aboutObtainXWebsiteUrl =
-    'https://bikram-agarwal.github.io/obtainx/';
-const String _aboutObtainXPrivacyUrl =
-    'https://bikram-agarwal.github.io/obtainx/privacy/';
-const String _aboutObtainXTermsUrl =
-    'https://bikram-agarwal.github.io/obtainx/terms/';
-const String _aboutRememberUrl =
-    'https://github.com/bikram-agarwal/Remember/releases/latest';
-const String _aboutFilePipeUrl =
-    'https://github.com/bikram-agarwal/FilePipe/releases/latest';
+String get _aboutObtainXWebsiteUrl => tr('aboutObtainXWebsiteUrl');
+String get _aboutObtainXPrivacyUrl => tr('aboutObtainXPrivacyUrl');
+String get _aboutObtainXTermsUrl => tr('aboutObtainXTermsUrl');
+String get _aboutRememberUrl => tr('aboutRememberUrl');
+String get _aboutFilePipeUrl => tr('aboutFilePipeUrl');
 const String _aboutAuthorUrl = 'https://github.com/bikram-agarwal';
 const String _aboutWikiUrl = 'https://wiki.obtainium.imranr.dev/';
 
@@ -105,10 +102,11 @@ class SettingsPageState extends State<SettingsPage> {
 
   static const List<String> _settingsSectionKeys = [
     'updates',
+    'integrations',
+    'warnings',
     'sourceSpecific',
     'themes',
     'appearance',
-    'warnings',
     'interaction',
     'categories',
   ];
@@ -137,7 +135,8 @@ class SettingsPageState extends State<SettingsPage> {
   Future<bool> confirmDiscardUnsavedChanges() async {
     final sourceSpecificState = _sourceSpecificKey.currentState;
     if (sourceSpecificState != null) {
-      if (sourceSpecificState.isGithubDirty || sourceSpecificState.isGitlabDirty) {
+      if (sourceSpecificState.isGithubDirty ||
+          sourceSpecificState.isGitlabDirty) {
         final bool? discard = await showDialog<bool>(
           context: context,
           builder: (BuildContext dialogContext) {
@@ -214,13 +213,14 @@ class SettingsPageState extends State<SettingsPage> {
 
     final List<String> visibleSettingsSectionKeys = [
       'updates',
+      'integrations',
+      'warnings',
       if (sourceProvider.sourceTemplates.any(
         (source) => source.sourceConfigSettingFormItems.isNotEmpty,
       ))
         'sourceSpecific',
       'themes',
       'appearance',
-      'warnings',
       'interaction',
       'categories',
     ];
@@ -451,6 +451,18 @@ class SettingsPageState extends State<SettingsPage> {
         icon: Icons.update_rounded,
         widget: _UpdatesSection(cs: cs, androidInfo: _androidInfo),
       ),
+      _SettingsCategory(
+        key: 'integrations',
+        title: tr('integrations'),
+        icon: Icons.extension_rounded,
+        widget: const _IntegrationsSection(),
+      ),
+      _SettingsCategory(
+        key: 'warnings',
+        title: tr('warnings'),
+        icon: Icons.warning_rounded,
+        widget: const _WarningsSection(),
+      ),
       if (sourceProvider.sourceTemplates.any(
         (s) => s.sourceConfigSettingFormItems.isNotEmpty,
       ))
@@ -471,12 +483,6 @@ class SettingsPageState extends State<SettingsPage> {
         title: tr('appearance'),
         icon: Icons.tune_rounded,
         widget: _AppearanceSection(androidInfo: _androidInfo),
-      ),
-      _SettingsCategory(
-        key: 'warnings',
-        title: tr('warnings'),
-        icon: Icons.warning_rounded,
-        widget: const _WarningsSection(),
       ),
       _SettingsCategory(
         key: 'interaction',
@@ -598,33 +604,103 @@ class SettingsPageState extends State<SettingsPage> {
       // that darkness into the right end of the master title bar (the two-panel
       // "dark smudge"). Painting an opaque page background first gives the blur
       // real pixels to sample at the seam. See custom_app_bar.dart's _buildBlur.
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          Positioned.fill(
-            child: sp.useGradientBackground
-                ? DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: cs.schemePageBackgroundGradient,
-                    ),
-                  )
-                : ColoredBox(color: cs.surface),
+      return Theme(
+        data: Theme.of(context).copyWith(
+          listTileTheme: const ListTileThemeData(
+            contentPadding: EdgeInsets.only(left: 16, right: 8),
           ),
-          Row(
-            children: [
-              Expanded(
-                flex: 3,
-                child: Theme(
-                  data: Theme.of(context).copyWith(
-                    scrollbarTheme: const ScrollbarThemeData(
-                      thumbColor: WidgetStatePropertyAll(Colors.transparent),
-                      trackColor: WidgetStatePropertyAll(Colors.transparent),
-                      trackBorderColor: WidgetStatePropertyAll(
-                        Colors.transparent,
+        ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Positioned.fill(
+              child: sp.useGradientBackground
+                  ? DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: cs.schemePageBackgroundGradient,
                       ),
-                      minThumbLength: 0,
+                    )
+                  : ColoredBox(color: cs.surface),
+            ),
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: Theme(
+                    data: Theme.of(context).copyWith(
+                      scrollbarTheme: const ScrollbarThemeData(
+                        thumbColor: WidgetStatePropertyAll(Colors.transparent),
+                        trackColor: WidgetStatePropertyAll(Colors.transparent),
+                        trackBorderColor: WidgetStatePropertyAll(
+                          Colors.transparent,
+                        ),
+                        minThumbLength: 0,
+                      ),
+                    ),
+                    child: Scaffold(
+                      backgroundColor: sp.useGradientBackground
+                          ? Colors.transparent
+                          : cs.surface,
+                      body: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          if (sp.useGradientBackground)
+                            Positioned.fill(
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: cs.schemePageBackgroundGradient,
+                                ),
+                              ),
+                            ),
+                          ScrollConfiguration(
+                            behavior: const _NoScrollbarBehavior(),
+                            child: CustomScrollView(
+                              key: const PageStorageKey<String>(
+                                'settings-master-scroll',
+                              ),
+                              slivers: [
+                                CustomAppBar(
+                                  title: tr('settings'),
+                                  matchGradientBackground:
+                                      sp.useGradientBackground,
+                                  progressiveBlurOverlayColor: isLargeScreen
+                                      ? cs.surface.withValues(alpha: 0.72)
+                                      : null,
+                                ),
+                                SliverPadding(
+                                  padding: const EdgeInsets.all(16),
+                                  sliver: SliverList(
+                                    delegate: SliverChildBuilderDelegate(
+                                      (context, index) => buildCategoryTile(
+                                        categoriesList[index],
+                                      ),
+                                      childCount: categoriesList.length,
+                                    ),
+                                  ),
+                                ),
+                                if (sp.progressiveBlurEnabled)
+                                  SliverToBoxAdapter(
+                                    child: SizedBox(
+                                      height: MediaQuery.paddingOf(
+                                        context,
+                                      ).bottom,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
+                ),
+                VerticalDivider(
+                  width: 1,
+                  thickness: 1,
+                  color: cs.outlineVariant.withAlpha(50),
+                ),
+                Expanded(
+                  flex: 4,
                   child: Scaffold(
                     backgroundColor: sp.useGradientBackground
                         ? Colors.transparent
@@ -640,256 +716,215 @@ class SettingsPageState extends State<SettingsPage> {
                               ),
                             ),
                           ),
-                        ScrollConfiguration(
-                          behavior: const _NoScrollbarBehavior(),
-                          child: CustomScrollView(
-                            key: const PageStorageKey<String>(
-                              'settings-master-scroll',
-                            ),
-                            slivers: [
-                              CustomAppBar(
-                                title: tr('settings'),
-                                matchGradientBackground:
-                                    sp.useGradientBackground,
-                                progressiveBlurOverlayColor: isLargeScreen
-                                    ? cs.surface.withValues(alpha: 0.72)
-                                    : null,
-                              ),
-                              SliverPadding(
-                                padding: const EdgeInsets.all(16),
-                                sliver: SliverList(
-                                  delegate: SliverChildBuilderDelegate(
-                                    (context, index) => buildCategoryTile(
-                                      categoriesList[index],
-                                    ),
-                                    childCount: categoriesList.length,
-                                  ),
-                                ),
-                              ),
-                              if (sp.progressiveBlurEnabled)
-                                SliverToBoxAdapter(
-                                  child: SizedBox(
-                                    height: MediaQuery.paddingOf(
-                                      context,
-                                    ).bottom,
-                                  ),
-                                ),
-                            ],
+                        CustomScrollView(
+                          key: ValueKey(
+                            'settings-detail-${selectedCategoryObj.key}',
                           ),
+                          slivers: [
+                            // No top app bar in the detail pane: it carried no
+                            // title, so it only added a blank frosted strip. The
+                            // status-bar inset is preserved with SliverSafeArea so
+                            // the content doesn't slide under the system bar.
+                            SliverSafeArea(
+                              top: true,
+                              bottom: false,
+                              sliver: SliverPadding(
+                                padding: const EdgeInsets.all(16),
+                                sliver: SliverToBoxAdapter(
+                                  child: selectedCategoryObj.widget,
+                                ),
+                              ),
+                            ),
+                            if (sp.progressiveBlurEnabled)
+                              SliverToBoxAdapter(
+                                child: SizedBox(
+                                  height: MediaQuery.paddingOf(context).bottom,
+                                ),
+                              ),
+                          ],
                         ),
                       ],
                     ),
                   ),
                 ),
-              ),
-              VerticalDivider(
-                width: 1,
-                thickness: 1,
-                color: cs.outlineVariant.withAlpha(50),
-              ),
-              Expanded(
-                flex: 4,
-                child: Scaffold(
-                  backgroundColor: sp.useGradientBackground
-                      ? Colors.transparent
-                      : cs.surface,
-                  body: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      if (sp.useGradientBackground)
-                        Positioned.fill(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              gradient: cs.schemePageBackgroundGradient,
-                            ),
-                          ),
-                        ),
-                      CustomScrollView(
-                        key: ValueKey(
-                          'settings-detail-${selectedCategoryObj.key}',
-                        ),
-                        slivers: [
-                          // No top app bar in the detail pane: it carried no
-                          // title, so it only added a blank frosted strip. The
-                          // status-bar inset is preserved with SliverSafeArea so
-                          // the content doesn't slide under the system bar.
-                          SliverSafeArea(
-                            top: true,
-                            bottom: false,
-                            sliver: SliverPadding(
-                              padding: const EdgeInsets.all(16),
-                              sliver: SliverToBoxAdapter(
-                                child: selectedCategoryObj.widget,
-                              ),
-                            ),
-                          ),
-                          if (sp.progressiveBlurEnabled)
-                            SliverToBoxAdapter(
-                              child: SizedBox(
-                                height: MediaQuery.paddingOf(context).bottom,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       );
     }
 
-    return Scaffold(
-      backgroundColor: cs.surface,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (sp.useGradientBackground)
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: cs.schemePageBackgroundGradient,
+    return Theme(
+      data: Theme.of(context).copyWith(
+        listTileTheme: const ListTileThemeData(
+          contentPadding: EdgeInsets.only(left: 16, right: 8),
+        ),
+      ),
+      child: Scaffold(
+        backgroundColor: cs.surface,
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (sp.useGradientBackground)
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: cs.schemePageBackgroundGradient,
+                  ),
                 ),
               ),
-            ),
-          CustomScrollView(
-            scrollCacheExtent: const ScrollCacheExtent.pixels(1600),
-            key: const PageStorageKey<String>('settings-tab-scroll'),
-            slivers: <Widget>[
-              CustomAppBar(
-                title: tr('settings'),
-                matchGradientBackground: sp.useGradientBackground,
-                actions: [
-                  ValueListenableBuilder<Map<String, bool>>(
-                    valueListenable: _expandedSettingsSections,
-                    builder: (context, expandedState, _) {
-                      final bool allSettingsSectionsExpanded =
-                          visibleSettingsSectionKeys.every(
-                            (key) => _sectionExpanded(expandedState, key),
-                          );
-                      return IconButton(
-                        tooltip: allSettingsSectionsExpanded
-                            ? tr('collapseAll')
-                            : tr('expandAll'),
-                        icon: Icon(
-                          allSettingsSectionsExpanded
-                              ? Icons.unfold_less_rounded
-                              : Icons.unfold_more_rounded,
-                        ),
-                        onPressed: () {
-                          setAllSettingsSectionsExpanded(
-                            !allSettingsSectionsExpanded,
-                          );
-                        },
-                      );
-                    },
-                  ),
-                ],
-              ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: sp.prefs == null
-                      ? const SizedBox()
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // ── Updates ───────────────────────────────────
-                            sectionHeader(
-                              tr('updates'),
-                              Icons.update_rounded,
-                              'updates',
-                            ),
-                            collapsibleCard(
-                              'updates',
-                              _UpdatesSection(
-                                cs: cs,
-                                androidInfo: _androidInfo,
-                              ),
-                            ),
-                            // ── Source-specific ───────────────────────────
-                            if (sourceProvider.sourceTemplates.any(
-                              (s) => s.sourceConfigSettingFormItems.isNotEmpty,
-                            )) ...[
+            CustomScrollView(
+              scrollCacheExtent: const ScrollCacheExtent.pixels(1600),
+              key: const PageStorageKey<String>('settings-tab-scroll'),
+              slivers: <Widget>[
+                CustomAppBar(
+                  title: tr('settings'),
+                  matchGradientBackground: sp.useGradientBackground,
+                  actions: [
+                    ValueListenableBuilder<Map<String, bool>>(
+                      valueListenable: _expandedSettingsSections,
+                      builder: (context, expandedState, _) {
+                        final bool allSettingsSectionsExpanded =
+                            visibleSettingsSectionKeys.every(
+                              (key) => _sectionExpanded(expandedState, key),
+                            );
+                        return IconButton(
+                          tooltip: allSettingsSectionsExpanded
+                              ? tr('collapseAll')
+                              : tr('expandAll'),
+                          icon: Icon(
+                            allSettingsSectionsExpanded
+                                ? Icons.unfold_less_rounded
+                                : Icons.unfold_more_rounded,
+                          ),
+                          onPressed: () {
+                            setAllSettingsSectionsExpanded(
+                              !allSettingsSectionsExpanded,
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ],
+                ),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: sp.prefs == null
+                        ? const SizedBox()
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // ── Updates ───────────────────────────────────
                               sectionHeader(
-                                tr('sourceSpecific'),
-                                Icons.dns_rounded,
-                                'sourceSpecific',
+                                tr('updates'),
+                                Icons.update_rounded,
+                                'updates',
                               ),
                               collapsibleCard(
-                                'sourceSpecific',
-                                _SourceSpecificSection(key: _sourceSpecificKey),
+                                'updates',
+                                _UpdatesSection(
+                                  cs: cs,
+                                  androidInfo: _androidInfo,
+                                ),
                               ),
+                              // ── Integrations ─────────────────────────────
+                              sectionHeader(
+                                tr('integrations'),
+                                Icons.extension_rounded,
+                                'integrations',
+                              ),
+                              collapsibleCard(
+                                'integrations',
+                                const _IntegrationsSection(),
+                              ),
+                              // ── Warnings ─────────────────────────────────
+                              sectionHeader(
+                                tr('warnings'),
+                                Icons.warning_rounded,
+                                'warnings',
+                              ),
+                              collapsibleCard(
+                                'warnings',
+                                const _WarningsSection(),
+                              ),
+                              // ── Source-specific ───────────────────────────
+                              if (sourceProvider.sourceTemplates.any(
+                                (s) =>
+                                    s.sourceConfigSettingFormItems.isNotEmpty,
+                              )) ...[
+                                sectionHeader(
+                                  tr('sourceSpecific'),
+                                  Icons.dns_rounded,
+                                  'sourceSpecific',
+                                ),
+                                collapsibleCard(
+                                  'sourceSpecific',
+                                  _SourceSpecificSection(
+                                    key: _sourceSpecificKey,
+                                  ),
+                                ),
+                              ],
+                              // ── Themes ───────────────────────────────────
+                              sectionHeader(
+                                tr('settingsThemesSection'),
+                                Icons.palette_rounded,
+                                'themes',
+                              ),
+                              collapsibleCard(
+                                'themes',
+                                _ThemesSettingsSection(
+                                  androidInfoFuture: _androidInfo,
+                                ),
+                              ),
+                              // ── Appearance ────────────────────────────────
+                              sectionHeader(
+                                tr('appearance'),
+                                Icons.tune_rounded,
+                                'appearance',
+                              ),
+                              collapsibleCard(
+                                'appearance',
+                                _AppearanceSection(androidInfo: _androidInfo),
+                              ),
+                              // ── Interaction ──────────────────────────────
+                              sectionHeader(
+                                tr('interaction'),
+                                Icons.touch_app_rounded,
+                                'interaction',
+                              ),
+                              collapsibleCard(
+                                'interaction',
+                                const _InteractionSection(),
+                              ),
+                              // ── Categories ───────────────────────────────
+                              sectionHeader(
+                                tr('categories'),
+                                Icons.label_rounded,
+                                'categories',
+                              ),
+                              collapsibleCard(
+                                'categories',
+                                const _CategoriesSection(),
+                              ),
+                              aboutSectionHeader(),
+                              settingsCard([
+                                AboutSectionContent(colorScheme: cs),
+                              ]),
                             ],
-                            // ── Themes ───────────────────────────────────
-                            sectionHeader(
-                              tr('settingsThemesSection'),
-                              Icons.palette_rounded,
-                              'themes',
-                            ),
-                            collapsibleCard(
-                              'themes',
-                              _ThemesSettingsSection(
-                                androidInfoFuture: _androidInfo,
-                              ),
-                            ),
-                            // ── Appearance ────────────────────────────────
-                            sectionHeader(
-                              tr('appearance'),
-                              Icons.tune_rounded,
-                              'appearance',
-                            ),
-                            collapsibleCard(
-                              'appearance',
-                              _AppearanceSection(androidInfo: _androidInfo),
-                            ),
-                            // ── Warnings ─────────────────────────────────
-                            sectionHeader(
-                              tr('warnings'),
-                              Icons.warning_rounded,
-                              'warnings',
-                            ),
-                            collapsibleCard(
-                              'warnings',
-                              const _WarningsSection(),
-                            ),
-                            // ── Interaction ──────────────────────────────
-                            sectionHeader(
-                              tr('interaction'),
-                              Icons.touch_app_rounded,
-                              'interaction',
-                            ),
-                            collapsibleCard(
-                              'interaction',
-                              const _InteractionSection(),
-                            ),
-                            // ── Categories ───────────────────────────────
-                            sectionHeader(
-                              tr('categories'),
-                              Icons.label_rounded,
-                              'categories',
-                            ),
-                            collapsibleCard(
-                              'categories',
-                              const _CategoriesSection(),
-                            ),
-                            aboutSectionHeader(),
-                            settingsCard([
-                              AboutSectionContent(colorScheme: cs),
-                            ]),
-                          ],
-                        ),
+                          ),
+                  ),
                 ),
-              ),
-              if (sp.progressiveBlurEnabled)
-                SliverToBoxAdapter(
-                  child: SizedBox(height: MediaQuery.paddingOf(context).bottom),
-                ),
-            ],
-          ),
-        ],
+                if (sp.progressiveBlurEnabled)
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: MediaQuery.paddingOf(context).bottom,
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -956,7 +991,6 @@ class _UpdatesSection extends StatelessWidget {
     sp.onlyCheckInstalledOrTrackOnlyApps,
     sp.removeOnExternalUninstall,
     sp.parallelDownloads,
-    sp.beforeNewInstallsShareToAppVerifier,
     sp.installerMode,
     sp.shizukuPretendToBeGooglePlay,
     sp.includePrereleasesByDefault,
@@ -1077,37 +1111,6 @@ class _UpdatesSection extends StatelessWidget {
         value: sp.parallelDownloads,
         onChanged: (bool value) => sp.parallelDownloads = value,
       ),
-      ListTile(
-        title: Text(tr('beforeNewInstallsShareToAppVerifier')),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              tooltip: tr('about'),
-              onPressed: () {
-                launchUrlString(
-                  'https://github.com/soupslurpr/AppVerifier',
-                  mode: LaunchMode.externalApplication,
-                );
-              },
-              style: IconButton.styleFrom(
-                foregroundColor: cs.onSurfaceVariant,
-                iconSize: 20,
-                padding: const EdgeInsets.all(4),
-                minimumSize: const Size(32, 32),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.compact,
-              ),
-              icon: const Icon(Icons.open_in_new_rounded),
-            ),
-            Switch(
-              value: sp.beforeNewInstallsShareToAppVerifier,
-              onChanged: (bool value) =>
-                  sp.beforeNewInstallsShareToAppVerifier = value,
-            ),
-          ],
-        ),
-      ),
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
         child: Column(
@@ -1212,12 +1215,20 @@ class _UpdateIntervalSlider extends StatefulWidget {
 }
 
 class _UpdateIntervalSliderState extends State<_UpdateIntervalSlider> {
-  // Non-null only while the user is actively dragging; otherwise the displayed
-  // value comes from the provider (so external changes propagate and the
-  // committed value is reflected once onChangeEnd clears it). context.select
-  // MUST be read in build(), not didChangeDependencies, or Provider asserts
-  // ("Tried to use context.select outside of the build method").
   double? _dragValue;
+  late final FocusNode _sliderFocusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _sliderFocusNode = FocusNode(canRequestFocus: false, skipTraversal: true);
+  }
+
+  @override
+  void dispose() {
+    _sliderFocusNode.dispose();
+    super.dispose();
+  }
 
   int _intervalForVal(double val) {
     final int index = val.round().clamp(
@@ -1252,6 +1263,7 @@ class _UpdateIntervalSliderState extends State<_UpdateIntervalSlider> {
           (s) => s.updateIntervalSliderVal,
         );
     final String label = _labelForVal(sliderVal);
+    final isTV = context.read<SettingsProvider>().isTV;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
       child: Row(
@@ -1272,43 +1284,60 @@ class _UpdateIntervalSliderState extends State<_UpdateIntervalSlider> {
                     ],
                   ),
                 ),
-                SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 16,
-                    trackShape: const _GappedTrackShape(),
-                    thumbShape: const _VerticalBarThumbShape(),
-                    tickMarkShape: const RoundSliderTickMarkShape(
-                      tickMarkRadius: 3,
+                TVSliderWrapper(
+                  value: sliderVal,
+                  min: 0,
+                  max: SettingsPageState.updateIntervalNodes.length.toDouble(),
+                  divisions: SettingsPageState.updateIntervalNodes.length,
+                  onChanged: (double value) {
+                    setState(() => _dragValue = value);
+                  },
+                  onChangeEnd: (double value) {
+                    final SettingsProvider sp = context
+                        .read<SettingsProvider>();
+                    sp.updateIntervalSliderVal = value;
+                    sp.updateInterval = _intervalForVal(value);
+                    setState(() => _dragValue = null);
+                  },
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 16,
+                      trackShape: const _GappedTrackShape(),
+                      thumbShape: const _VerticalBarThumbShape(),
+                      tickMarkShape: const RoundSliderTickMarkShape(
+                        tickMarkRadius: 3,
+                      ),
+                      activeTickMarkColor: Theme.of(
+                        context,
+                      ).colorScheme.onPrimary,
+                      inactiveTickMarkColor: Theme.of(
+                        context,
+                      ).colorScheme.primary,
+                      overlayShape: const RoundSliderOverlayShape(
+                        overlayRadius: 20,
+                      ),
                     ),
-                    activeTickMarkColor: Theme.of(
-                      context,
-                    ).colorScheme.onPrimary,
-                    inactiveTickMarkColor: Theme.of(
-                      context,
-                    ).colorScheme.primary,
-                    overlayShape: const RoundSliderOverlayShape(
-                      overlayRadius: 20,
+                    child: Slider(
+                      focusNode: isTV ? _sliderFocusNode : null,
+                      value: sliderVal.clamp(
+                        0,
+                        SettingsPageState.updateIntervalNodes.length.toDouble(),
+                      ),
+                      max: SettingsPageState.updateIntervalNodes.length
+                          .toDouble(),
+                      divisions: SettingsPageState.updateIntervalNodes.length,
+                      label: label,
+                      onChanged: (double value) {
+                        setState(() => _dragValue = value);
+                      },
+                      onChangeEnd: (double value) {
+                        final SettingsProvider sp = context
+                            .read<SettingsProvider>();
+                        sp.updateIntervalSliderVal = value;
+                        sp.updateInterval = _intervalForVal(value);
+                        setState(() => _dragValue = null);
+                      },
                     ),
-                  ),
-                  child: Slider(
-                    value: sliderVal.clamp(
-                      0,
-                      SettingsPageState.updateIntervalNodes.length.toDouble(),
-                    ),
-                    max: SettingsPageState.updateIntervalNodes.length
-                        .toDouble(),
-                    divisions: SettingsPageState.updateIntervalNodes.length,
-                    label: label,
-                    onChanged: (double value) {
-                      setState(() => _dragValue = value);
-                    },
-                    onChangeEnd: (double value) {
-                      final SettingsProvider sp = context
-                          .read<SettingsProvider>();
-                      sp.updateIntervalSliderVal = value;
-                      sp.updateInterval = _intervalForVal(value);
-                      setState(() => _dragValue = null);
-                    },
                   ),
                 ),
               ],
@@ -1351,7 +1380,8 @@ class _SourceSpecificSectionState extends State<_SourceSpecificSection> {
 
   void discardChanges() {
     final SettingsProvider sp = context.read<SettingsProvider>();
-    _githubPatController.text = sp.getSettingString(GitHub.githubCredsKey) ?? '';
+    _githubPatController.text =
+        sp.getSettingString(GitHub.githubCredsKey) ?? '';
     _gitlabPatController.text = sp.getSettingString('gitlab-creds') ?? '';
     setState(() {});
   }
@@ -1435,11 +1465,17 @@ class _SourceSpecificSectionState extends State<_SourceSpecificSection> {
                   const SizedBox(width: 8),
                   Builder(
                     builder: (context) {
-                      final String enteredText = _githubPatController.text.trim();
-                      final String savedText = sp.getSettingString(GitHub.githubCredsKey) ?? '';
+                      final String enteredText = _githubPatController.text
+                          .trim();
+                      final String savedText =
+                          sp.getSettingString(GitHub.githubCredsKey) ?? '';
                       final bool isDirty = enteredText != savedText;
-                      final bool isValidated = GitHub.hasValidatedPAT(enteredText, sp);
-                      final bool buttonIsEnabled = isDirty || (enteredText.isNotEmpty && !isValidated);
+                      final bool isValidated = GitHub.hasValidatedPAT(
+                        enteredText,
+                        sp,
+                      );
+                      final bool buttonIsEnabled =
+                          isDirty || (enteredText.isNotEmpty && !isValidated);
 
                       return SizedBox(
                         width: 48,
@@ -1451,53 +1487,89 @@ class _SourceSpecificSectionState extends State<_SourceSpecificSection> {
                                   height: 20,
                                   child: ExpressiveLoadingIndicator(
                                     color: cs.primary,
-                                    constraints: const BoxConstraints.tightFor(width: 20, height: 20),
+                                    constraints: const BoxConstraints.tightFor(
+                                      width: 20,
+                                      height: 20,
+                                    ),
                                   ),
                                 )
                               : (GitHub.hasValidatedPAT(enteredText, sp)
-                                  ? Tooltip(
-                                      message: tr('githubPATValidated'),
-                                      child: Icon(
-                                        Icons.verified_user,
-                                        color: cs.primary,
-                                      ),
-                                    )
-                                  : IconButton.filledTonal(
-                                      icon: const Icon(Icons.save_rounded),
-                                      onPressed: buttonIsEnabled
-                                          ? () async {
-                                              FocusManager.instance.primaryFocus?.unfocus();
-                                              if (enteredText.isEmpty) {
-                                                sp.setSettingString(GitHub.githubCredsKey, '');
-                                                GitHub.clearPATValidation(sp);
-                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                  SnackBar(content: Text(tr('dismiss'))),
-                                                );
-                                                setState(() {});
-                                                return;
+                                    ? Tooltip(
+                                        message: tr('githubPATValidated'),
+                                        child: Icon(
+                                          Icons.verified_user,
+                                          color: cs.primary,
+                                        ),
+                                      )
+                                    : IconButton.filledTonal(
+                                        icon: const Icon(Icons.save_rounded),
+                                        onPressed: buttonIsEnabled
+                                            ? () async {
+                                                FocusManager
+                                                    .instance
+                                                    .primaryFocus
+                                                    ?.unfocus();
+                                                if (enteredText.isEmpty) {
+                                                  sp.setSettingString(
+                                                    GitHub.githubCredsKey,
+                                                    '',
+                                                  );
+                                                  GitHub.clearPATValidation(sp);
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(
+                                                        tr('dismiss'),
+                                                      ),
+                                                    ),
+                                                  );
+                                                  setState(() {});
+                                                  return;
+                                                }
+                                                setState(() {
+                                                  _githubChecking = true;
+                                                });
+                                                final String? error =
+                                                    await GitHub.validatePAT(
+                                                      enteredText,
+                                                    );
+                                                if (!context.mounted) return;
+                                                setState(() {
+                                                  _githubChecking = false;
+                                                });
+                                                if (error == null) {
+                                                  sp.setSettingString(
+                                                    GitHub.githubCredsKey,
+                                                    enteredText,
+                                                  );
+                                                  GitHub.storePATValidation(
+                                                    enteredText,
+                                                    sp,
+                                                  );
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(
+                                                        tr(
+                                                          'githubPATValidated',
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  );
+                                                } else {
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(error),
+                                                    ),
+                                                  );
+                                                }
                                               }
-                                              setState(() {
-                                                _githubChecking = true;
-                                              });
-                                              final String? error = await GitHub.validatePAT(enteredText);
-                                              if (!mounted) return;
-                                              setState(() {
-                                                _githubChecking = false;
-                                              });
-                                              if (error == null) {
-                                                sp.setSettingString(GitHub.githubCredsKey, enteredText);
-                                                GitHub.storePATValidation(enteredText, sp);
-                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                  SnackBar(content: Text(tr('githubPATValidated'))),
-                                                );
-                                              } else {
-                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                  SnackBar(content: Text(error)),
-                                                );
-                                              }
-                                            }
-                                          : null,
-                                    )),
+                                            : null,
+                                      )),
                         ),
                       );
                     },
@@ -1527,7 +1599,9 @@ class _SourceSpecificSectionState extends State<_SourceSpecificSection> {
               const SizedBox(height: 8),
               SwitchListTile(
                 title: Text(tr('GHReqPrefixUseToken')),
-                value: sp.getSettingBool(GitHub.githubReqPrefixUseTokenKey) ?? false,
+                value:
+                    sp.getSettingBool(GitHub.githubReqPrefixUseTokenKey) ??
+                    false,
                 onChanged: (val) {
                   sp.setSettingBool(GitHub.githubReqPrefixUseTokenKey, val);
                 },
@@ -1568,11 +1642,17 @@ class _SourceSpecificSectionState extends State<_SourceSpecificSection> {
                   const SizedBox(width: 8),
                   Builder(
                     builder: (context) {
-                      final String enteredText = _gitlabPatController.text.trim();
-                      final String savedText = sp.getSettingString('gitlab-creds') ?? '';
+                      final String enteredText = _gitlabPatController.text
+                          .trim();
+                      final String savedText =
+                          sp.getSettingString('gitlab-creds') ?? '';
                       final bool isDirty = enteredText != savedText;
-                      final bool isValidated = GitLab.hasValidatedPAT(enteredText, sp);
-                      final bool buttonIsEnabled = isDirty || (enteredText.isNotEmpty && !isValidated);
+                      final bool isValidated = GitLab.hasValidatedPAT(
+                        enteredText,
+                        sp,
+                      );
+                      final bool buttonIsEnabled =
+                          isDirty || (enteredText.isNotEmpty && !isValidated);
 
                       return SizedBox(
                         width: 48,
@@ -1584,53 +1664,89 @@ class _SourceSpecificSectionState extends State<_SourceSpecificSection> {
                                   height: 20,
                                   child: ExpressiveLoadingIndicator(
                                     color: cs.primary,
-                                    constraints: const BoxConstraints.tightFor(width: 20, height: 20),
+                                    constraints: const BoxConstraints.tightFor(
+                                      width: 20,
+                                      height: 20,
+                                    ),
                                   ),
                                 )
                               : (GitLab.hasValidatedPAT(enteredText, sp)
-                                  ? Tooltip(
-                                      message: tr('gitlabPATValidated'),
-                                      child: Icon(
-                                        Icons.verified_user,
-                                        color: cs.primary,
-                                      ),
-                                    )
-                                  : IconButton.filledTonal(
-                                      icon: const Icon(Icons.save_rounded),
-                                      onPressed: buttonIsEnabled
-                                          ? () async {
-                                              FocusManager.instance.primaryFocus?.unfocus();
-                                              if (enteredText.isEmpty) {
-                                                sp.setSettingString('gitlab-creds', '');
-                                                GitLab.clearPATValidation(sp);
-                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                  SnackBar(content: Text(tr('dismiss'))),
-                                                );
-                                                setState(() {});
-                                                return;
+                                    ? Tooltip(
+                                        message: tr('gitlabPATValidated'),
+                                        child: Icon(
+                                          Icons.verified_user,
+                                          color: cs.primary,
+                                        ),
+                                      )
+                                    : IconButton.filledTonal(
+                                        icon: const Icon(Icons.save_rounded),
+                                        onPressed: buttonIsEnabled
+                                            ? () async {
+                                                FocusManager
+                                                    .instance
+                                                    .primaryFocus
+                                                    ?.unfocus();
+                                                if (enteredText.isEmpty) {
+                                                  sp.setSettingString(
+                                                    'gitlab-creds',
+                                                    '',
+                                                  );
+                                                  GitLab.clearPATValidation(sp);
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(
+                                                        tr('dismiss'),
+                                                      ),
+                                                    ),
+                                                  );
+                                                  setState(() {});
+                                                  return;
+                                                }
+                                                setState(() {
+                                                  _gitlabChecking = true;
+                                                });
+                                                final String? error =
+                                                    await GitLab.validatePAT(
+                                                      enteredText,
+                                                    );
+                                                if (!context.mounted) return;
+                                                setState(() {
+                                                  _gitlabChecking = false;
+                                                });
+                                                if (error == null) {
+                                                  sp.setSettingString(
+                                                    'gitlab-creds',
+                                                    enteredText,
+                                                  );
+                                                  GitLab.storePATValidation(
+                                                    enteredText,
+                                                    sp,
+                                                  );
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(
+                                                        tr(
+                                                          'gitlabPATValidated',
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  );
+                                                } else {
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(error),
+                                                    ),
+                                                  );
+                                                }
                                               }
-                                              setState(() {
-                                                _gitlabChecking = true;
-                                              });
-                                              final String? error = await GitLab.validatePAT(enteredText);
-                                              if (!mounted) return;
-                                              setState(() {
-                                                _gitlabChecking = false;
-                                              });
-                                              if (error == null) {
-                                                sp.setSettingString('gitlab-creds', enteredText);
-                                                GitLab.storePATValidation(enteredText, sp);
-                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                  SnackBar(content: Text(tr('gitlabPATValidated'))),
-                                                );
-                                              } else {
-                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                  SnackBar(content: Text(error)),
-                                                );
-                                              }
-                                            }
-                                          : null,
-                                    )),
+                                            : null,
+                                      )),
                         ),
                       );
                     },
@@ -1807,10 +1923,20 @@ class _UiScaleSlider extends StatefulWidget {
 }
 
 class _UiScaleSliderState extends State<_UiScaleSlider> {
-  // See _UpdateIntervalSliderState: drag value overrides the provider value only
-  // while dragging; context.select is read in build(), never in
-  // didChangeDependencies.
   double? _dragValue;
+  late final FocusNode _sliderFocusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _sliderFocusNode = FocusNode(canRequestFocus: false, skipTraversal: true);
+  }
+
+  @override
+  void dispose() {
+    _sliderFocusNode.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1818,6 +1944,7 @@ class _UiScaleSliderState extends State<_UiScaleSlider> {
     final double value =
         _dragValue ??
         context.select<SettingsProvider, double>((s) => s.appUiScale);
+    final isTV = context.read<SettingsProvider>().isTV;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
       child: Row(
@@ -1838,40 +1965,58 @@ class _UiScaleSliderState extends State<_UiScaleSlider> {
                     ],
                   ),
                 ),
-                SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 16,
-                    trackShape: const _GappedTrackShape(),
-                    thumbShape: const _VerticalBarThumbShape(),
-                    tickMarkShape: const RoundSliderTickMarkShape(
-                      tickMarkRadius: 3,
+                TVSliderWrapper(
+                  value: value,
+                  min: SettingsProvider.appUiScaleMin,
+                  max: SettingsProvider.appUiScaleMax,
+                  divisions:
+                      ((SettingsProvider.appUiScaleMax -
+                                  SettingsProvider.appUiScaleMin) /
+                              0.05)
+                          .round(),
+                  onChanged: (double v) {
+                    setState(() => _dragValue = v);
+                  },
+                  onChangeEnd: (double v) {
+                    context.read<SettingsProvider>().appUiScale = v;
+                    setState(() => _dragValue = null);
+                  },
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 16,
+                      trackShape: const _GappedTrackShape(),
+                      thumbShape: const _VerticalBarThumbShape(),
+                      tickMarkShape: const RoundSliderTickMarkShape(
+                        tickMarkRadius: 3,
+                      ),
+                      activeTickMarkColor: cs.onPrimary,
+                      inactiveTickMarkColor: cs.primary,
+                      overlayShape: const RoundSliderOverlayShape(
+                        overlayRadius: 20,
+                      ),
                     ),
-                    activeTickMarkColor: cs.onPrimary,
-                    inactiveTickMarkColor: cs.primary,
-                    overlayShape: const RoundSliderOverlayShape(
-                      overlayRadius: 20,
+                    child: Slider(
+                      focusNode: isTV ? _sliderFocusNode : null,
+                      min: SettingsProvider.appUiScaleMin,
+                      max: SettingsProvider.appUiScaleMax,
+                      divisions:
+                          ((SettingsProvider.appUiScaleMax -
+                                      SettingsProvider.appUiScaleMin) /
+                                  0.05)
+                              .round(),
+                      label: '${(value * 100).round()}%',
+                      value: value.clamp(
+                        SettingsProvider.appUiScaleMin,
+                        SettingsProvider.appUiScaleMax,
+                      ),
+                      onChanged: (double v) {
+                        setState(() => _dragValue = v);
+                      },
+                      onChangeEnd: (double v) {
+                        context.read<SettingsProvider>().appUiScale = v;
+                        setState(() => _dragValue = null);
+                      },
                     ),
-                  ),
-                  child: Slider(
-                    min: SettingsProvider.appUiScaleMin,
-                    max: SettingsProvider.appUiScaleMax,
-                    divisions:
-                        ((SettingsProvider.appUiScaleMax -
-                                    SettingsProvider.appUiScaleMin) /
-                                0.05)
-                            .round(),
-                    label: '${(value * 100).round()}%',
-                    value: value.clamp(
-                      SettingsProvider.appUiScaleMin,
-                      SettingsProvider.appUiScaleMax,
-                    ),
-                    onChanged: (double v) {
-                      setState(() => _dragValue = v);
-                    },
-                    onChangeEnd: (double v) {
-                      context.read<SettingsProvider>().appUiScale = v;
-                      setState(() => _dragValue = null);
-                    },
                   ),
                 ),
               ],
@@ -1891,10 +2036,20 @@ class _CardCornerScaleSlider extends StatefulWidget {
 }
 
 class _CardCornerScaleSliderState extends State<_CardCornerScaleSlider> {
-  // See _UpdateIntervalSliderState: drag value overrides the provider value only
-  // while dragging; context.select is read in build(), never in
-  // didChangeDependencies.
   double? _dragValue;
+  late final FocusNode _sliderFocusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _sliderFocusNode = FocusNode(canRequestFocus: false, skipTraversal: true);
+  }
+
+  @override
+  void dispose() {
+    _sliderFocusNode.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1902,6 +2057,7 @@ class _CardCornerScaleSliderState extends State<_CardCornerScaleSlider> {
     final double value =
         _dragValue ??
         context.select<SettingsProvider, double>((s) => s.cardCornerScale);
+    final isTV = context.read<SettingsProvider>().isTV;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
       child: Row(
@@ -1922,40 +2078,58 @@ class _CardCornerScaleSliderState extends State<_CardCornerScaleSlider> {
                     ],
                   ),
                 ),
-                SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 16,
-                    trackShape: const _GappedTrackShape(),
-                    thumbShape: const _VerticalBarThumbShape(),
-                    tickMarkShape: const RoundSliderTickMarkShape(
-                      tickMarkRadius: 3,
+                TVSliderWrapper(
+                  value: value,
+                  min: SettingsProvider.cardCornerScaleMin,
+                  max: SettingsProvider.cardCornerScaleMax,
+                  divisions:
+                      ((SettingsProvider.cardCornerScaleMax -
+                                  SettingsProvider.cardCornerScaleMin) /
+                              0.10)
+                          .round(),
+                  onChanged: (double v) {
+                    setState(() => _dragValue = v);
+                  },
+                  onChangeEnd: (double v) {
+                    context.read<SettingsProvider>().cardCornerScale = v;
+                    setState(() => _dragValue = null);
+                  },
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 16,
+                      trackShape: const _GappedTrackShape(),
+                      thumbShape: const _VerticalBarThumbShape(),
+                      tickMarkShape: const RoundSliderTickMarkShape(
+                        tickMarkRadius: 3,
+                      ),
+                      activeTickMarkColor: cs.onPrimary,
+                      inactiveTickMarkColor: cs.primary,
+                      overlayShape: const RoundSliderOverlayShape(
+                        overlayRadius: 20,
+                      ),
                     ),
-                    activeTickMarkColor: cs.onPrimary,
-                    inactiveTickMarkColor: cs.primary,
-                    overlayShape: const RoundSliderOverlayShape(
-                      overlayRadius: 20,
+                    child: Slider(
+                      focusNode: isTV ? _sliderFocusNode : null,
+                      min: SettingsProvider.cardCornerScaleMin,
+                      max: SettingsProvider.cardCornerScaleMax,
+                      divisions:
+                          ((SettingsProvider.cardCornerScaleMax -
+                                      SettingsProvider.cardCornerScaleMin) /
+                                  0.10)
+                              .round(),
+                      label: '${(value * 100).round()}%',
+                      value: value.clamp(
+                        SettingsProvider.cardCornerScaleMin,
+                        SettingsProvider.cardCornerScaleMax,
+                      ),
+                      onChanged: (double v) {
+                        setState(() => _dragValue = v);
+                      },
+                      onChangeEnd: (double v) {
+                        context.read<SettingsProvider>().cardCornerScale = v;
+                        setState(() => _dragValue = null);
+                      },
                     ),
-                  ),
-                  child: Slider(
-                    min: SettingsProvider.cardCornerScaleMin,
-                    max: SettingsProvider.cardCornerScaleMax,
-                    divisions:
-                        ((SettingsProvider.cardCornerScaleMax -
-                                    SettingsProvider.cardCornerScaleMin) /
-                                0.10)
-                            .round(),
-                    label: '${(value * 100).round()}%',
-                    value: value.clamp(
-                      SettingsProvider.cardCornerScaleMin,
-                      SettingsProvider.cardCornerScaleMax,
-                    ),
-                    onChanged: (double v) {
-                      setState(() => _dragValue = v);
-                    },
-                    onChangeEnd: (double v) {
-                      context.read<SettingsProvider>().cardCornerScale = v;
-                      setState(() => _dragValue = null);
-                    },
                   ),
                 ),
               ],
@@ -2103,6 +2277,195 @@ class _InteractionSection extends StatelessWidget {
   }
 }
 
+class _IntegrationsSection extends StatefulWidget {
+  const _IntegrationsSection();
+
+  @override
+  State<_IntegrationsSection> createState() => _IntegrationsSectionState();
+}
+
+class _IntegrationsSectionState extends State<_IntegrationsSection> {
+  bool _appManagerInstalled = false;
+  bool _appVerifierInstalled = false;
+  bool _letMeDowngradeInstalled = false;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkInstalledApps();
+  }
+
+  Future<void> _checkInstalledApps() async {
+    final results = await Future.wait([
+      getInstalledInfo('io.github.muntashirakon.AppManager'),
+      getInstalledInfo('dev.soupslurpr.appverifier'),
+      getInstalledInfo('com.berdik.letmedowngrade'),
+    ]);
+    if (mounted) {
+      setState(() {
+        _appManagerInstalled = results[0] != null;
+        _appVerifierInstalled = results[1] != null;
+        _letMeDowngradeInstalled = results[2] != null;
+        _loading = false;
+      });
+    }
+  }
+
+  static int _integrationsSettingsHash(SettingsProvider sp) => Object.hash(
+    sp.openAppInfoInAppManager,
+    sp.beforeNewInstallsShareToAppVerifier,
+    sp.enableLetMeDowngrade,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    context.select<SettingsProvider, int>(_integrationsSettingsHash);
+    final SettingsProvider sp = context.read<SettingsProvider>();
+    final ColorScheme cs = Theme.of(context).colorScheme;
+
+    return m3eExpressiveSettingsCard(
+      context: context,
+      colorScheme: cs,
+      items: [
+        ListTile(
+          title: Text(
+            tr('openAppInfoInAppManager'),
+            style: TextStyle(
+              color: _loading
+                  ? cs.onSurface.withValues(alpha: 0.38)
+                  : _appManagerInstalled
+                  ? null
+                  : cs.onSurface.withValues(alpha: 0.38),
+            ),
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: tr('about'),
+                onPressed: () {
+                  launchUrlString(
+                    tr('aboutAppManagerUrl'),
+                    mode: LaunchMode.externalApplication,
+                  );
+                },
+                style: IconButton.styleFrom(
+                  foregroundColor: cs.onSurfaceVariant,
+                  iconSize: 20,
+                  padding: const EdgeInsets.all(4),
+                  minimumSize: const Size(32, 32),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                ),
+                icon: const Icon(Icons.open_in_new_rounded),
+              ),
+              Switch(
+                value:
+                    !_loading &&
+                    _appManagerInstalled &&
+                    sp.openAppInfoInAppManager,
+                onChanged: !_loading && _appManagerInstalled
+                    ? (bool value) => sp.openAppInfoInAppManager = value
+                    : null,
+              ),
+            ],
+          ),
+        ),
+        ListTile(
+          title: Text(
+            tr('beforeNewInstallsShareToAppVerifier'),
+            style: TextStyle(
+              color: _loading
+                  ? cs.onSurface.withValues(alpha: 0.38)
+                  : _appVerifierInstalled
+                  ? null
+                  : cs.onSurface.withValues(alpha: 0.38),
+            ),
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: tr('about'),
+                onPressed: () {
+                  launchUrlString(
+                    tr('aboutAppVerifierUrl'),
+                    mode: LaunchMode.externalApplication,
+                  );
+                },
+                style: IconButton.styleFrom(
+                  foregroundColor: cs.onSurfaceVariant,
+                  iconSize: 20,
+                  padding: const EdgeInsets.all(4),
+                  minimumSize: const Size(32, 32),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                ),
+                icon: const Icon(Icons.open_in_new_rounded),
+              ),
+              Switch(
+                value:
+                    !_loading &&
+                    _appVerifierInstalled &&
+                    sp.beforeNewInstallsShareToAppVerifier,
+                onChanged: !_loading && _appVerifierInstalled
+                    ? (bool value) =>
+                          sp.beforeNewInstallsShareToAppVerifier = value
+                    : null,
+              ),
+            ],
+          ),
+        ),
+        ListTile(
+          title: Text(
+            tr('enableLetMeDowngrade'),
+            style: TextStyle(
+              color: _loading
+                  ? cs.onSurface.withValues(alpha: 0.38)
+                  : _letMeDowngradeInstalled
+                  ? null
+                  : cs.onSurface.withValues(alpha: 0.38),
+            ),
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: tr('about'),
+                onPressed: () {
+                  launchUrlString(
+                    tr('aboutLetMeDowngradeUrl'),
+                    mode: LaunchMode.externalApplication,
+                  );
+                },
+                style: IconButton.styleFrom(
+                  foregroundColor: cs.onSurfaceVariant,
+                  iconSize: 20,
+                  padding: const EdgeInsets.all(4),
+                  minimumSize: const Size(32, 32),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                ),
+                icon: const Icon(Icons.open_in_new_rounded),
+              ),
+              Switch(
+                value:
+                    !_loading &&
+                    _letMeDowngradeInstalled &&
+                    sp.enableLetMeDowngrade,
+                onChanged: !_loading && _letMeDowngradeInstalled
+                    ? (bool value) => sp.enableLetMeDowngrade = value
+                    : null,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// Categories section — delegates to CategoryEditorSelector.
 class _CategoriesSection extends StatelessWidget {
   const _CategoriesSection();
@@ -2238,8 +2601,9 @@ class AboutSectionContent extends StatelessWidget {
                       child: FilledButton.tonalIcon(
                         style: _aboutSecondaryButtonStyle(colorScheme),
                         onPressed: () =>
-                            _shareAboutUrl(sp.sourceUrl, 'ObtainX'),
-                        onLongPress: () => _copyAboutUrl(context, sp.sourceUrl),
+                            _shareAboutUrl(_aboutObtainXWebsiteUrl, 'ObtainX'),
+                        onLongPress: () =>
+                            _copyAboutUrl(context, _aboutObtainXWebsiteUrl),
                         icon: const Icon(Icons.share_rounded),
                         label: Text(tr('share')),
                       ),
@@ -2271,6 +2635,7 @@ class AboutSectionContent extends StatelessWidget {
                       name: tr('aboutRememberName'),
                       tagline: tr('aboutRememberTagline'),
                       url: _aboutRememberUrl,
+                      appId: tr('aboutRememberPackageId'),
                     ),
                     const SizedBox(height: 10),
                     _AboutAppPromo(
@@ -2280,6 +2645,7 @@ class AboutSectionContent extends StatelessWidget {
                       name: tr('aboutFilePipeName'),
                       tagline: tr('aboutFilePipeTagline'),
                       url: _aboutFilePipeUrl,
+                      appId: tr('aboutFilePipePackageId'),
                     ),
                     const SizedBox(height: 8),
                     _AboutLegalLinks(colorScheme: colorScheme),
@@ -2441,6 +2807,7 @@ class _AboutAppPromo extends StatelessWidget {
     required this.name,
     required this.tagline,
     required this.url,
+    this.appId,
   });
 
   final ColorScheme colorScheme;
@@ -2449,6 +2816,7 @@ class _AboutAppPromo extends StatelessWidget {
   final String name;
   final String tagline;
   final String url;
+  final String? appId;
 
   @override
   Widget build(BuildContext context) {
@@ -2466,7 +2834,8 @@ class _AboutAppPromo extends StatelessWidget {
       shape: shape,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => _openAboutUrl(url),
+        onTap: () =>
+            appId != null ? _openPromoApp(appId!, url) : _openAboutUrl(url),
         onLongPress: () => _copyAboutUrl(context, url),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -2597,6 +2966,25 @@ class _AboutLinkSeparator extends StatelessWidget {
 
 Future<void> _openAboutUrl(String url) async {
   await launchUrlString(url, mode: LaunchMode.externalApplication);
+}
+
+Future<void> _openPromoApp(String appId, String webUrl) async {
+  if (AppDistribution.fdroid) {
+    try {
+      final String deepLink = 'fdroid.app:$appId';
+      final bool launched = await launchUrlString(
+        deepLink,
+        mode: LaunchMode.externalNonBrowserApplication,
+      );
+      if (!launched) {
+        await launchUrlString(webUrl, mode: LaunchMode.externalApplication);
+      }
+    } catch (_) {
+      await launchUrlString(webUrl, mode: LaunchMode.externalApplication);
+    }
+  } else {
+    await launchUrlString(webUrl, mode: LaunchMode.externalApplication);
+  }
 }
 
 Future<void> _copyAboutUrl(BuildContext context, String url) async {

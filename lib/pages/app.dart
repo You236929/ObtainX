@@ -291,7 +291,9 @@ int appPageSettingsRebuildToken(SettingsProvider settings) {
     settings.checkUpdateOnDetailPage,
     settings.highlightTouchTargets,
     settings.cardCornerScale,
-    Object.hashAll(settings.categories.entries.map((e) => '${e.key}=${e.value}')),
+    Object.hashAll(
+      settings.categories.entries.map((e) => '${e.key}=${e.value}'),
+    ),
   );
 }
 

@@ -23,7 +23,6 @@ import 'package:provider/provider.dart';
 import 'package:flutter/gestures.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 
-
 const double _bulkBottomActionGap = 8.0;
 const double _bulkBottomActionHorizontalPadding = 16.0;
 const double _bulkBottomActionMinimumSafePadding = 16.0;
@@ -1841,17 +1840,17 @@ class BulkAddWidgetState extends State<BulkAddWidget> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: metrics,
-          ),
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: metrics),
           if (_githubRateLimited) ...[
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 8.0),
               child: Divider(height: 1),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 8.0,
+                vertical: 4.0,
+              ),
               child: RichText(
                 textAlign: TextAlign.center,
                 text: TextSpan(
@@ -2375,7 +2374,8 @@ class BulkAddWidgetState extends State<BulkAddWidget> {
 
   void _showPatBottomSheet(BuildContext context) {
     final SettingsProvider settingsProvider = context.read<SettingsProvider>();
-    final String currentPat = settingsProvider.getSettingString(GitHub.githubCredsKey) ?? '';
+    final String currentPat =
+        settingsProvider.getSettingString(GitHub.githubCredsKey) ?? '';
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -2660,7 +2660,10 @@ class _GithubPatSheetState extends State<_GithubPatSheet> {
                 Center(
                   child: ExpressiveLoadingIndicator(
                     color: Theme.of(context).colorScheme.primary,
-                    constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+                    constraints: const BoxConstraints.tightFor(
+                      width: 32,
+                      height: 32,
+                    ),
                   ),
                 ),
               ],
@@ -2675,7 +2678,10 @@ class _GithubPatSheetState extends State<_GithubPatSheet> {
                     child: Text(_isSaved ? tr('close') : tr('cancel')),
                   ),
                   TextButton(
-                    onPressed: (_isValidating || _controller.text.trim().isEmpty || _isSaved)
+                    onPressed:
+                        (_isValidating ||
+                            _controller.text.trim().isEmpty ||
+                            _isSaved)
                         ? null
                         : () async {
                             setState(() {
@@ -2683,23 +2689,35 @@ class _GithubPatSheetState extends State<_GithubPatSheet> {
                               _validationError = null;
                             });
                             final String enteredText = _controller.text.trim();
-                            final String? error = await GitHub.validatePAT(enteredText);
-                            if (!mounted) return;
+                            final String? error = await GitHub.validatePAT(
+                              enteredText,
+                            );
+                            if (!context.mounted) return;
 
                             if (error == null) {
-                              widget.settingsProvider.setSettingString(GitHub.githubCredsKey, enteredText);
-                              GitHub.storePATValidation(enteredText, widget.settingsProvider);
-                              if (mounted) {
+                              widget.settingsProvider.setSettingString(
+                                GitHub.githubCredsKey,
+                                enteredText,
+                              );
+                              GitHub.storePATValidation(
+                                enteredText,
+                                widget.settingsProvider,
+                              );
+                              if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(tr('githubPATValidated'))),
-                                  );
+                                  SnackBar(
+                                    content: Text(tr('githubPATValidated')),
+                                  ),
+                                );
                               }
                               setState(() {
                                 _isValidating = false;
                                 _isSaved = true;
                               });
                             } else {
-                              GitHub.clearPATValidation(widget.settingsProvider);
+                              GitHub.clearPATValidation(
+                                widget.settingsProvider,
+                              );
                               setState(() {
                                 _isValidating = false;
                                 _validationError = error;
@@ -2709,10 +2727,13 @@ class _GithubPatSheetState extends State<_GithubPatSheet> {
                     child: Text(_isSaved ? tr('saved') : tr('save')),
                   ),
                   TextButton(
-                    onPressed: !GitHub.hasValidatedPAT(
-                      widget.settingsProvider.getSettingString(GitHub.githubCredsKey),
-                      widget.settingsProvider,
-                    )
+                    onPressed:
+                        !GitHub.hasValidatedPAT(
+                          widget.settingsProvider.getSettingString(
+                            GitHub.githubCredsKey,
+                          ),
+                          widget.settingsProvider,
+                        )
                         ? null
                         : () {
                             Navigator.of(context).pop();
@@ -2729,7 +2750,6 @@ class _GithubPatSheetState extends State<_GithubPatSheet> {
     );
   }
 }
-
 
 // [BulkM3LoadingIndicator] - the hand-rolled 5-dot staggered-scale animation
 // that used to live here - was replaced by [ExpressiveLoadingIndicator] from
