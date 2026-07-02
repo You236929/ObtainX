@@ -994,6 +994,7 @@ class _UpdatesSection extends StatelessWidget {
     sp.installerMode,
     sp.shizukuPretendToBeGooglePlay,
     sp.includePrereleasesByDefault,
+    sp.allowInsecureByDefault,
   );
 
   @override
