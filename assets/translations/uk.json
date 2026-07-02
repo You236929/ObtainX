@@ -8,7 +8,7 @@
   "showBatteryOptimizationPrompt": "Show battery optimization prompt",
   "tactileFeedbackEnabled": "Enable tactile feedback",
   "includePrereleasesByDefault": "Include pre-releases by default",
-  "allowInsecureByDefault": "Allow insecure HTTP requests by default",
+  "allowInsecureByDefault": "Дозволити незахищені HTTP-запити за замовчуванням",
   "appIdMismatch": "Ідентифікатор пакета, завантажений, не відповідає ідентифікатору існуючого застосунку",
   "repoRenamedCheck": "Перевірити, чи репозиторій було перенесено (збільшує виклики API)",
   "repoRenamed": "Репозиторій перенесено",

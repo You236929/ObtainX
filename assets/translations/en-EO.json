@@ -8,7 +8,7 @@
   "showBatteryOptimizationPrompt": "Show battery optimization prompt",
   "tactileFeedbackEnabled": "Enable tactile feedback",
   "includePrereleasesByDefault": "Include pre-releases by default",
-  "allowInsecureByDefault": "Allow insecure HTTP requests by default",
+  "allowInsecureByDefault": "Permesi malsekurajn HTTP-petojn defaŭlte",
   "appIdMismatch": "La identigilo de la elŝutita pakaĵo ne konformas al la identigilo de la ekzistanta apo",
   "repoRenamedCheck": "Kontroli ĉu la deponejo estis movita (pliigas API-alvokojn)",
   "repoRenamed": "Deponejo movita",

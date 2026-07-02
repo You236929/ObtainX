@@ -8,7 +8,7 @@
   "showBatteryOptimizationPrompt": "Show battery optimization prompt",
   "tactileFeedbackEnabled": "Enable tactile feedback",
   "includePrereleasesByDefault": "Include pre-releases by default",
-  "allowInsecureByDefault": "Allow insecure HTTP requests by default",
+  "allowInsecureByDefault": "Varsayılan olarak güvenli olmayan HTTP isteklerine izin ver",
   "appIdMismatch": "İndirilen paketin kimliği mevcut uygulama kimliği ile eşleşmiyor",
   "repoRenamedCheck": "Depo taşınıp taşınmadığını kontrol et (API çağrılarını artırır)",
   "repoRenamed": "Depo taşındı",

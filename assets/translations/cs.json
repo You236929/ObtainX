@@ -8,7 +8,7 @@
   "showBatteryOptimizationPrompt": "Show battery optimization prompt",
   "tactileFeedbackEnabled": "Enable tactile feedback",
   "includePrereleasesByDefault": "Include pre-releases by default",
-  "allowInsecureByDefault": "Allow insecure HTTP requests by default",
+  "allowInsecureByDefault": "Povolit nezabezpečené HTTP požadavky ve výchozím nastavení",
   "appIdMismatch": "ID staženého balíčku neodpovídá ID existující aplikace",
   "repoRenamedCheck": "Zkontrolovat, zda bylo úložiště přesunuto (zvyšuje počet volání API)",
   "repoRenamed": "Úložiště přesunuto",

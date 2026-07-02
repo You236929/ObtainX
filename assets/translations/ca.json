@@ -8,7 +8,7 @@
   "showBatteryOptimizationPrompt": "Show battery optimization prompt",
   "tactileFeedbackEnabled": "Enable tactile feedback",
   "includePrereleasesByDefault": "Include pre-releases by default",
-  "allowInsecureByDefault": "Allow insecure HTTP requests by default",
+  "allowInsecureByDefault": "Permet per defecte les sol·licituds HTTP insegures",
   "appIdMismatch": "L'ID del paquet descarregat no coincideix amb l'ID de l'aplicació instal·lada",
   "repoRenamedCheck": "Comprovar si el repositori s'ha mogut (augmenta les crides a l'API)",
   "repoRenamed": "Repositori mogut",

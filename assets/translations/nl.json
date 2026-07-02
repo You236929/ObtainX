@@ -8,7 +8,7 @@
   "showBatteryOptimizationPrompt": "Show battery optimization prompt",
   "tactileFeedbackEnabled": "Enable tactile feedback",
   "includePrereleasesByDefault": "Include pre-releases by default",
-  "allowInsecureByDefault": "Allow insecure HTTP requests by default",
+  "allowInsecureByDefault": "Onveilige HTTP-verzoeken standaard toestaan",
   "appIdMismatch": "Gedownload pakket-ID komt niet overeen met de bestaande app-ID",
   "repoRenamedCheck": "Controleren of de repository is verplaatst (verhoogt API-aanroepen)",
   "repoRenamed": "Repository verplaatst",

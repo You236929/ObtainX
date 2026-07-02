@@ -8,7 +8,7 @@
   "showBatteryOptimizationPrompt": "Show battery optimization prompt",
   "tactileFeedbackEnabled": "Enable tactile feedback",
   "includePrereleasesByDefault": "Include pre-releases by default",
-  "allowInsecureByDefault": "Allow insecure HTTP requests by default",
+  "allowInsecureByDefault": "സുരക്ഷിതമല്ലാത്ത HTTP അഭ്യർത്ഥനകൾ സ്ഥിരസ്ഥിതിയായി അനുവദിക്കുക",
   "appIdMismatch": "ഡൗൺലോഡ് ചെയ്ത പാക്കേജ് ഐഡി നിലവിലുള്ള ആപ്പ് ഐഡിയുമായി ചേരുന്നില്ല",
   "repoRenamedCheck": "റെപ്പോസിറ്ററി മാറ്റിയിട്ടുണ്ടോയെന്ന് പരിശോധിക്കുക (API വിളികൾ കൂടുന്നു)",
   "repoRenamed": "റെപ്പോസിറ്ററി മാറ്റി",

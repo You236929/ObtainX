@@ -8,7 +8,7 @@
   "showBatteryOptimizationPrompt": "Show battery optimization prompt",
   "tactileFeedbackEnabled": "Enable tactile feedback",
   "includePrereleasesByDefault": "Include pre-releases by default",
-  "allowInsecureByDefault": "Allow insecure HTTP requests by default",
+  "allowInsecureByDefault": "기본적으로 안전하지 않은 HTTP 요청 허용",
   "appIdMismatch": "다운로드된 패키지 ID가 기존 앱 ID와 일치하지 않습니다",
   "repoRenamedCheck": "저장소가 이동했는지 확인(API 호출 증가)",
   "repoRenamed": "저장소가 이동됨",
