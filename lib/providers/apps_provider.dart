@@ -1915,7 +1915,8 @@ class AppsProvider with ChangeNotifier {
         },
         apkDir.path,
         useExisting: useExisting,
-        allowInsecure: app.additionalSettings['allowInsecure'] == true,
+        allowInsecure: app.additionalSettings['allowInsecure'] == true ||
+            settingsProvider.allowInsecureByDefault,
         logs: logs,
         cancelToken: cancelToken,
       );
@@ -3311,7 +3312,8 @@ class AppsProvider with ChangeNotifier {
                 forAPKDownload: isApk(fileUrl.key),
               ),
           useExisting: false,
-          allowInsecure: app.additionalSettings['allowInsecure'] == true,
+          allowInsecure: app.additionalSettings['allowInsecure'] == true ||
+            settingsProvider.allowInsecureByDefault,
           logs: logs,
         );
 
