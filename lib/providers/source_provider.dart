@@ -873,7 +873,8 @@ sourceRequestStreamResponse(
   const maxRedirects = 10;
   List<Cookie> cookies = [];
   while (redirectCount < maxRedirects) {
-    var allowInsecure = additionalSettings['allowInsecure'] == true ||
+    var allowInsecure =
+        additionalSettings['allowInsecure'] == true ||
         additionalSettings['allowInsecureByDefault'] == true;
     var httpClient = createHttpClient(allowInsecure);
     var request = await httpClient.openUrl(method, currentUrl);
