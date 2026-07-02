@@ -145,7 +145,7 @@ class SettingsProvider with ChangeNotifier {
   }
 
   bool get allowInsecureByDefault =>
-      prefs?.getBool('allowInsecureByDefault') ?? true;
+      prefs?.getBool('allowInsecureByDefault') ?? false;
 
   set allowInsecureByDefault(bool val) {
     prefs?.setBool('allowInsecureByDefault', val);
