@@ -649,6 +649,13 @@ class AddAppPageState extends State<AddAppPage> {
           }
         }
       }
+      if (settingsProvider.allowInsecureByDefault) {
+        for (final GeneratedFormItem item in items.expand((row) => row)) {
+          if (item is GeneratedFormSwitch && item.key == 'allowInsecure') {
+            item.defaultValue = true;
+          }
+        }
+      }
       if (pickedSource is GitHub) {
         final bool canVerifyGitHubBuild = (pickedSource as GitHub)
             .canVerifyAttestations(additionalSettings, settingsProvider);

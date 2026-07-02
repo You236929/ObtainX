@@ -873,9 +873,9 @@ sourceRequestStreamResponse(
   const maxRedirects = 10;
   List<Cookie> cookies = [];
   while (redirectCount < maxRedirects) {
-    var httpClient = createHttpClient(
-      additionalSettings['allowInsecure'] == true,
-    );
+    var allowInsecure = additionalSettings['allowInsecure'] == true ||
+        additionalSettings['allowInsecureByDefault'] == true;
+    var httpClient = createHttpClient(allowInsecure);
     var request = await httpClient.openUrl(method, currentUrl);
     if (requestHeaders != null) {
       requestHeaders.forEach((key, value) {
@@ -997,9 +997,11 @@ abstract class AppSource {
     var sp = SettingsProvider();
     await sp.initializeSettings();
     getSourceConfigValues(additionalSettings, sp);
+    var allowInsecureByDefault = sp.allowInsecureByDefault;
     var additionalSettingsPlusSourceConfig = {
       ...additionalSettings,
       ...(await getSourceConfigValues(additionalSettings, sp)),
+      'allowInsecureByDefault': allowInsecureByDefault,
     };
     url = await generalReqPrefetchModifier(
       url,

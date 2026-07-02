@@ -8,6 +8,7 @@
   "showBatteryOptimizationPrompt": "Show battery optimization prompt",
   "tactileFeedbackEnabled": "Enable tactile feedback",
   "includePrereleasesByDefault": "Include pre-releases by default",
+  "allowInsecureByDefault": "Allow insecure HTTP requests by default",
   "appIdMismatch": "معرّف الحزمة المحملة لا يتطابق مع معرّف التطبيق الحالي",
   "repoRenamedCheck": "التحقق مما إذا نُقل المستودع (يزيد طلبات واجهة البرمجة)",
   "repoRenamed": "تم نقل المستودع",

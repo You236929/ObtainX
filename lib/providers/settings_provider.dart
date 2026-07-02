@@ -144,6 +144,14 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  bool get allowInsecureByDefault =>
+      prefs?.getBool('allowInsecureByDefault') ?? true;
+
+  set allowInsecureByDefault(bool val) {
+    prefs?.setBool('allowInsecureByDefault', val);
+    notifyListeners();
+  }
+
   bool get showAppDowngradeError =>
       prefs?.getBool('showAppDowngradeError') ?? true;
 

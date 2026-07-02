@@ -8,6 +8,7 @@
   "showBatteryOptimizationPrompt": "Show battery optimization prompt",
   "tactileFeedbackEnabled": "Enable tactile feedback",
   "includePrereleasesByDefault": "Include pre-releases by default",
+  "allowInsecureByDefault": "Allow insecure HTTP requests by default",
   "appIdMismatch": "ID gói đã tải xuống không khớp với ID ứng dụng hiện tại",
   "repoRenamedCheck": "Kiểm tra kho lưu trữ đã được chuyển chưa (tăng số lần gọi API)",
   "repoRenamed": "Kho lưu trữ đã được chuyển",

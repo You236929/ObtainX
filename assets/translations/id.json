@@ -8,6 +8,7 @@
   "showBatteryOptimizationPrompt": "Show battery optimization prompt",
   "tactileFeedbackEnabled": "Enable tactile feedback",
   "includePrereleasesByDefault": "Include pre-releases by default",
+  "allowInsecureByDefault": "Allow insecure HTTP requests by default",
   "appIdMismatch": "ID paket yang diunduh tidak sama dengan ID aplikasi yang ada",
   "repoRenamedCheck": "Periksa apakah repositori dipindahkan (menambah panggilan API)",
   "repoRenamed": "Repositori dipindahkan",

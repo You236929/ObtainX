@@ -8,6 +8,7 @@
   "showBatteryOptimizationPrompt": "Akkumulátor-optimalizálási kérés megjelenítése",
   "tactileFeedbackEnabled": "Érintési visszajelzés engedélyezése",
   "includePrereleasesByDefault": "Előzetes verziók belefoglalása alapértelmezés szerint",
+  "allowInsecureByDefault": "Allow insecure HTTP requests by default",
   "appIdMismatch": "A letöltött csomagazonosító nem egyezik a meglévő alkalmazás azonosítójával",
   "repoRenamedCheck": "Ellenőrizze, hogy a tároló áthelyezésre került-e (növeli az API-hívásokat)",
   "repoRenamed": "Tároló áthelyezve",

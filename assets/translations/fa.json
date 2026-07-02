@@ -8,6 +8,7 @@
   "showBatteryOptimizationPrompt": "Show battery optimization prompt",
   "tactileFeedbackEnabled": "Enable tactile feedback",
   "includePrereleasesByDefault": "Include pre-releases by default",
+  "allowInsecureByDefault": "Allow insecure HTTP requests by default",
   "appIdMismatch": "شناسه بسته دانلود شده با شناسه برنامه موجود مطابقت ندارد",
   "repoRenamedCheck": "بررسی کنید که مخزن جابه‌جا شده است (تعداد فراخوانی API را افزایش می‌دهد)",
   "repoRenamed": "مخزن جابه‌جا شد",

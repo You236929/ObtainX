@@ -12,6 +12,7 @@
   "interaction": "Взаимодействие",
   "tactileFeedbackEnabled": "Использовать виброотклик",
   "includePrereleasesByDefault": "Включать предварительные выпуски по умолчанию",
+  "allowInsecureByDefault": "Allow insecure HTTP requests by default",
   "appIdMismatch": "ID загруженного пакета не совпадает с существующим ID приложения",
   "repoRenamedCheck": "Проверить, перенесён ли репозиторий (увеличивает число вызовов API)",
   "repoRenamed": "Репозиторий перенесён",

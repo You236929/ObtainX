@@ -8,6 +8,7 @@
   "showBatteryOptimizationPrompt": "Show battery optimization prompt",
   "tactileFeedbackEnabled": "Enable tactile feedback",
   "includePrereleasesByDefault": "Include pre-releases by default",
+  "allowInsecureByDefault": "Allow insecure HTTP requests by default",
   "appIdMismatch": "Nerladdat paket-ID matchar inte nuvarande App-ID",
   "repoRenamedCheck": "Kontrollera om arkivet har flyttats (ökar API-anrop)",
   "repoRenamed": "Arkivet har flyttats",

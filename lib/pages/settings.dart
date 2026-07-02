@@ -1097,6 +1097,11 @@ class _UpdatesSection extends StatelessWidget {
         onChanged: (bool value) => sp.includePrereleasesByDefault = value,
       ),
       SwitchListTile(
+        title: Text(tr('allowInsecureByDefault')),
+        value: sp.allowInsecureByDefault,
+        onChanged: (bool value) => sp.allowInsecureByDefault = value,
+      ),
+      SwitchListTile(
         title: Text(tr('onlyCheckInstalledOrTrackOnlyApps')),
         value: sp.onlyCheckInstalledOrTrackOnlyApps,
         onChanged: (bool value) => sp.onlyCheckInstalledOrTrackOnlyApps = value,

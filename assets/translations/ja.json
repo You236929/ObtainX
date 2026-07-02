@@ -12,6 +12,7 @@
   "interaction": "操作",
   "tactileFeedbackEnabled": "触覚フィードバックを有効にする",
   "includePrereleasesByDefault": "デフォルトでプレリリースを含める",
+  "allowInsecureByDefault": "デフォルトで安全でないHTTPリクエストを許可する",
   "appIdMismatch": "ダウンロードしたパッケージのIDが既存のApp IDと一致しません",
   "repoRenamedCheck": "リポジトリが移動されたか確認する（API呼び出しが増えます）",
   "repoRenamed": "リポジトリが移動されました",

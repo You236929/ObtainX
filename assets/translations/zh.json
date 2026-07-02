@@ -12,6 +12,7 @@
   "interaction": "交互",
   "tactileFeedbackEnabled": "启用触觉反馈",
   "includePrereleasesByDefault": "默认包含预发行版",
+  "allowInsecureByDefault": "默认允许不安全的 HTTP 请求",
   "appIdMismatch": "所下载 APK 的应用 ID 与现有应用不一致",
   "repoRenamedCheck": "检查仓库是否已迁移（会增加 API 调用）",
   "repoRenamed": "仓库已迁移",

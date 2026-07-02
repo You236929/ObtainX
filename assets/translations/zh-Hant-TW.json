@@ -12,6 +12,7 @@
   "interaction": "互動",
   "tactileFeedbackEnabled": "啟用觸覺回饋",
   "includePrereleasesByDefault": "預設包含預先發佈版本",
+  "allowInsecureByDefault": "預設允許不安全的 HTTP 請求",
   "appIdMismatch": "下載的套件 ID 與現有的應用程式 ID 不相符",
   "repoRenamedCheck": "檢查存放庫是否已移動（會增加 API 呼叫）",
   "repoRenamed": "存放庫已移動",

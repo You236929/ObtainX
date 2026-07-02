@@ -8,6 +8,7 @@
   "showBatteryOptimizationPrompt": "Show battery optimization prompt",
   "tactileFeedbackEnabled": "Enable tactile feedback",
   "includePrereleasesByDefault": "Include pre-releases by default",
+  "allowInsecureByDefault": "Allow insecure HTTP requests by default",
   "appIdMismatch": "ID preuzetog paketa se ne podudara s postojećim ID-om aplikacije",
   "repoRenamedCheck": "Provjeriti je li repozitorij premješten (povećava API pozive)",
   "repoRenamed": "Repozitorij premješten",
