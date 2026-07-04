@@ -2287,7 +2287,6 @@ class _IntegrationsSection extends StatefulWidget {
 class _IntegrationsSectionState extends State<_IntegrationsSection>
     with WidgetsBindingObserver {
   bool _appManagerInstalled = false;
-  bool _appVerifierInstalled = false;
   bool _letMeDowngradeInstalled = false;
   bool _loading = true;
 
@@ -2314,14 +2313,12 @@ class _IntegrationsSectionState extends State<_IntegrationsSection>
   Future<void> _checkInstalledApps() async {
     final results = await Future.wait([
       getInstalledInfo('io.github.muntashirakon.AppManager'),
-      getInstalledInfo('dev.soupslurpr.appverifier'),
       getInstalledInfo('com.berdik.letmedowngrade'),
     ]);
     if (mounted) {
       setState(() {
         _appManagerInstalled = results[0] != null;
-        _appVerifierInstalled = results[1] != null;
-        _letMeDowngradeInstalled = results[2] != null;
+        _letMeDowngradeInstalled = results[1] != null;
         _loading = false;
       });
     }
@@ -2393,38 +2390,22 @@ class _IntegrationsSectionState extends State<_IntegrationsSection>
             style: TextStyle(
               color: _loading
                   ? cs.onSurface.withValues(alpha: 0.38)
-                  : _appVerifierInstalled
-                  ? null
-                  : cs.onSurface.withValues(alpha: 0.38),
+                  : null,
             ),
           ),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              IconButton(
-                tooltip: tr('about'),
-                onPressed: () {
-                  launchUrlString(
-                    tr('aboutAppVerifierUrl'),
-                    mode: LaunchMode.externalApplication,
-                  );
-                },
-                style: IconButton.styleFrom(
-                  foregroundColor: cs.onSurfaceVariant,
-                  iconSize: 20,
-                  padding: const EdgeInsets.all(4),
-                  minimumSize: const Size(32, 32),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
-                ),
-                icon: const Icon(Icons.open_in_new_rounded),
+              HelpHintIcon(
+                message: tr('shareToAppVerifierTooltip'),
+                size: 20,
+                padding: EdgeInsets.zero,
               ),
               Switch(
                 value:
                     !_loading &&
-                    _appVerifierInstalled &&
                     sp.beforeNewInstallsShareToAppVerifier,
-                onChanged: !_loading && _appVerifierInstalled
+                onChanged: !_loading
                     ? (bool value) =>
                           sp.beforeNewInstallsShareToAppVerifier = value
                     : null,
@@ -3358,7 +3339,14 @@ Map<String, MapEntry<int, bool>> _mergeCategoryEditorMaps(
       merged[entry.key] = entry.value;
     }
   }
-  return merged;
+  final List<MapEntry<String, MapEntry<int, bool>>> sortedEntries =
+      merged.entries.toList()
+        ..sort((a, b) {
+          final int cmp = a.key.toLowerCase().compareTo(b.key.toLowerCase());
+          if (cmp != 0) return cmp;
+          return a.key.compareTo(b.key);
+        });
+  return Map<String, MapEntry<int, bool>>.fromEntries(sortedEntries);
 }
 
 class CategoryEditorSelector extends StatefulWidget {

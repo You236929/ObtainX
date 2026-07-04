@@ -2572,17 +2572,21 @@ class AppsProvider with ChangeNotifier {
         }
       }
       if (firstTimeWithContext != null &&
-          settingsProvider.beforeNewInstallsShareToAppVerifier &&
-          (await getInstalledInfo('dev.soupslurpr.appverifier')) != null) {
-        XFile f = XFile.fromData(
-          file.file.readAsBytesSync(),
+          settingsProvider.beforeNewInstallsShareToAppVerifier) {
+        XFile f = XFile(
+          file.file.path,
           mimeType: 'application/vnd.android.package-archive',
         );
         Fluttertoast.showToast(
           msg: tr('appVerifierInstructionToast'),
           toastLength: Toast.LENGTH_LONG,
         );
-        await SharePlus.instance.share(ShareParams(files: [f]));
+        try {
+          await SharePlus.instance.share(ShareParams(files: [f]));
+          await waitForUserToReturnToForeground(firstTimeWithContext);
+        } catch (e) {
+          logs.add('Share to App Verifier failed: $e');
+        }
       }
       var newInfo = await pm.getPackageArchiveInfo(
         archiveFilePath: file.file.path,

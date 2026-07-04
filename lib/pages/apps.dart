@@ -3506,18 +3506,44 @@ class AppsPageState extends State<AppsPage> {
 
     getLoadingWidgets() {
       final String? progressFolderId = widget.folderId;
-      final int folderMemberCountForProgress = progressFolderId == null
-          ? 0
-          : appsProvider.apps.values
-                .where((a) => folderIdsForApp(a.app).contains(progressFolderId))
-                .length;
-      final int progressDenominator = widget.onDemandOnlyList
-          ? (onDemandOnlyAppCount > 0 ? onDemandOnlyAppCount : 1)
-          : progressFolderId != null
-          ? (folderMemberCountForProgress > 0
-                ? folderMemberCountForProgress
-                : 1)
-          : (appsProvider.apps.isNotEmpty ? appsProvider.apps.length : 1);
+      final bool onlyCheckInstalledOrTrackOnly =
+          settingsProvider.onlyCheckInstalledOrTrackOnlyApps;
+      final bool showFolderedAppsOnMainPage =
+          settingsProvider.showFolderedAppsOnMainPage;
+      final Set<String> existingFolderIdsSet =
+          settingsProvider.appFolders.map((f) => f.id).toSet();
+
+      int progressCount = 0;
+      for (final a in appsProvider.apps.values) {
+        // 1. On-demand-only check
+        final bool isOnDemand = a.app.additionalSettings['onDemandOnly'] == true;
+        if (widget.onDemandOnlyList) {
+          if (!isOnDemand) continue;
+        } else {
+          if (isOnDemand) continue;
+        }
+
+        // 2. Folder check
+        final String? folder = progressFolderId;
+        if (folder != null) {
+          if (!folderIdsForApp(a.app).contains(folder)) continue;
+        } else if (!widget.onDemandOnlyList && !showFolderedAppsOnMainPage) {
+          final hasFolder = folderIdsForApp(a.app)
+              .where((id) => existingFolderIdsSet.contains(id))
+              .isNotEmpty;
+          if (hasFolder) continue;
+        }
+
+        // 3. Installed / Track-only check
+        if (onlyCheckInstalledOrTrackOnly) {
+          final isInstalled = a.app.installedVersion != null;
+          final isTrackOnly = a.app.additionalSettings['trackOnly'] == true;
+          if (!isInstalled && !isTrackOnly) continue;
+        }
+
+        progressCount++;
+      }
+      final int progressDenominator = progressCount > 0 ? progressCount : 1;
       return [
         if (listedApps.isEmpty)
           SliverFillRemaining(

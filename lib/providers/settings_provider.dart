@@ -864,22 +864,37 @@ class SettingsProvider with ChangeNotifier {
     // Lazily populate the in-memory cache on first read (mirrors [appFolders]).
     // Previously this decoded the 'categories' JSON on every read until a write
     // happened — and categories is read on every apps-list / settings rebuild.
-    _categoriesMemory = Map<String, int>.from(
+    final Map<String, int> rawCats = Map<String, int>.from(
       jsonDecode(prefs?.getString('categories') ?? '{}'),
     );
+    final List<MapEntry<String, int>> sortedEntries = rawCats.entries.toList()
+      ..sort((a, b) {
+        final int cmp = a.key.toLowerCase().compareTo(b.key.toLowerCase());
+        if (cmp != 0) return cmp;
+        return a.key.compareTo(b.key);
+      });
+    _categoriesMemory = Map<String, int>.fromEntries(sortedEntries);
     return Map<String, int>.from(_categoriesMemory!);
   }
 
   void setCategories(Map<String, int> cats, {AppsProvider? appsProvider}) {
+    final List<MapEntry<String, int>> sortedEntries = cats.entries.toList()
+      ..sort((a, b) {
+        final int cmp = a.key.toLowerCase().compareTo(b.key.toLowerCase());
+        if (cmp != 0) return cmp;
+        return a.key.compareTo(b.key);
+      });
+    final Map<String, int> sortedCats = Map<String, int>.fromEntries(sortedEntries);
+
     if (appsProvider != null) {
       // Detect a rename: one key removed from old map, one key added to new map.
       // Each UI action (rename, delete) fires a separate call, so at most one
       // rename is in flight per call.
       final Map<String, int> oldCats = categories;
       final Set<String> removed = oldCats.keys.toSet().difference(
-        cats.keys.toSet(),
+        sortedCats.keys.toSet(),
       );
-      final Set<String> added = cats.keys.toSet().difference(
+      final Set<String> added = sortedCats.keys.toSet().difference(
         oldCats.keys.toSet(),
       );
       final String? renamedFrom = (removed.length == 1 && added.length == 1)
@@ -901,7 +916,7 @@ class SettingsProvider with ChangeNotifier {
               }
             }
             final n1 = a.app.categories.length;
-            a.app.categories.removeWhere((c) => !cats.keys.contains(c));
+            a.app.categories.removeWhere((c) => !sortedCats.keys.contains(c));
             if (a.app.categories.length < n1) changed = true;
             return changed ? a.app : null;
           })
@@ -912,8 +927,8 @@ class SettingsProvider with ChangeNotifier {
         appsProvider.saveApps(changedApps, updateInstalledInfo: false);
       }
     }
-    _categoriesMemory = Map<String, int>.from(cats);
-    prefs?.setString('categories', jsonEncode(cats));
+    _categoriesMemory = Map<String, int>.from(sortedCats);
+    prefs?.setString('categories', jsonEncode(sortedCats));
     notifyListeners();
   }
 

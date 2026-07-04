@@ -480,7 +480,6 @@
   "aboutRememberUrl": "https://bikram-agarwal.github.io/remember/",
   "aboutFilePipeUrl": "https://bikram-agarwal.github.io/filepipe/",
   "aboutAppManagerUrl": "https://github.com/MuntashirAkon/AppManager",
-  "aboutAppVerifierUrl": "https://github.com/soupslurpr/AppVerifier",
   "aboutLetMeDowngradeUrl": "https://modules.lsposed.org/module/com.berdik.letmedowngrade/",
   "aboutLinkCopied": "Link copied",
   "aboutShareText": "Hey, if you sideload apps from GitHub, APKMirror etc., check out ObtainX. It handles all the updates automatically so you don't have to keep checking the sites manually. Pretty slick: {}",
@@ -799,5 +798,6 @@
   "gitlabPATValidationRateLimited": "Could not validate GitLab PAT because GitLab rate-limited the request",
   "discardUnsavedPATChangesExplanation": "You have unsaved Personal Access Token changes. If you switch tabs, these changes will be discarded. Continue?",
   "saved": "Saved",
-  "bulkScanDiscardResultsBody": "You have unsaved scan results. Leaving this page will discard the results. Continue?"
+  "bulkScanDiscardResultsBody": "You have unsaved scan results. Leaving this page will discard the results. Continue?",
+  "shareToAppVerifierTooltip": "Share the APK to verifier apps like AppVerifier, AppVerifierBG, Verified Apps etc. before first installation so you can verify its signing certificate hash."
 }
