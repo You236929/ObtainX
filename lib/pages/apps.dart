@@ -23,6 +23,8 @@ import 'package:obtainium/layout_breakpoints.dart';
 import 'package:obtainium/components/custom_app_bar.dart';
 import 'package:obtainium/components/generated_form.dart';
 import 'package:obtainium/components/generated_form_modal.dart';
+import 'package:obtainium/components/rippling_wavy_progress/circular.dart';
+import 'package:obtainium/components/rippling_wavy_progress/linear.dart';
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/main.dart';
 import 'package:obtainium/pages/additional_options_page.dart';
@@ -426,7 +428,7 @@ class _RefreshProgressBar extends StatelessWidget {
     // stop-dot at the end (per the M3E spec). The widget draws two
     // separate lanes (active above, track below) with a fixed gap so the
     // active and inactive segments never overlap.
-    return LinearProgressIndicatorM3E(
+    return LinearRipplingWavyProgressIndicator(
       value: loadingApps
           ? null
           : (progressDenominator > 0
@@ -765,14 +767,12 @@ class _AppListItem extends StatelessWidget {
             children: [
               SizedBox.square(
                 dimension: 48,
-                child: CircularProgressIndicatorM3E(
+                child: CircularRipplingWavyProgressIndicator(
                   value: progressValue,
                   size: CircularProgressM3ESize.s,
-                  shape: ProgressM3EShape.wavy,
                   activeColor: isInstalling
                       ? colorScheme.secondary
                       : colorScheme.primary,
-                  trackColor: colorScheme.surfaceContainerHighest,
                 ),
               ),
               if (!isInstalling)
@@ -2834,6 +2834,10 @@ class AppsPageState extends State<AppsPage> {
             if (!context.mounted) return <App>[];
             showError(e is Map ? e['errors'] : e, context);
             return <App>[];
+          })
+          .whenComplete(() {
+            // Allow the progress bar to reach 100% before dismissing.
+            return Future.delayed(const Duration(milliseconds: 500));
           })
           .whenComplete(() {
             setState(() {
