@@ -2837,7 +2837,9 @@ class AppsPageState extends State<AppsPage> {
           })
           .whenComplete(() {
             // Allow the progress bar to reach 100% before dismissing.
-            return Future.delayed(const Duration(milliseconds: 500));
+            return Future.delayed(
+              LinearRipplingWavyProgressIndicator.defaultDragDuration,
+            );
           })
           .whenComplete(() {
             setState(() {

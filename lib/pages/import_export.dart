@@ -4,8 +4,8 @@ import 'dart:io';
 import 'package:easy_localization/easy_localization.dart' hide TextDirection;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
-import 'package:progress_indicator_m3e/progress_indicator_m3e.dart';
 import 'package:obtainium/app_sources/fdroidrepo.dart';
+import 'package:obtainium/components/rippling_wavy_progress/linear.dart';
 import 'package:obtainium/components/app_dropdown_field.dart';
 import 'package:obtainium/components/custom_app_bar.dart';
 import 'package:obtainium/components/generated_form.dart';
@@ -1018,7 +1018,7 @@ class _ImportExportPageState extends State<ImportExportPage> {
                       ),
                       if (importInProgress) ...[
                         const SizedBox(height: 14),
-                        const LinearProgressIndicatorM3E(),
+                        const LinearRipplingWavyProgressIndicator(),
                         const SizedBox(height: 14),
                       ],
                       importPageSectionTitle(

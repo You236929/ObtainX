@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:obtainium/components/rippling_wavy_progress/linear.dart';
 import 'package:progress_indicator_m3e/progress_indicator_m3e.dart';
 
 /// A circular progress indicator with a wavy arc that ripples
@@ -35,7 +36,7 @@ class CircularRipplingWavyProgressIndicator extends StatefulWidget {
     this.size = CircularProgressM3ESize.m,
     this.activeColor,
     this.trackColor,
-    this.dragDuration = const Duration(milliseconds: 500),
+    this.dragDuration = LinearRipplingWavyProgressIndicator.defaultDragDuration,
     this.waveSpeed = 1.0,
     this.strokeWidth = 4.0,
     this.gapWidth = 1.0,
@@ -70,7 +71,7 @@ class _CircularRipplingWavyProgressState
       duration: _getDuration(widget.waveSpeed),
       lowerBound: 1e-10,
       upperBound: 2 * math.pi,
-    )..repeat();
+    );
     _valueController = AnimationController(
       vsync: this,
       duration: widget.dragDuration,
@@ -80,20 +81,28 @@ class _CircularRipplingWavyProgressState
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _updatePhaseAnimating();
+  }
+
+  @override
   void didUpdateWidget(
     covariant CircularRipplingWavyProgressIndicator oldWidget,
   ) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.waveSpeed != widget.waveSpeed) {
       _phaseController.duration = _getDuration(widget.waveSpeed);
-      if (_phaseController.isAnimating) {
-        _phaseController.repeat();
-      }
+    }
+    if (oldWidget.dragDuration != widget.dragDuration) {
+      _valueController.duration = widget.dragDuration;
     }
 
     // Only animate when the value increases else snap
     if (oldWidget.value != widget.value) {
-      if (widget.value == null || widget.value! <= _valueController.value) {
+      if (widget.value == null ||
+          widget.value! <= _valueController.value ||
+          MediaQuery.disableAnimationsOf(context)) {
         _valueController.value = widget.value ?? _valueController.lowerBound;
       } else {
         _valueController.animateTo(
@@ -102,6 +111,21 @@ class _CircularRipplingWavyProgressState
           curve: Curves.easeOutCubic,
         );
       }
+    }
+    _updatePhaseAnimating();
+  }
+
+  bool get _shouldAnimatePhase {
+    if (MediaQuery.disableAnimationsOf(context)) return false;
+    if (widget.value == null) return true;
+    return widget.value! > 0;
+  }
+
+  void _updatePhaseAnimating() {
+    if (_shouldAnimatePhase) {
+      if (!_phaseController.isAnimating) _phaseController.repeat();
+    } else {
+      if (_phaseController.isAnimating) _phaseController.stop();
     }
   }
 
