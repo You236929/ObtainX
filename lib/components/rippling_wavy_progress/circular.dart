@@ -11,7 +11,7 @@ class CircularRipplingWavyProgressIndicator extends StatefulWidget {
   final Color? activeColor;
   final Color? trackColor;
 
-  /// Smooth transition duration when [value] changes.
+  /// Smooth transition duration when [value] increases.
   final Duration dragDuration;
 
   /// Wave animation speed in cycles per second.
@@ -94,12 +94,18 @@ class _CircularRipplingWavyProgressState
         _phaseController.repeat();
       }
     }
-    if (oldWidget.value != widget.value && widget.value != null) {
-      _valueController.animateTo(
-        widget.value!,
-        duration: widget.dragDuration,
-        curve: Curves.easeOutCubic,
-      );
+
+    // Only animate when the value increases else snap
+    if (oldWidget.value != widget.value) {
+      if (widget.value == null || widget.value! <= _valueController.value) {
+        _valueController.value = widget.value ?? _valueController.lowerBound;
+      } else {
+        _valueController.animateTo(
+          widget.value!,
+          duration: widget.dragDuration,
+          curve: Curves.easeOutCubic,
+        );
+      }
     }
   }
 

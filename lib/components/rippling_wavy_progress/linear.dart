@@ -19,7 +19,7 @@ class LinearRipplingWavyProgressIndicator extends StatefulWidget {
   /// Progress below this value renders flat instead of wavy.
   final double flatBelow;
 
-  /// Smooth transition duration when [value] changes.
+  /// Smooth transition duration when [value] increases.
   final Duration dragDuration;
 
   const LinearRipplingWavyProgressIndicator({
@@ -79,12 +79,18 @@ class _LinearRipplingWavyProgressState
       _phaseController.duration = _getDuration(widget.waveSpeed);
       if (_shouldAnimate) _phaseController.repeat();
     }
-    if (oldWidget.value != widget.value && widget.value != null) {
-      _valueController.animateTo(
-        widget.value!,
-        duration: widget.dragDuration,
-        curve: Curves.easeOutCubic,
-      );
+
+    // Only animate when the value increases else snap
+    if (oldWidget.value != widget.value) {
+      if (widget.value == null || widget.value! <= _valueController.value) {
+        _valueController.value = widget.value ?? _valueController.lowerBound;
+      } else {
+        _valueController.animateTo(
+          widget.value!,
+          duration: widget.dragDuration,
+          curve: Curves.easeOutCubic,
+        );
+      }
     }
     _updatePhaseAnimating();
   }
