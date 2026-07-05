@@ -6,12 +6,12 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:expressive_loading_indicator/expressive_loading_indicator.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
-import 'package:progress_indicator_m3e/progress_indicator_m3e.dart';
 import 'package:obtainium/app_sources/apkmirror.dart';
 import 'package:obtainium/app_sources/apkpure.dart';
 import 'package:obtainium/app_sources/fdroid.dart';
 import 'package:obtainium/app_sources/github.dart';
 import 'package:obtainium/app_sources/izzyondroid.dart';
+import 'package:obtainium/components/rippling_wavy_progress/linear.dart';
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/providers/logs_provider.dart';
@@ -1439,7 +1439,7 @@ class BulkAddWidgetState extends State<BulkAddWidget> {
                     // M3 Expressive wavy progress bar. Owns its own height
                     // and shape per the spec, so we drop the previous
                     // ClipRRect/minHeight wrapping.
-                    LinearProgressIndicatorM3E(
+                    LinearRipplingWavyProgressIndicator(
                       value: started ? progressValue : null,
                     ),
                   ],
