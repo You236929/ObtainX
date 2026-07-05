@@ -81,6 +81,65 @@ bool appCategoriesMatchFilter(
   return true;
 }
 
+bool appIsTrackOnlyForFilter(App app) =>
+    app.additionalSettings['trackOnly'] == true;
+
+bool appIsUpToDateForFilter(App app) {
+  final installed = app.installedVersion;
+  final latest = app.latestVersion;
+  if (installed == null) {
+    return false;
+  }
+  return isSkipActiveForCurrentLatest(app) ||
+      installed == latest ||
+      versionsEffectivelyEqual(installed, latest) ||
+      (installedVersionIsNewerOrEqual(installed, latest) &&
+          !versionOrderIsUnclear(installed, latest));
+}
+
+bool appMatchesTriStateAttributeFilter({
+  required bool attributeIsTrue,
+  required CategoryFilterIntent intent,
+}) {
+  return switch (intent) {
+    CategoryFilterIntent.neutral => true,
+    CategoryFilterIntent.include => attributeIsTrue,
+    CategoryFilterIntent.exclude => !attributeIsTrue,
+  };
+}
+
+bool appMatchesUpToDateFilter(App app, CategoryFilterIntent intent) {
+  return appMatchesTriStateAttributeFilter(
+    attributeIsTrue: appIsUpToDateForFilter(app),
+    intent: intent,
+  );
+}
+
+bool appMatchesInstalledFilter(App app, CategoryFilterIntent intent) {
+  return appMatchesTriStateAttributeFilter(
+    attributeIsTrue: app.installedVersion != null,
+    intent: intent,
+  );
+}
+
+bool appMatchesTrackOnlyFilter(App app, CategoryFilterIntent intent) {
+  return appMatchesTriStateAttributeFilter(
+    attributeIsTrue: appIsTrackOnlyForFilter(app),
+    intent: intent,
+  );
+}
+
+String visibilityFilterChipLabel(
+  String label,
+  CategoryFilterIntent intent,
+) {
+  return switch (intent) {
+    CategoryFilterIntent.neutral => label,
+    CategoryFilterIntent.include => '+ $label',
+    CategoryFilterIntent.exclude => '- $label',
+  };
+}
+
 /// Group header strip: stronger primary tint than rows; when luminance matches
 /// row fill (common with Material You), nudge toward [surfaceBright] so the
 /// header still reads as its own band.
@@ -2192,8 +2251,8 @@ class AppsPageState extends State<AppsPage> {
   AppsFilter filter = AppsFilter();
   final AppsFilter neutralFilter = AppsFilter();
   var updatesOnlyFilter = AppsFilter(
-    includeUptodate: false,
-    includeNonInstalled: false,
+    upToDateFilterIntent: CategoryFilterIntent.exclude,
+    installedFilterIntent: CategoryFilterIntent.include,
   );
   Set<String> selectedAppIds = {};
   DateTime? refreshingSince;
@@ -2569,23 +2628,37 @@ class AppsPageState extends State<AppsPage> {
   PreferredSizeWidget? _buildFilterChipsRow() {
     final chips = <Widget>[];
 
-    if (!filter.includeUptodate) {
+    void addVisibilityFilterChip(
+      String label,
+      CategoryFilterIntent intent,
+      ValueChanged<CategoryFilterIntent> onClear,
+    ) {
+      if (intent == CategoryFilterIntent.neutral) {
+        return;
+      }
       chips.add(
         _filterChip(
-          tr('updatesOnly'),
-          () => setState(() => filter.includeUptodate = true),
+          visibilityFilterChipLabel(label, intent),
+          () => setState(() => onClear(CategoryFilterIntent.neutral)),
         ),
       );
     }
 
-    if (!filter.includeNonInstalled) {
-      chips.add(
-        _filterChip(
-          tr('installedOnly'),
-          () => setState(() => filter.includeNonInstalled = true),
-        ),
-      );
-    }
+    addVisibilityFilterChip(
+      tr('visibilityFilterUpToDate'),
+      filter.upToDateFilterIntent,
+      (intent) => filter.upToDateFilterIntent = intent,
+    );
+    addVisibilityFilterChip(
+      tr('visibilityFilterInstalled'),
+      filter.installedFilterIntent,
+      (intent) => filter.installedFilterIntent = intent,
+    );
+    addVisibilityFilterChip(
+      tr('trackOnly'),
+      filter.trackOnlyFilterIntent,
+      (intent) => filter.trackOnlyFilterIntent = intent,
+    );
 
     if (filter.sourceFilter.isNotEmpty) {
       chips.add(
@@ -2894,8 +2967,9 @@ class AppsPageState extends State<AppsPage> {
       filter.nameFilter,
       filter.authorFilter,
       filter.idFilter,
-      filter.includeUptodate,
-      filter.includeNonInstalled,
+      filter.upToDateFilterIntent.index,
+      filter.installedFilterIntent.index,
+      filter.trackOnlyFilterIntent.index,
       Object.hashAll(filter.includedCategoryFilter.toList()..sort()),
       Object.hashAll(filter.excludedCategoryFilter.toList()..sort()),
       filter.categoryMatchMode.index,
@@ -2950,19 +3024,16 @@ class AppsPageState extends State<AppsPage> {
       }
 
       workingList = workingList.where((app) {
-        final installed = app.app.installedVersion;
-        final latest = app.app.latestVersion;
-        final upToDate = installed == null
-            ? false
-            : isSkipActiveForCurrentLatest(app.app) ||
-                  installed == latest ||
-                  versionsEffectivelyEqual(installed, latest) ||
-                  (installedVersionIsNewerOrEqual(installed, latest) &&
-                      !versionOrderIsUnclear(installed, latest));
-        if (upToDate && !(filter.includeUptodate)) {
+        if (!appMatchesUpToDateFilter(app.app, filter.upToDateFilterIntent)) {
           return false;
         }
-        if (app.app.installedVersion == null && !(filter.includeNonInstalled)) {
+        if (!appMatchesInstalledFilter(app.app, filter.installedFilterIntent)) {
+          return false;
+        }
+        if (!appMatchesTrackOnlyFilter(
+          app.app,
+          filter.trackOnlyFilterIntent,
+        )) {
           return false;
         }
         if (filter.nameFilter.isNotEmpty || filter.authorFilter.isNotEmpty) {
@@ -4473,25 +4544,6 @@ class AppsPageState extends State<AppsPage> {
                   const Divider(height: 1),
                   const SizedBox(height: 8),
 
-                  // ── Visibility toggles ────────────────────────────────
-                  SwitchListTile(
-                    dense: true,
-                    title: Text(tr('upToDateApps')),
-                    value: filter.includeUptodate,
-                    onChanged: (v) => update(() => filter.includeUptodate = v),
-                  ),
-                  SwitchListTile(
-                    dense: true,
-                    title: Text(tr('nonInstalledApps')),
-                    value: filter.includeNonInstalled,
-                    onChanged: (v) =>
-                        update(() => filter.includeNonInstalled = v),
-                  ),
-
-                  const SizedBox(height: 8),
-                  const Divider(height: 1),
-                  const SizedBox(height: 8),
-
                   // ── Source dropdown ───────────────────────────────────
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
@@ -4560,6 +4612,90 @@ class AppsPageState extends State<AppsPage> {
                         },
                       );
                     })(),
+                  ),
+
+                  const SizedBox(height: 8),
+                  const Divider(height: 1),
+                  const SizedBox(height: 8),
+
+                  // ── Visibility filters ──────────────────────────────────
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          tr('visibilityFilterCycleHint'),
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        CategoryActionChipGroup(
+                          children: [
+                            _TriStateCategoryFilterChip(
+                              category: tr('visibilityFilterUpToDate'),
+                              color: Theme.of(context).colorScheme.primary,
+                              intent: filter.upToDateFilterIntent,
+                              onCycle: () => update(
+                                () => filter.upToDateFilterIntent =
+                                    nextCategoryFilterIntent(
+                                      filter.upToDateFilterIntent,
+                                    ),
+                              ),
+                              onClear:
+                                  filter.upToDateFilterIntent ==
+                                      CategoryFilterIntent.neutral
+                                  ? null
+                                  : () => update(
+                                      () => filter.upToDateFilterIntent =
+                                          CategoryFilterIntent.neutral,
+                                    ),
+                            ),
+                            _TriStateCategoryFilterChip(
+                              category: tr('visibilityFilterInstalled'),
+                              color: Theme.of(context).colorScheme.primary,
+                              intent: filter.installedFilterIntent,
+                              onCycle: () => update(
+                                () => filter.installedFilterIntent =
+                                    nextCategoryFilterIntent(
+                                      filter.installedFilterIntent,
+                                    ),
+                              ),
+                              onClear:
+                                  filter.installedFilterIntent ==
+                                      CategoryFilterIntent.neutral
+                                  ? null
+                                  : () => update(
+                                      () => filter.installedFilterIntent =
+                                          CategoryFilterIntent.neutral,
+                                    ),
+                            ),
+                            _TriStateCategoryFilterChip(
+                              category: tr('trackOnly'),
+                              color: Theme.of(context).colorScheme.primary,
+                              intent: filter.trackOnlyFilterIntent,
+                              onCycle: () => update(
+                                () => filter.trackOnlyFilterIntent =
+                                    nextCategoryFilterIntent(
+                                      filter.trackOnlyFilterIntent,
+                                    ),
+                              ),
+                              onClear:
+                                  filter.trackOnlyFilterIntent ==
+                                      CategoryFilterIntent.neutral
+                                  ? null
+                                  : () => update(
+                                      () => filter.trackOnlyFilterIntent =
+                                          CategoryFilterIntent.neutral,
+                                    ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
 
                   // ── Category selector ─────────────────────────────────
@@ -6691,8 +6827,9 @@ class AppsFilter {
   String nameFilter;
   String authorFilter;
   String idFilter;
-  bool includeUptodate;
-  bool includeNonInstalled;
+  CategoryFilterIntent upToDateFilterIntent;
+  CategoryFilterIntent installedFilterIntent;
+  CategoryFilterIntent trackOnlyFilterIntent;
   Set<String> includedCategoryFilter;
   Set<String> excludedCategoryFilter;
   CategoryFilterMatchMode categoryMatchMode;
@@ -6702,8 +6839,9 @@ class AppsFilter {
     this.nameFilter = '',
     this.authorFilter = '',
     this.idFilter = '',
-    this.includeUptodate = true,
-    this.includeNonInstalled = true,
+    this.upToDateFilterIntent = CategoryFilterIntent.neutral,
+    this.installedFilterIntent = CategoryFilterIntent.neutral,
+    this.trackOnlyFilterIntent = CategoryFilterIntent.neutral,
     Set<String> categoryFilter = const {},
     Set<String>? includedCategoryFilter,
     Set<String>? excludedCategoryFilter,
@@ -6717,9 +6855,34 @@ class AppsFilter {
       'appName': nameFilter,
       'author': authorFilter,
       'appId': idFilter,
-      'upToDateApps': includeUptodate,
-      'nonInstalledApps': includeNonInstalled,
+      'upToDateFilterIntent': upToDateFilterIntent.name,
+      'installedFilterIntent': installedFilterIntent.name,
+      'trackOnlyFilterIntent': trackOnlyFilterIntent.name,
       'sourceFilter': sourceFilter,
+    };
+  }
+
+  CategoryFilterIntent _intentFromLegacyUpdateStatus(String name) {
+    return switch (name) {
+      'needsUpdateOnly' => CategoryFilterIntent.exclude,
+      'upToDateOnly' => CategoryFilterIntent.include,
+      _ => CategoryFilterIntent.neutral,
+    };
+  }
+
+  CategoryFilterIntent _intentFromLegacyInstallStatus(String name) {
+    return switch (name) {
+      'installedOnly' => CategoryFilterIntent.include,
+      'notInstalledOnly' => CategoryFilterIntent.exclude,
+      _ => CategoryFilterIntent.neutral,
+    };
+  }
+
+  CategoryFilterIntent _intentFromLegacyTrackMode(String name) {
+    return switch (name) {
+      'trackOnly' => CategoryFilterIntent.include,
+      'installable' => CategoryFilterIntent.exclude,
+      _ => CategoryFilterIntent.neutral,
     };
   }
 
@@ -6727,8 +6890,43 @@ class AppsFilter {
     nameFilter = values['appName']!;
     authorFilter = values['author']!;
     idFilter = values['appId']!;
-    includeUptodate = values['upToDateApps'];
-    includeNonInstalled = values['nonInstalledApps'];
+    if (values.containsKey('upToDateFilterIntent')) {
+      upToDateFilterIntent = CategoryFilterIntent.values.byName(
+        values['upToDateFilterIntent'] as String,
+      );
+    } else if (values.containsKey('updateStatusFilter')) {
+      upToDateFilterIntent = _intentFromLegacyUpdateStatus(
+        values['updateStatusFilter'] as String,
+      );
+    } else if (values['upToDateApps'] == false) {
+      upToDateFilterIntent = CategoryFilterIntent.exclude;
+    } else {
+      upToDateFilterIntent = CategoryFilterIntent.neutral;
+    }
+    if (values.containsKey('installedFilterIntent')) {
+      installedFilterIntent = CategoryFilterIntent.values.byName(
+        values['installedFilterIntent'] as String,
+      );
+    } else if (values.containsKey('installStatusFilter')) {
+      installedFilterIntent = _intentFromLegacyInstallStatus(
+        values['installStatusFilter'] as String,
+      );
+    } else if (values['nonInstalledApps'] == false) {
+      installedFilterIntent = CategoryFilterIntent.include;
+    } else {
+      installedFilterIntent = CategoryFilterIntent.neutral;
+    }
+    if (values.containsKey('trackOnlyFilterIntent')) {
+      trackOnlyFilterIntent = CategoryFilterIntent.values.byName(
+        values['trackOnlyFilterIntent'] as String,
+      );
+    } else if (values.containsKey('trackModeFilter')) {
+      trackOnlyFilterIntent = _intentFromLegacyTrackMode(
+        values['trackModeFilter'] as String,
+      );
+    } else {
+      trackOnlyFilterIntent = CategoryFilterIntent.neutral;
+    }
     sourceFilter = values['sourceFilter'];
   }
 
@@ -6736,8 +6934,9 @@ class AppsFilter {
       authorFilter.trim() == other.authorFilter.trim() &&
       nameFilter.trim() == other.nameFilter.trim() &&
       idFilter.trim() == other.idFilter.trim() &&
-      includeUptodate == other.includeUptodate &&
-      includeNonInstalled == other.includeNonInstalled &&
+      upToDateFilterIntent == other.upToDateFilterIntent &&
+      installedFilterIntent == other.installedFilterIntent &&
+      trackOnlyFilterIntent == other.trackOnlyFilterIntent &&
       settingsProvider.setEqual(
         includedCategoryFilter,
         other.includedCategoryFilter,
