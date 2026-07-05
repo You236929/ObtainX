@@ -2388,9 +2388,7 @@ class _IntegrationsSectionState extends State<_IntegrationsSection>
           title: Text(
             tr('beforeNewInstallsShareToAppVerifier'),
             style: TextStyle(
-              color: _loading
-                  ? cs.onSurface.withValues(alpha: 0.38)
-                  : null,
+              color: _loading ? cs.onSurface.withValues(alpha: 0.38) : null,
             ),
           ),
           trailing: Row(
@@ -2402,9 +2400,7 @@ class _IntegrationsSectionState extends State<_IntegrationsSection>
                 padding: EdgeInsets.zero,
               ),
               Switch(
-                value:
-                    !_loading &&
-                    sp.beforeNewInstallsShareToAppVerifier,
+                value: !_loading && sp.beforeNewInstallsShareToAppVerifier,
                 onChanged: !_loading
                     ? (bool value) =>
                           sp.beforeNewInstallsShareToAppVerifier = value
@@ -3340,12 +3336,11 @@ Map<String, MapEntry<int, bool>> _mergeCategoryEditorMaps(
     }
   }
   final List<MapEntry<String, MapEntry<int, bool>>> sortedEntries =
-      merged.entries.toList()
-        ..sort((a, b) {
-          final int cmp = a.key.toLowerCase().compareTo(b.key.toLowerCase());
-          if (cmp != 0) return cmp;
-          return a.key.compareTo(b.key);
-        });
+      merged.entries.toList()..sort((a, b) {
+        final int cmp = a.key.toLowerCase().compareTo(b.key.toLowerCase());
+        if (cmp != 0) return cmp;
+        return a.key.compareTo(b.key);
+      });
   return Map<String, MapEntry<int, bool>>.fromEntries(sortedEntries);
 }
 

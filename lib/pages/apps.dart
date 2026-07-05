@@ -17,6 +17,7 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:progress_indicator_m3e/progress_indicator_m3e.dart';
 import 'package:obtainium/app_sources/apkmirror.dart';
 import 'package:obtainium/components/app_bottom_sheet.dart';
+import 'package:obtainium/components/app_dropdown_field.dart';
 import 'package:obtainium/components/bulk_category_editor.dart';
 import 'package:obtainium/components/category_action_chip.dart';
 import 'package:obtainium/layout_breakpoints.dart';
@@ -129,10 +130,7 @@ bool appMatchesTrackOnlyFilter(App app, CategoryFilterIntent intent) {
   );
 }
 
-String visibilityFilterChipLabel(
-  String label,
-  CategoryFilterIntent intent,
-) {
+String visibilityFilterChipLabel(String label, CategoryFilterIntent intent) {
   return switch (intent) {
     CategoryFilterIntent.neutral => label,
     CategoryFilterIntent.include => '+ $label',
@@ -1787,6 +1785,13 @@ void showAppsViewOptionsSheet(BuildContext context, {String? folderId}) {
                 )
               : (settingsProvider.groupNonInstalledSeparately = v);
 
+          final effectiveGroupTrackOnlySeparately = folderId != null
+              ? settingsProvider.folderGroupTrackOnlySeparately(folderId)
+              : settingsProvider.groupTrackOnlySeparately;
+          void setEffectiveGroupTrackOnlySeparately(bool v) => folderId != null
+              ? settingsProvider.setFolderGroupTrackOnlySeparately(folderId, v)
+              : (settingsProvider.groupTrackOnlySeparately = v);
+
           final effectiveGroupUpdatesSeparately = folderId != null
               ? settingsProvider.folderGroupUpdatesSeparately(folderId)
               : settingsProvider.groupUpdatesSeparately;
@@ -1808,20 +1813,6 @@ void showAppsViewOptionsSheet(BuildContext context, {String? folderId}) {
                   letterSpacing: 0.5,
                 ),
               ),
-            );
-          }
-
-          Widget sortChip({
-            required String label,
-            required bool selected,
-            required VoidCallback onTap,
-          }) {
-            return FilterChip(
-              label: Text(label),
-              selected: selected,
-              onSelected: (_) => onTap(),
-              showCheckmark: false,
-              visualDensity: VisualDensity.compact,
             );
           }
 
@@ -1878,179 +1869,152 @@ void showAppsViewOptionsSheet(BuildContext context, {String? folderId}) {
               ),
               Divider(color: colorScheme.outlineVariant),
               const SizedBox(height: 8),
-              sectionLabel(tr('sortBy')),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
+              Row(
                 children: [
-                  sortChip(
-                    label: tr('authorName'),
-                    selected:
-                        effectiveSortColumn == SortColumnSettings.authorName,
-                    onTap: () {
-                      setEffectiveSortColumn(SortColumnSettings.authorName);
-                      setSheetState(() {});
-                    },
+                  Expanded(
+                    child: appDropdownField<SortColumnSettings>(
+                      context: ctx,
+                      labelText: tr('sortBy'),
+                      value: effectiveSortColumn,
+                      menuWidth: appDropdownMenuWidth(ctx, [
+                        tr('authorName'),
+                        tr('nameAuthor'),
+                        tr('asAdded'),
+                        tr('releaseDate'),
+                        tr('sortByLastUpdateCheck'),
+                      ]),
+                      items: [
+                        DropdownMenuItem(
+                          value: SortColumnSettings.authorName,
+                          child: Text(tr('authorName')),
+                        ),
+                        DropdownMenuItem(
+                          value: SortColumnSettings.nameAuthor,
+                          child: Text(tr('nameAuthor')),
+                        ),
+                        DropdownMenuItem(
+                          value: SortColumnSettings.added,
+                          child: Text(tr('asAdded')),
+                        ),
+                        DropdownMenuItem(
+                          value: SortColumnSettings.releaseDate,
+                          child: Text(tr('releaseDate')),
+                        ),
+                        DropdownMenuItem(
+                          value: SortColumnSettings.lastUpdateCheck,
+                          child: Text(tr('sortByLastUpdateCheck')),
+                        ),
+                      ],
+                      onChanged: (newValue) {
+                        if (newValue != null) {
+                          setEffectiveSortColumn(newValue);
+                          setSheetState(() {});
+                        }
+                      },
+                    ),
                   ),
-                  sortChip(
-                    label: tr('nameAuthor'),
-                    selected:
-                        effectiveSortColumn == SortColumnSettings.nameAuthor,
-                    onTap: () {
-                      setEffectiveSortColumn(SortColumnSettings.nameAuthor);
-                      setSheetState(() {});
-                    },
-                  ),
-                  sortChip(
-                    label: tr('asAdded'),
-                    selected: effectiveSortColumn == SortColumnSettings.added,
-                    onTap: () {
-                      setEffectiveSortColumn(SortColumnSettings.added);
-                      setSheetState(() {});
-                    },
-                  ),
-                  sortChip(
-                    label: tr('releaseDate'),
-                    selected:
-                        effectiveSortColumn == SortColumnSettings.releaseDate,
-                    onTap: () {
-                      setEffectiveSortColumn(SortColumnSettings.releaseDate);
-                      setSheetState(() {});
-                    },
-                  ),
-                  sortChip(
-                    label: tr('sortByLastUpdateCheck'),
-                    selected:
-                        effectiveSortColumn ==
-                        SortColumnSettings.lastUpdateCheck,
-                    onTap: () {
-                      setEffectiveSortColumn(
-                        SortColumnSettings.lastUpdateCheck,
+                  const SizedBox(width: 8),
+                  IconButton.filledTonal(
+                    icon: Icon(
+                      effectiveSortOrder == SortOrderSettings.ascending
+                          ? Icons.arrow_upward
+                          : Icons.arrow_downward,
+                    ),
+                    tooltip: effectiveSortOrder == SortOrderSettings.ascending
+                        ? tr('ascending')
+                        : tr('descending'),
+                    onPressed: () {
+                      setEffectiveSortOrder(
+                        effectiveSortOrder == SortOrderSettings.ascending
+                            ? SortOrderSettings.descending
+                            : SortOrderSettings.ascending,
                       );
                       setSheetState(() {});
                     },
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              sectionLabel(tr('sortOrder')),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  sortChip(
-                    label: tr('ascending'),
-                    selected: effectiveSortOrder == SortOrderSettings.ascending,
-                    onTap: () {
-                      setEffectiveSortOrder(SortOrderSettings.ascending);
-                      setSheetState(() {});
-                    },
-                  ),
-                  sortChip(
-                    label: tr('descending'),
-                    selected:
-                        effectiveSortOrder == SortOrderSettings.descending,
-                    onTap: () {
-                      setEffectiveSortOrder(SortOrderSettings.descending);
-                      setSheetState(() {});
-                    },
-                  ),
-                ],
-              ),
               const SizedBox(height: 16),
-              Divider(color: colorScheme.outlineVariant),
+              appDropdownField<AppsListGroupBy>(
+                context: ctx,
+                labelText: tr('groupBy'),
+                value: effectiveGroupBy,
+                menuWidth: appDropdownMenuWidth(ctx, [
+                  tr('groupByNone'),
+                  tr('category'),
+                  tr('groupByTrackedSource'),
+                  tr('groupByAppType'),
+                ]),
+                items: [
+                  DropdownMenuItem(
+                    value: AppsListGroupBy.none,
+                    child: Text(tr('groupByNone')),
+                  ),
+                  DropdownMenuItem(
+                    value: AppsListGroupBy.category,
+                    child: Text(tr('category')),
+                  ),
+                  DropdownMenuItem(
+                    value: AppsListGroupBy.source,
+                    child: Text(tr('groupByTrackedSource')),
+                  ),
+                  DropdownMenuItem(
+                    value: AppsListGroupBy.appType,
+                    child: Text(tr('groupByAppType')),
+                  ),
+                ],
+                onChanged: (newValue) {
+                  if (newValue != null) {
+                    setEffectiveGroupBy(newValue);
+                    setSheetState(() {});
+                  }
+                },
+              ),
               const SizedBox(height: 8),
-              sectionLabel(tr('groupBy')),
+              Row(
+                children: [
+                  sectionLabel(tr('groupSeparately')),
+                  const SizedBox(width: 8),
+                  HelpHintIcon(
+                    message: tr('groupSeparatelyDescription'),
+                    padding: EdgeInsets.zero,
+                  ),
+                ],
+              ),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  sortChip(
-                    label: tr('groupByNone'),
-                    selected: effectiveGroupBy == AppsListGroupBy.none,
-                    onTap: () {
-                      setEffectiveGroupBy(AppsListGroupBy.none);
+                  FilterChip(
+                    showCheckmark: false,
+                    label: Text(tr('updates')),
+                    selected: effectiveGroupUpdatesSeparately,
+                    onSelected: (value) {
+                      setEffectiveGroupUpdatesSeparately(value);
                       setSheetState(() {});
                     },
                   ),
-                  sortChip(
-                    label: tr('category'),
-                    selected: effectiveGroupBy == AppsListGroupBy.category,
-                    onTap: () {
-                      setEffectiveGroupBy(AppsListGroupBy.category);
-                      setSheetState(() {});
-                    },
-                  ),
-                  sortChip(
-                    label: tr('groupByTrackedSource'),
-                    selected: effectiveGroupBy == AppsListGroupBy.source,
-                    onTap: () {
-                      setEffectiveGroupBy(AppsListGroupBy.source);
-                      setSheetState(() {});
-                    },
-                  ),
-                  sortChip(
-                    label: tr('groupByAppType'),
-                    selected: effectiveGroupBy == AppsListGroupBy.appType,
-                    onTap: () {
-                      setEffectiveGroupBy(AppsListGroupBy.appType);
-                      setSheetState(() {});
-                    },
-                  ),
-                ],
-              ),
-              if (effectiveGroupBy != AppsListGroupBy.none)
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(tr('groupNonInstalledSeparately')),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      HelpHintIcon(
-                        message: tr('groupNonInstalledSeparatelyDescription'),
-                        padding: EdgeInsets.zero,
-                      ),
-                      Switch(
-                        value: effectiveGroupNonInstalledSeparately,
-                        onChanged: (value) {
-                          setEffectiveGroupNonInstalledSeparately(value);
-                          setSheetState(() {});
-                        },
-                      ),
-                    ],
-                  ),
-                  onTap: () {
-                    setEffectiveGroupNonInstalledSeparately(
-                      !effectiveGroupNonInstalledSeparately,
-                    );
-                    setSheetState(() {});
-                  },
-                ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(tr('groupUpdatesSeparately')),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    HelpHintIcon(
-                      message: tr('groupUpdatesSeparatelyDescription'),
-                      padding: EdgeInsets.zero,
+                  if (effectiveGroupBy != AppsListGroupBy.none) ...[
+                    FilterChip(
+                      showCheckmark: false,
+                      label: Text(tr('nonInstalledApps')),
+                      selected: effectiveGroupNonInstalledSeparately,
+                      onSelected: (value) {
+                        setEffectiveGroupNonInstalledSeparately(value);
+                        setSheetState(() {});
+                      },
                     ),
-                    Switch(
-                      value: effectiveGroupUpdatesSeparately,
-                      onChanged: (value) {
-                        setEffectiveGroupUpdatesSeparately(value);
+                    FilterChip(
+                      showCheckmark: false,
+                      label: Text(tr('trackOnly')),
+                      selected: effectiveGroupTrackOnlySeparately,
+                      onSelected: (value) {
+                        setEffectiveGroupTrackOnlySeparately(value);
                         setSheetState(() {});
                       },
                     ),
                   ],
-                ),
-                onTap: () {
-                  setEffectiveGroupUpdatesSeparately(
-                    !effectiveGroupUpdatesSeparately,
-                  );
-                  setSheetState(() {});
-                },
+                ],
               ),
               Divider(color: colorScheme.outlineVariant),
               const SizedBox(height: 4),
@@ -2346,6 +2310,7 @@ class AppsPageState extends State<AppsPage> {
   /// Maps [AppTypeGroup] → indices into [_listedAppsCache].
   Map<AppTypeGroup, List<int>> _appTypeGroupListedIndices = const {};
   List<int> _nonInstalledListedIndices = const [];
+  List<int> _trackOnlyListedIndices = const [];
 
   /// Indices of apps shown in the "Updates" group (groupUpdatesSeparately).
   List<int> _updatesGroupListedIndices = const [];
@@ -2437,6 +2402,13 @@ class AppsPageState extends State<AppsPage> {
     return id != null
         ? sp.folderGroupNonInstalledSeparately(id)
         : sp.groupNonInstalledSeparately;
+  }
+
+  bool _effectiveGroupTrackOnlySeparately(SettingsProvider sp) {
+    final id = _viewSettingsId;
+    return id != null
+        ? sp.folderGroupTrackOnlySeparately(id)
+        : sp.groupTrackOnlySeparately;
   }
 
   bool _effectiveGroupUpdatesSeparately(SettingsProvider sp) {
@@ -2757,6 +2729,7 @@ class AppsPageState extends State<AppsPage> {
         s.sortOrder,
         s.appsListGroupBy,
         s.groupNonInstalledSeparately,
+        s.groupTrackOnlySeparately,
         s.groupUpdatesSeparately,
         // categories is a Map<String?, int>; hash by length + sorted entries.
         Object.hashAll(s.categories.entries.map((e) => '${e.key}=${e.value}')),
@@ -2782,6 +2755,7 @@ class AppsPageState extends State<AppsPage> {
                 s.folderSortOrder(watchedFolderId).index,
                 s.folderGroupBy(watchedFolderId).index,
                 s.folderGroupNonInstalledSeparately(watchedFolderId),
+                s.folderGroupTrackOnlySeparately(watchedFolderId),
                 s.folderGroupUpdatesSeparately(watchedFolderId),
               ),
       ]),
@@ -2980,6 +2954,7 @@ class AppsPageState extends State<AppsPage> {
       _effectivePinUpdates(settingsProvider),
       _effectiveBuryNonInstalled(settingsProvider),
       _effectiveGroupNonInstalledSeparately(settingsProvider),
+      _effectiveGroupTrackOnlySeparately(settingsProvider),
       _effectiveGroupUpdatesSeparately(settingsProvider),
     ]);
     if (listBuildToken != _lastListBuildToken) {
@@ -3030,10 +3005,7 @@ class AppsPageState extends State<AppsPage> {
         if (!appMatchesInstalledFilter(app.app, filter.installedFilterIntent)) {
           return false;
         }
-        if (!appMatchesTrackOnlyFilter(
-          app.app,
-          filter.trackOnlyFilterIntent,
-        )) {
+        if (!appMatchesTrackOnlyFilter(app.app, filter.trackOnlyFilterIntent)) {
           return false;
         }
         if (filter.nameFilter.isNotEmpty || filter.authorFilter.isNotEmpty) {
@@ -3325,6 +3297,11 @@ class AppsPageState extends State<AppsPage> {
         (effectiveGroupBy == AppsListGroupBy.category ||
             effectiveGroupBy == AppsListGroupBy.source ||
             effectiveGroupBy == AppsListGroupBy.appType);
+    final segregateTrackOnly =
+        _effectiveGroupTrackOnlySeparately(settingsProvider) &&
+        (effectiveGroupBy == AppsListGroupBy.category ||
+            effectiveGroupBy == AppsListGroupBy.source ||
+            effectiveGroupBy == AppsListGroupBy.appType);
     final separateUpdates = _effectiveGroupUpdatesSeparately(settingsProvider);
 
     // Returns true when an app should be shown in the dedicated "Updates" group.
@@ -3348,11 +3325,13 @@ class AppsPageState extends State<AppsPage> {
     listedApps = [...tempRenamed, ...tempPinned, ...tempNotPinned];
 
     // Apps that go into normal category/source/appType groups (excluding
-    // segregated non-installed and the updates group when those features are on).
+    // segregated non-installed, segregated track-only, and the updates group when those features are on).
     List<AppInMemory> appsForGroups(List<AppInMemory> source) => source
         .where(
           (e) =>
               !(segregateNonInstalled && e.app.installedVersion == null) &&
+              !(segregateTrackOnly &&
+                  e.app.additionalSettings['trackOnly'] == true) &&
               !isInUpdatesGroup(e),
         )
         .toList();
@@ -3361,8 +3340,9 @@ class AppsPageState extends State<AppsPage> {
     final appsListedForSourceKeys = appsListedForCategoryKeys;
     final appsListedForAppTypeKeys = appsListedForCategoryKeys;
     final showNonInstalledGroupSection =
-        segregateNonInstalled &&
-        listedApps.any((e) => e.app.installedVersion == null);
+        segregateNonInstalled && _nonInstalledListedIndices.isNotEmpty;
+    final showTrackOnlyGroupSection =
+        segregateTrackOnly && _trackOnlyListedIndices.isNotEmpty;
     final showUpdatesGroupSection =
         separateUpdates && listedApps.any(isInUpdatesGroup);
 
@@ -3409,6 +3389,10 @@ class AppsPageState extends State<AppsPage> {
           ) {
             final AppInMemory row = listedApps[listingIndex];
             if (segregateNonInstalled && row.app.installedVersion == null) {
+              continue;
+            }
+            if (segregateTrackOnly &&
+                row.app.additionalSettings['trackOnly'] == true) {
               continue;
             }
             if (isInUpdatesGroup(row)) continue;
@@ -3461,6 +3445,10 @@ class AppsPageState extends State<AppsPage> {
             if (segregateNonInstalled && row.app.installedVersion == null) {
               continue;
             }
+            if (segregateTrackOnly &&
+                row.app.additionalSettings['trackOnly'] == true) {
+              continue;
+            }
             if (isInUpdatesGroup(row)) continue;
             if (sourceProvider
                     .getSource(
@@ -3502,6 +3490,10 @@ class AppsPageState extends State<AppsPage> {
             if (segregateNonInstalled && row.app.installedVersion == null) {
               continue;
             }
+            if (segregateTrackOnly &&
+                row.app.additionalSettings['trackOnly'] == true) {
+              continue;
+            }
             if (isInUpdatesGroup(row)) continue;
             if (classifyAppType(row) == type) {
               indices.add(listingIndex);
@@ -3516,16 +3508,29 @@ class AppsPageState extends State<AppsPage> {
       }
 
       final nonInstalled = <int>[];
+      final trackOnlyList = <int>[];
       for (
         int listingIndex = 0;
         listingIndex < listedApps.length;
         listingIndex++
       ) {
-        if (listedApps[listingIndex].app.installedVersion == null) {
-          nonInstalled.add(listingIndex);
+        final isTrackOnly =
+            listedApps[listingIndex].app.additionalSettings['trackOnly'] ==
+            true;
+        if (isTrackOnly) {
+          if (segregateTrackOnly) {
+            trackOnlyList.add(listingIndex);
+          } else if (listedApps[listingIndex].app.installedVersion == null) {
+            nonInstalled.add(listingIndex);
+          }
+        } else {
+          if (listedApps[listingIndex].app.installedVersion == null) {
+            nonInstalled.add(listingIndex);
+          }
         }
       }
       _nonInstalledListedIndices = nonInstalled;
+      _trackOnlyListedIndices = trackOnlyList;
 
       final updatesIndices = <int>[];
       for (
@@ -3565,6 +3570,9 @@ class AppsPageState extends State<AppsPage> {
       if (showNonInstalledGroupSection) {
         keys.add('${folderPrefix}__nonInstalled__');
       }
+      if (showTrackOnlyGroupSection) {
+        keys.add('${folderPrefix}__trackOnly__');
+      }
       if (showUpdatesGroupSection) {
         keys.add('${folderPrefix}__updates__');
       }
@@ -3587,13 +3595,15 @@ class AppsPageState extends State<AppsPage> {
           settingsProvider.onlyCheckInstalledOrTrackOnlyApps;
       final bool showFolderedAppsOnMainPage =
           settingsProvider.showFolderedAppsOnMainPage;
-      final Set<String> existingFolderIdsSet =
-          settingsProvider.appFolders.map((f) => f.id).toSet();
+      final Set<String> existingFolderIdsSet = settingsProvider.appFolders
+          .map((f) => f.id)
+          .toSet();
 
       int progressCount = 0;
       for (final a in appsProvider.apps.values) {
         // 1. On-demand-only check
-        final bool isOnDemand = a.app.additionalSettings['onDemandOnly'] == true;
+        final bool isOnDemand =
+            a.app.additionalSettings['onDemandOnly'] == true;
         if (widget.onDemandOnlyList) {
           if (!isOnDemand) continue;
         } else {
@@ -3605,9 +3615,9 @@ class AppsPageState extends State<AppsPage> {
         if (folder != null) {
           if (!folderIdsForApp(a.app).contains(folder)) continue;
         } else if (!widget.onDemandOnlyList && !showFolderedAppsOnMainPage) {
-          final hasFolder = folderIdsForApp(a.app)
-              .where((id) => existingFolderIdsSet.contains(id))
-              .isNotEmpty;
+          final hasFolder = folderIdsForApp(
+            a.app,
+          ).where((id) => existingFolderIdsSet.contains(id)).isNotEmpty;
           if (hasFolder) continue;
         }
 
@@ -4011,6 +4021,17 @@ class AppsPageState extends State<AppsPage> {
         groupKey: '${folderPrefix}__nonInstalled__',
         title: tr('notInstalled'),
         matchingIndices: _nonInstalledListedIndices,
+      );
+    }
+
+    getTrackOnlyCollapsibleTile() {
+      final folderPrefix = widget.folderId != null
+          ? 'folder_${widget.folderId}_'
+          : '';
+      return buildCollapsibleTile(
+        groupKey: '${folderPrefix}__trackOnly__',
+        title: tr('trackOnly'),
+        matchingIndices: _trackOnlyListedIndices,
       );
     }
 
@@ -4626,11 +4647,12 @@ class AppsPageState extends State<AppsPage> {
                       children: [
                         Text(
                           tr('visibilityFilterCycleHint'),
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurfaceVariant,
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
                         ),
                         const SizedBox(height: 8),
                         CategoryActionChipGroup(
@@ -4960,6 +4982,10 @@ class AppsPageState extends State<AppsPage> {
         if (showNonInstalledGroupSection) {
           list.add(getNonInstalledCollapsibleTile());
         }
+        // Track-only group.
+        if (showTrackOnlyGroupSection) {
+          list.add(getTrackOnlyCollapsibleTile());
+        }
         // Updates group at bottom (when not pinned).
         if (showUpdatesGroupSection && !pinUpdatesEnabled) {
           list.add(getUpdatesCollapsibleTile());
@@ -4969,8 +4995,10 @@ class AppsPageState extends State<AppsPage> {
 
       final useCategoryGroups =
           groupBy == AppsListGroupBy.category &&
-          (segregateNonInstalled
-              ? (listedCategories.isNotEmpty || showNonInstalledGroupSection)
+          ((segregateNonInstalled || segregateTrackOnly)
+              ? (listedCategories.isNotEmpty ||
+                    showNonInstalledGroupSection ||
+                    showTrackOnlyGroupSection)
               : !(listedCategories.isEmpty ||
                     (listedCategories.length == 1 &&
                         listedCategories[0] == null)));
@@ -4983,7 +5011,9 @@ class AppsPageState extends State<AppsPage> {
 
       final useSourceGroups =
           groupBy == AppsListGroupBy.source &&
-          (listedSources.isNotEmpty || showNonInstalledGroupSection);
+          (listedSources.isNotEmpty ||
+              showNonInstalledGroupSection ||
+              showTrackOnlyGroupSection);
       if (useSourceGroups) {
         return buildGroupedSliverList(
           mainChildCount: listedSources.length,
@@ -4993,7 +5023,9 @@ class AppsPageState extends State<AppsPage> {
 
       final useAppTypeGroups =
           groupBy == AppsListGroupBy.appType &&
-          (listedAppTypes.isNotEmpty || showNonInstalledGroupSection);
+          (listedAppTypes.isNotEmpty ||
+              showNonInstalledGroupSection ||
+              showTrackOnlyGroupSection);
       if (useAppTypeGroups) {
         return buildGroupedSliverList(
           mainChildCount: listedAppTypes.length,

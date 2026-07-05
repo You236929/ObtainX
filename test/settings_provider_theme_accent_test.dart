@@ -77,24 +77,26 @@ void main() {
 
   test('categories are returned alphabetically sorted by key', () async {
     final SettingsProvider settings = await _settingsWithPrefs(<String, Object>{
-      'categories': jsonEncode(<String, int>{
-        'Zulu': 1,
-        'Alpha': 2,
-        'beta': 3,
-      }),
+      'categories': jsonEncode(<String, int>{'Zulu': 1, 'Alpha': 2, 'beta': 3}),
     });
 
-    expect(settings.categories.keys.toList(), <String>['Alpha', 'beta', 'Zulu']);
+    expect(settings.categories.keys.toList(), <String>[
+      'Alpha',
+      'beta',
+      'Zulu',
+    ]);
   });
 
   test('setCategories sorts input categories alphabetically', () async {
-    final SettingsProvider settings = await _settingsWithPrefs(<String, Object>{});
-    settings.setCategories(<String, int>{
-      'zulu': 1,
-      'Alpha': 2,
-      'Beta': 3,
-    });
+    final SettingsProvider settings = await _settingsWithPrefs(
+      <String, Object>{},
+    );
+    settings.setCategories(<String, int>{'zulu': 1, 'Alpha': 2, 'Beta': 3});
 
-    expect(settings.categories.keys.toList(), <String>['Alpha', 'Beta', 'zulu']);
+    expect(settings.categories.keys.toList(), <String>[
+      'Alpha',
+      'Beta',
+      'zulu',
+    ]);
   });
 }

@@ -775,6 +775,15 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  bool get groupTrackOnlySeparately {
+    return prefs?.getBool('groupTrackOnlySeparately') ?? false;
+  }
+
+  set groupTrackOnlySeparately(bool show) {
+    prefs?.setBool('groupTrackOnlySeparately', show);
+    notifyListeners();
+  }
+
   bool get groupUpdatesSeparately {
     return prefs?.getBool('groupUpdatesSeparately') ?? false;
   }
@@ -884,7 +893,9 @@ class SettingsProvider with ChangeNotifier {
         if (cmp != 0) return cmp;
         return a.key.compareTo(b.key);
       });
-    final Map<String, int> sortedCats = Map<String, int>.fromEntries(sortedEntries);
+    final Map<String, int> sortedCats = Map<String, int>.fromEntries(
+      sortedEntries,
+    );
 
     if (appsProvider != null) {
       // Detect a rename: one key removed from old map, one key added to new map.
@@ -1043,6 +1054,13 @@ class SettingsProvider with ChangeNotifier {
 
   void setFolderGroupNonInstalledSeparately(String id, bool v) =>
       _setFolderViewField(id, 'groupNonInstalledSeparately', v);
+
+  bool folderGroupTrackOnlySeparately(String id) =>
+      (_getFolderViewRaw(id)?['groupTrackOnlySeparately'] as bool?) ??
+      groupTrackOnlySeparately;
+
+  void setFolderGroupTrackOnlySeparately(String id, bool v) =>
+      _setFolderViewField(id, 'groupTrackOnlySeparately', v);
 
   bool folderGroupUpdatesSeparately(String id) =>
       (_getFolderViewRaw(id)?['groupUpdatesSeparately'] as bool?) ??

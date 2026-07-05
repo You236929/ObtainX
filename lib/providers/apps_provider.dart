@@ -2583,7 +2583,9 @@ class AppsProvider with ChangeNotifier {
         );
         try {
           await SharePlus.instance.share(ShareParams(files: [f]));
-          await waitForUserToReturnToForeground(firstTimeWithContext);
+          if (firstTimeWithContext.mounted) {
+            await waitForUserToReturnToForeground(firstTimeWithContext);
+          }
         } catch (e) {
           logs.add('Share to App Verifier failed: $e');
         }

@@ -139,8 +139,9 @@ class _LinearRipplingWavyProgressState
             : _valueController.value;
         return LinearProgressIndicatorM3E(
           value: displayedValue,
-          shape:
-              _shouldShowWavyShape ? ProgressM3EShape.wavy : ProgressM3EShape.flat,
+          shape: _shouldShowWavyShape
+              ? ProgressM3EShape.wavy
+              : ProgressM3EShape.flat,
           size: widget.size,
           activeColor: widget.activeColor,
           trackColor: widget.trackColor,
