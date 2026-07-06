@@ -1,5 +1,5 @@
 import 'dart:async' show unawaited;
-import 'dart:ui' show PlatformDispatcher;
+import 'dart:ui' show PlatformDispatcher, PointerDeviceKind;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -663,6 +663,7 @@ class _ObtainiumState extends State<Obtainium> {
 
           return MaterialApp(
             title: 'ObtainX',
+            scrollBehavior: const AppScrollBehavior(),
             localizationsDelegates: context.localizationDelegates,
             supportedLocales: context.supportedLocales,
             locale: context.locale,
@@ -747,4 +748,16 @@ class _ObtainiumState extends State<Obtainium> {
       ),
     );
   }
+}
+
+class AppScrollBehavior extends MaterialScrollBehavior {
+  const AppScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.trackpad,
+        PointerDeviceKind.stylus,
+      };
 }

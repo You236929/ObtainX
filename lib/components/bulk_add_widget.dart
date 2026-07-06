@@ -232,6 +232,7 @@ class BulkAddWidgetState extends State<BulkAddWidget> {
   Widget _buildAppTypeChipRow() {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
@@ -276,6 +277,7 @@ class BulkAddWidgetState extends State<BulkAddWidget> {
   Widget _buildStoreChipRow() {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: _configurableBulkStores.map((store) {
@@ -310,6 +312,7 @@ class BulkAddWidgetState extends State<BulkAddWidget> {
   Widget _buildOptionsChipRow() {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [

@@ -3339,12 +3339,6 @@ class AppsPageState extends State<AppsPage> {
     final appsListedForCategoryKeys = appsForGroups(listedApps);
     final appsListedForSourceKeys = appsListedForCategoryKeys;
     final appsListedForAppTypeKeys = appsListedForCategoryKeys;
-    final showNonInstalledGroupSection =
-        segregateNonInstalled && _nonInstalledListedIndices.isNotEmpty;
-    final showTrackOnlyGroupSection =
-        segregateTrackOnly && _trackOnlyListedIndices.isNotEmpty;
-    final showUpdatesGroupSection =
-        separateUpdates && listedApps.any(isInUpdatesGroup);
 
     if (listBuildToken != _lastGroupIndexCacheToken) {
       _lastGroupIndexCacheToken = listBuildToken;
@@ -3544,6 +3538,13 @@ class AppsPageState extends State<AppsPage> {
       }
       _updatesGroupListedIndices = updatesIndices;
     }
+
+    final showNonInstalledGroupSection =
+        segregateNonInstalled && _nonInstalledListedIndices.isNotEmpty;
+    final showTrackOnlyGroupSection =
+        segregateTrackOnly && _trackOnlyListedIndices.isNotEmpty;
+    final showUpdatesGroupSection =
+        separateUpdates && listedApps.any(isInUpdatesGroup);
 
     final listedCategories = _listedCategoriesCache;
     final listedSources = _listedSourcesCache;
