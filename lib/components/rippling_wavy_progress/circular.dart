@@ -70,13 +70,24 @@ class _CircularRipplingWavyProgressState
       duration: _getDuration(widget.waveSpeed),
       lowerBound: 1e-10,
       upperBound: 2 * math.pi,
-    )..repeat();
+    );
     _valueController = AnimationController(
       vsync: this,
       duration: widget.dragDuration,
       value: widget.value,
     );
     _mergedListeners = Listenable.merge([_phaseController, _valueController]);
+    _updatePhaseAnimation();
+  }
+
+  void _updatePhaseAnimation() {
+    final active =
+        widget.value == null || (widget.value! > 0 && widget.value! < 1.0);
+    if (active && !_phaseController.isAnimating) {
+      _phaseController.repeat();
+    } else if (!active && _phaseController.isAnimating) {
+      _phaseController.stop();
+    }
   }
 
   @override
@@ -86,21 +97,22 @@ class _CircularRipplingWavyProgressState
     super.didUpdateWidget(oldWidget);
     if (oldWidget.waveSpeed != widget.waveSpeed) {
       _phaseController.duration = _getDuration(widget.waveSpeed);
-      if (_phaseController.isAnimating) {
-        _phaseController.repeat();
-      }
     }
+    _updatePhaseAnimation();
 
-    // Only animate when the value increases else snap
     if (oldWidget.value != widget.value) {
-      if (widget.value == null || widget.value! <= _valueController.value) {
-        _valueController.value = widget.value ?? _valueController.lowerBound;
-      } else {
+      final newVal = widget.value;
+      final curVal = _valueController.value;
+      if (newVal == null || newVal <= curVal) {
+        _valueController.value = newVal ?? _valueController.lowerBound;
+      } else if (newVal - curVal > 0.02) {
         _valueController.animateTo(
-          widget.value!,
-          duration: widget.dragDuration,
+          newVal,
+          duration: const Duration(milliseconds: 200),
           curve: Curves.easeOutCubic,
         );
+      } else {
+        _valueController.value = newVal;
       }
     }
   }

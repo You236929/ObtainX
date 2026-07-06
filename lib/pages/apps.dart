@@ -404,25 +404,10 @@ class _RefreshProgressBar extends StatelessWidget {
           if (p.loadingApps) {
             return (true, 0);
           }
-          final DateTime? since = refreshingSince;
-          if (since == null) {
+          if (refreshingSince == null) {
             return (false, 0);
           }
-          int count = 0;
-          for (final a in p.apps.values) {
-            final last = a.app.lastUpdateCheck;
-            if (last == null || last.isBefore(since)) continue;
-            if (onDemandOnlyList &&
-                a.app.additionalSettings['onDemandOnly'] != true) {
-              continue;
-            }
-            final String? folder = folderId;
-            if (folder != null && !folderIdsForApp(a.app).contains(folder)) {
-              continue;
-            }
-            count++;
-          }
-          return (false, count);
+          return (false, p.checkUpdatesCheckedCount);
         });
     // M3 Expressive linear progress indicator. Wavy active track with a
     // stop-dot at the end (per the M3E spec). The widget draws two

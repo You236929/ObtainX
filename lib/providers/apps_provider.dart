@@ -1442,6 +1442,7 @@ class AppsProvider with ChangeNotifier {
   Map<String, AppInMemory> apps = {};
   final Map<String, String> appPageErrors = {};
   bool loadingApps = false;
+  int checkUpdatesCheckedCount = 0;
   Completer<void>? _loadingCompleter;
   bool gettingUpdates = false;
   LogsProvider logs = LogsProvider();
@@ -1882,11 +1883,10 @@ class AppsProvider with ChangeNotifier {
               : null;
           if (apps[app.id] != null) {
             apps[app.id]!.downloadProgress = progress;
-            // Throttle UI notifications to ~250 ms so AppPage's progress
-            // indicator stays smooth without flooding the widget tree.
+            // Throttle UI notifications to reduce progress widget rebuilds.
             _progressNotifyTimer?.cancel();
             _progressNotifyTimer = Timer(
-              const Duration(milliseconds: 250),
+              const Duration(milliseconds: 500),
               notifyListeners,
             );
           }
@@ -4748,6 +4748,7 @@ class AppsProvider with ChangeNotifier {
         }
         var nextAppIndex = 0;
         var appSaveCompleted = false;
+        checkUpdatesCheckedCount = 0;
         var lastProgressNotificationAt = DateTime.fromMicrosecondsSinceEpoch(0);
         const progressNotificationInterval = Duration(milliseconds: 250);
         final maxParallelUpdateChecks =
@@ -4784,6 +4785,7 @@ class AppsProvider with ChangeNotifier {
                 prefetchedInstalledInfo: prefetchedInstalledInfo,
               );
               appSaveCompleted = true;
+              checkUpdatesCheckedCount++;
               final now = DateTime.now();
               if (now.difference(lastProgressNotificationAt) >=
                   progressNotificationInterval) {
