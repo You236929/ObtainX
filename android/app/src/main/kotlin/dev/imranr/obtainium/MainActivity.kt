@@ -370,6 +370,10 @@ class MainActivity : FlutterActivity() {
                     releaseDownloadKeepAwake()
                     result.success(null)
                 }
+                "isDeviceInteractive" -> {
+                    val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+                    result.success(powerManager.isInteractive)
+                }
                 else -> result.notImplemented()
             }
         }

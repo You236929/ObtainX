@@ -16,6 +16,7 @@ import 'dart:typed_data';
 import 'package:android_intent_plus/flag.dart';
 import 'package:android_package_installer/android_package_installer.dart';
 import 'package:android_package_manager/android_package_manager.dart';
+import 'package:background_fetch/background_fetch.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -5472,6 +5473,10 @@ Future<void> bgUpdateCheck(String taskId, Map<String, dynamic>? params) async {
 
   params ??= {};
 
+  if (taskId == 'obtainium_interactive_retry') {
+    params['toCheck'] = [];
+  }
+
   bool firstEverUpdateTask =
       DateTime.fromMillisecondsSinceEpoch(
         0,
@@ -5695,6 +5700,26 @@ Future<void> bgUpdateCheck(String taskId, Map<String, dynamic>? params) async {
     }
   } else {
     // In install mode...
+    if (await NativeFeatures.isDeviceInteractive()) {
+      logs.add(
+        'BG install task: Device is active (screen on). Postponing background installations.',
+      );
+      try {
+        await BackgroundFetch.scheduleTask(TaskConfig(
+          taskId: 'obtainium_interactive_retry',
+          delay: 15 * 60 * 1000, // 15 minutes
+          periodic: false,
+          forceAlarmManager: true,
+          stopOnTerminate: false,
+          enableHeadless: true,
+        ));
+        logs.add('BG install task: Scheduled obtainium_interactive_retry task.');
+      } catch (err) {
+        logs.add('BG install task: Failed to schedule retry task: $err');
+      }
+      return;
+    }
+
     // If you haven't explicitly been given updates to install, grab all available silent updates
     logs.add('BG install task: Started (${toInstall.length}).');
     if (toInstall.isEmpty && !networkRestricted && !chargingRestricted) {
