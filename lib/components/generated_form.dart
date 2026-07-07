@@ -1053,11 +1053,14 @@ class _GeneratedFormState extends State<GeneratedForm> {
   // If any value changes, call this to update the parent with value and validity
   void someValueChanged({bool isBuilding = false, bool forceInvalid = false}) {
     Map<String, dynamic> returnValues = values;
-    var valid = _formKey.currentState?.validate() ?? true;
-    for (int r = 0; r < formInputs.length; r++) {
-      for (int i = 0; i < formInputs[r].length; i++) {
-        if (formInputs[r][i] is TextFormField) {
-          valid = valid && validateTextField(formInputs[r][i] as TextFormField);
+    var valid = true;
+    if (!isBuilding) {
+      valid = _formKey.currentState?.validate() ?? true;
+      for (int r = 0; r < formInputs.length; r++) {
+        for (int i = 0; i < formInputs[r].length; i++) {
+          if (formInputs[r][i] is TextFormField) {
+            valid = valid && validateTextField(formInputs[r][i] as TextFormField);
+          }
         }
       }
     }
