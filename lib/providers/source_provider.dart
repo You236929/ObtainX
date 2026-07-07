@@ -1011,7 +1011,8 @@ abstract class AppSource {
       url,
     );
     requestHeaders ??= <String, String>{};
-    if (!requestHeaders.containsKey(HttpHeaders.userAgentHeader)) {
+    final hasUserAgent = requestHeaders.keys.any((key) => key.toLowerCase() == 'user-agent');
+    if (!hasUserAgent) {
       requestHeaders = Map<String, String>.from(requestHeaders)
         ..[HttpHeaders.userAgentHeader] = 'Obtainium';
     }
