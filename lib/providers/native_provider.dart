@@ -112,7 +112,8 @@ class NativeFeatures {
 
   static Future<bool> isDeviceInteractive() async {
     try {
-      return await _powerChannel.invokeMethod<bool>('isDeviceInteractive') ?? false;
+      return await _powerChannel.invokeMethod<bool>('isDeviceInteractive') ??
+          false;
     } on PlatformException {
       return false;
     } on MissingPluginException {

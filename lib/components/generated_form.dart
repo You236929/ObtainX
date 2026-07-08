@@ -1059,7 +1059,8 @@ class _GeneratedFormState extends State<GeneratedForm> {
       for (int r = 0; r < formInputs.length; r++) {
         for (int i = 0; i < formInputs[r].length; i++) {
           if (formInputs[r][i] is TextFormField) {
-            valid = valid && validateTextField(formInputs[r][i] as TextFormField);
+            valid =
+                valid && validateTextField(formInputs[r][i] as TextFormField);
           }
         }
       }
@@ -1586,6 +1587,9 @@ class _GeneratedFormState extends State<GeneratedForm> {
                                         title: message.key,
                                         message: message.value,
                                         items: const [],
+                                        primaryActionColour: Theme.of(
+                                          ctx,
+                                        ).colorScheme.error,
                                       );
                                     },
                                   ).then((value) {

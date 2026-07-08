@@ -40,6 +40,7 @@ import 'package:obtainium/providers/source_provider.dart';
 import 'package:obtainium/services/bulk_import_service.dart';
 import 'package:obtainium/services/bulk_scan_cache.dart';
 import 'package:obtainium/store_source_icons.dart';
+import 'package:obtainium/theme/app_dialog_theme.dart';
 import 'package:obtainium/theme/app_theme_accent.dart';
 import 'package:obtainium/theme/app_segmented_button_theme.dart';
 import 'package:obtainium/theme/m3e_expressive_list.dart';
@@ -804,19 +805,24 @@ class _AppListItem extends StatelessWidget {
 
     Widget buildDownloadProgressControl() {
       final double activeDownloadProgress = downloadProgress ?? 0;
+      final bool isScanning =
+          downloadProgress != null && activeDownloadProgress == -2;
       final bool isInstalling =
-          downloadProgress != null && activeDownloadProgress < 0;
-      final double? progressValue = isInstalling
+          downloadProgress != null && activeDownloadProgress == -1;
+      final bool isBusy = isScanning || isInstalling;
+      final double? progressValue = isBusy
           ? null
           : (activeDownloadProgress / 100).clamp(0.0, 1.0);
       return Semantics(
-        label: isInstalling
+        label: isScanning
+            ? tr('scanningWithVirusTotal')
+            : isInstalling
             ? tr('installing')
             : tr(
                 'percentProgress',
                 args: [activeDownloadProgress.toInt().toString()],
               ),
-        button: !isInstalling,
+        button: !isBusy,
         child: SizedBox.square(
           dimension: 48,
           child: Stack(
@@ -827,12 +833,12 @@ class _AppListItem extends StatelessWidget {
                 child: CircularRipplingWavyProgressIndicator(
                   value: progressValue,
                   size: CircularProgressM3ESize.s,
-                  activeColor: isInstalling
+                  activeColor: isBusy
                       ? colorScheme.secondary
                       : colorScheme.primary,
                 ),
               ),
-              if (!isInstalling)
+              if (!isBusy)
                 IconButton.filledTonal(
                   tooltip: tr('cancel'),
                   style: IconButton.styleFrom(
@@ -4269,6 +4275,7 @@ class AppsPageState extends State<AppsPage> {
                 args: [selectedAppIds.length.toString()],
               ),
             ),
+            contentPadding: appDialogContentPadding,
             content: Text(
               tr('onlyWorksWithNonVersionDetectApps'),
               style: const TextStyle(
@@ -4388,6 +4395,7 @@ class AppsPageState extends State<AppsPage> {
         builder: (BuildContext ctx) {
           return AlertDialog(
             scrollable: true,
+            contentPadding: appDialogContentPadding,
             content: Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Column(
@@ -6175,6 +6183,7 @@ class AppsPageState extends State<AppsPage> {
 
           return AlertDialog(
             title: Text(existing == null ? tr('newFolder') : tr('editFolder')),
+            contentPadding: appDialogContentPadding,
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -6426,6 +6435,7 @@ class AppsPageState extends State<AppsPage> {
               context: dCtx,
               builder: (ctx) => AlertDialog(
                 title: Text(tr('newFolder')),
+                contentPadding: appDialogContentPadding,
                 content: TextField(
                   controller: nameCtrl,
                   autofocus: true,
@@ -6621,6 +6631,7 @@ class AppsPageState extends State<AppsPage> {
                               final confirm = await showDialog<bool>(
                                 context: sheetCtx,
                                 builder: (dCtx) => AlertDialog(
+                                  contentPadding: appDialogContentPadding,
                                   content: Text(
                                     tr(
                                       'deleteFolderConfirm',
@@ -6636,6 +6647,14 @@ class AppsPageState extends State<AppsPage> {
                                     FilledButton(
                                       onPressed: () =>
                                           Navigator.of(dCtx).pop(true),
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: Theme.of(
+                                          dCtx,
+                                        ).colorScheme.error,
+                                        foregroundColor: Theme.of(
+                                          dCtx,
+                                        ).colorScheme.onError,
+                                      ),
                                       child: Text(tr('delete')),
                                     ),
                                   ],

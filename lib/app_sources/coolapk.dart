@@ -49,7 +49,6 @@ class CoolApk extends AppSource {
 
     // get latest
     var detailUrl = '$apiUrl/v6/apk/detail?id=$appId';
-    var headers = await getRequestHeaders(additionalSettings, detailUrl);
     var res = await sourceRequest(detailUrl, additionalSettings);
 
     if (res.statusCode != 200) {
@@ -106,7 +105,11 @@ class CoolApk extends AppSource {
     Map<String, dynamic> additionalSettings,
   ) async {
     String url = '$apiUrl/v6/apk/download?pn=$appId&aid=$aid';
-    var res = await sourceRequest(url, additionalSettings, followRedirects: false);
+    var res = await sourceRequest(
+      url,
+      additionalSettings,
+      followRedirects: false,
+    );
     if (res.statusCode >= 300 && res.statusCode < 400) {
       String location = res.headers['location'] ?? '';
       return location;

@@ -14,6 +14,7 @@ import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
+import 'package:obtainium/theme/app_dialog_theme.dart';
 import 'package:obtainium/theme/app_theme_accent.dart';
 import 'package:obtainium/theme/m3e_expressive_list.dart';
 import 'package:provider/provider.dart';
@@ -1103,6 +1104,7 @@ class _ImportErrorDialogState extends State<ImportErrorDialog> {
     return AlertDialog(
       scrollable: true,
       title: Text(tr('importErrors')),
+      contentPadding: appDialogContentPadding,
       content: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1639,6 +1641,7 @@ class _SelectionModalState extends State<SelectionModal> {
     return AlertDialog(
       scrollable: true,
       title: Text(widget.title ?? tr('pick')),
+      contentPadding: appDialogContentPadding,
       content: Column(children: sheetColumnChildren),
       actions: selectionActions,
     );

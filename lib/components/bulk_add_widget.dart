@@ -14,6 +14,7 @@ import 'package:obtainium/app_sources/izzyondroid.dart';
 import 'package:obtainium/components/rippling_wavy_progress/linear.dart';
 import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/providers/apps_provider.dart';
+import 'package:obtainium/theme/app_dialog_theme.dart';
 import 'package:obtainium/providers/logs_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
 import 'package:obtainium/services/bulk_import_service.dart';
@@ -232,7 +233,9 @@ class BulkAddWidgetState extends State<BulkAddWidget> {
   Widget _buildAppTypeChipRow() {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      physics: const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
@@ -277,7 +280,9 @@ class BulkAddWidgetState extends State<BulkAddWidget> {
   Widget _buildStoreChipRow() {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      physics: const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: _configurableBulkStores.map((store) {
@@ -312,7 +317,9 @@ class BulkAddWidgetState extends State<BulkAddWidget> {
   Widget _buildOptionsChipRow() {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      physics: const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
@@ -2321,6 +2328,7 @@ class BulkAddWidgetState extends State<BulkAddWidget> {
         builder: (BuildContext context) {
           return AlertDialog(
             title: Text(tr('discardUnsavedChangesQuestion')),
+            contentPadding: appDialogContentPadding,
             content: Text(tr('bulkScanDiscardResultsBody')),
             actions: [
               TextButton(
@@ -2329,6 +2337,9 @@ class BulkAddWidgetState extends State<BulkAddWidget> {
               ),
               TextButton(
                 onPressed: () => Navigator.of(context).pop(true),
+                style: TextButton.styleFrom(
+                  foregroundColor: Theme.of(context).colorScheme.error,
+                ),
                 child: Text(tr('continue')),
               ),
             ],
@@ -2351,6 +2362,7 @@ class BulkAddWidgetState extends State<BulkAddWidget> {
           builder: (BuildContext context) {
             return AlertDialog(
               title: Text(tr('bulkScanNavigationCancelTitle')),
+              contentPadding: appDialogContentPadding,
               content: Text(tr('bulkScanNavigationCancelBody')),
               actions: [
                 TextButton(
@@ -2359,6 +2371,9 @@ class BulkAddWidgetState extends State<BulkAddWidget> {
                 ),
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(true),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Theme.of(context).colorScheme.error,
+                  ),
                   child: Text(tr('cancelBulkScan')),
                 ),
               ],

@@ -1471,6 +1471,15 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  bool get enableVirusTotalScanning {
+    return prefs?.getBool('enableVirusTotalScanning') ?? false;
+  }
+
+  set enableVirusTotalScanning(bool val) {
+    prefs?.setBool('enableVirusTotalScanning', val);
+    notifyListeners();
+  }
+
   bool get shizukuPretendToBeGooglePlay {
     return prefs?.getBool('shizukuPretendToBeGooglePlay') ?? false;
   }
