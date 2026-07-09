@@ -18,6 +18,7 @@ import 'package:obtainium/components/app_page_section_title.dart';
 import 'package:obtainium/components/category_action_chip.dart';
 import 'package:obtainium/pages/additional_options_page.dart';
 import 'package:obtainium/pages/page_route_slide_up.dart';
+import 'package:obtainium/theme/app_dialog_theme.dart';
 import 'package:obtainium/theme/app_form_field_styles.dart';
 import 'package:obtainium/theme/app_page_icon_colors.dart';
 import 'package:obtainium/theme/app_theme_accent.dart';
@@ -269,6 +270,7 @@ int appPageAppsRebuildToken(AppsProvider provider, String appId) {
     model.latestIsReproducible,
     model.latestReproducibleStatus,
     model.latestAttestationStatus,
+    model.latestMalwareScanStatus,
     model.overrideSource,
     _apkUrlEntriesRebuildToken(model.apkUrls),
     _apkUrlEntriesRebuildToken(model.otherAssetUrls),
@@ -329,11 +331,15 @@ class _DownloadProgressAction extends StatelessWidget {
       return const SizedBox.shrink();
     }
     final double dp = dpOrNull;
-    final bool isInstalling = dp < 0;
-    final String bytesLabel = !isInstalling && totalBytes != null
+    final bool isScanning = dp == -2;
+    final bool isInstalling = dp == -1;
+    final bool isBusy = isScanning || isInstalling;
+    final String bytesLabel = !isBusy && totalBytes != null
         ? ' · ${formatBytesForDisplay((dp / 100 * totalBytes).round())} / ${formatBytesForDisplay(totalBytes)}'
         : '';
-    final String label = isInstalling
+    final String label = isScanning
+        ? '${tr('scanningWithVirusTotal')}…'
+        : isInstalling
         ? '${tr('installing')}…'
         : tr('downloadingX', args: ['${dp.round()}%$bytesLabel']);
     final Widget progressBar = ClipRRect(
@@ -347,15 +353,15 @@ class _DownloadProgressAction extends StatelessWidget {
             Align(
               alignment: Alignment.centerLeft,
               child: FractionallySizedBox(
-                widthFactor: isInstalling ? 1.0 : dp / 100,
+                widthFactor: isBusy ? 1.0 : dp / 100,
                 child: Container(
                   color: actionTheme.colorScheme.primary.withAlpha(
-                    isInstalling ? 55 : 220,
+                    isBusy ? 55 : 220,
                   ),
                 ),
               ),
             ),
-            if (isInstalling)
+            if (isBusy)
               LinearProgressIndicator(
                 backgroundColor: Colors.transparent,
                 color: actionTheme.colorScheme.primary.withAlpha(120),
@@ -378,7 +384,7 @@ class _DownloadProgressAction extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         progressBar,
-        if (!isInstalling)
+        if (!isBusy)
           Center(
             child: TextButton(
               onPressed: () =>
@@ -686,11 +692,15 @@ class _AppPageState extends State<AppPage> {
           data: dialogTheme,
           child: AlertDialog(
             title: Text(tr('appEditsUnsavedTitle')),
+            contentPadding: appDialogContentPadding,
             content: Text(tr('appEditsUnsavedBody')),
             actions: [
               TextButton(
                 onPressed: () =>
                     Navigator.pop(dialogContext, _UnsavedAction.discard),
+                style: TextButton.styleFrom(
+                  foregroundColor: Theme.of(dialogContext).colorScheme.error,
+                ),
                 child: Text(tr('discard')),
               ),
               TextButton(
@@ -865,7 +875,13 @@ class _AppPageState extends State<AppPage> {
         _editStagedIconBytes!,
       );
       if (iconErr != null) {
-        if (mounted) _showPageError(ObtainiumError(iconErr), context);
+        if (mounted) {
+          _showPageError(
+            ObtainiumError(iconErr),
+            context,
+            title: tr('errorChangingIcon'),
+          );
+        }
         return;
       }
     }
@@ -894,7 +910,11 @@ class _AppPageState extends State<AppPage> {
       );
     } catch (e) {
       if (mounted) {
-        _showPageError(ObtainiumError(tr('noFilePickerAvailable')), context);
+        _showPageError(
+          ObtainiumError(tr('noFilePickerAvailable')),
+          context,
+          title: tr('errorChangingIcon'),
+        );
       }
       return;
     }
@@ -905,7 +925,11 @@ class _AppPageState extends State<AppPage> {
     if (bytes == null) return;
     if (!appsProvider.validateUserAppIconPngBytes(bytes)) {
       if (mounted) {
-        _showPageError(ObtainiumError(tr('changeAppIconInvalidPng')), context);
+        _showPageError(
+          ObtainiumError(tr('changeAppIconInvalidPng')),
+          context,
+          title: tr('errorChangingIcon'),
+        );
       }
       return;
     }
@@ -963,7 +987,11 @@ class _AppPageState extends State<AppPage> {
     );
   }
 
-  void _showPageError(dynamic error, BuildContext hostContext) {
+  void _showPageError(
+    dynamic error,
+    BuildContext hostContext, {
+    String? title,
+  }) {
     if (!hostContext.mounted) return;
     Provider.of<LogsProvider>(
       hostContext,
@@ -972,7 +1000,7 @@ class _AppPageState extends State<AppPage> {
     Provider.of<AppsProvider>(
       hostContext,
       listen: false,
-    ).setAppPageError(widget.appId, error);
+    ).setAppPageError(widget.appId, error, title: title);
   }
 
   void _showPageMessage(dynamic message, BuildContext hostContext) {
@@ -989,8 +1017,12 @@ class _AppPageState extends State<AppPage> {
     if ((title == null || title.isEmpty) && (error == null || error.isEmpty)) {
       return const SizedBox.shrink();
     }
+    // Only collapse to a single line when the title IS the message verbatim
+    // (the build-verification-blocked case passes the same string as both) -
+    // any real title/detail pair (a specific title plus its own message)
+    // should always show both, not just the title.
     final bool showErrorDetails =
-        title == null && error != null && error.isNotEmpty;
+        error != null && error.isNotEmpty && error != title;
 
     final BoxDecoration baseDecoration = appPageSectionCardDecoration(ctx);
     final ColorScheme colorScheme = pageTheme.colorScheme;
@@ -1036,10 +1068,10 @@ class _AppPageState extends State<AppPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    title ?? tr('errorCheckingUpdates'),
+                    title ?? tr('error'),
                     style: textTheme.labelLarge?.copyWith(
                       color: colorScheme.onSurface,
-                      fontWeight: title == null
+                      fontWeight: showErrorDetails
                           ? FontWeight.w700
                           : FontWeight.normal,
                     ),
@@ -1644,6 +1676,7 @@ class _AppPageState extends State<AppPage> {
               _showPageError(
                 ObtainiumError(error.description, unexpected: true),
                 context,
+                title: tr('errorLoadingPage'),
               );
             }
           },
@@ -1836,7 +1869,7 @@ class _AppPageState extends State<AppPage> {
         await appsProvider.updatePendingRepoRename(id, err.newUrl);
       } else if (context.mounted) {
         // ignore: use_build_context_synchronously
-        _showPageError(err, context);
+        _showPageError(err, context, title: tr('errorCheckingUpdates'));
       }
     } finally {
       if (context.mounted &&
@@ -1934,9 +1967,10 @@ class _AppPageState extends State<AppPage> {
       (AppsProvider provider) =>
           appPageAppsRebuildToken(provider, widget.appId),
     );
-    final String? persistentPageError = context.select<AppsProvider, String?>(
-      (AppsProvider provider) => provider.appPageErrors[widget.appId],
-    );
+    final ({String? title, String message})? persistentPageError = context
+        .select<AppsProvider, ({String? title, String message})?>(
+          (AppsProvider provider) => provider.appPageErrors[widget.appId],
+        );
 
     final AppsProvider appsProvider = Provider.of<AppsProvider>(
       context,
@@ -2010,7 +2044,9 @@ class _AppPageState extends State<AppPage> {
           )
         : null;
     final String? effectivePersistentPageError =
-        buildVerificationPersistentPageError ?? persistentPageError;
+        buildVerificationPersistentPageError ?? persistentPageError?.message;
+    final String? effectivePersistentPageErrorTitle =
+        buildVerificationPersistentPageError ?? persistentPageError?.title;
 
     final Uint8List? iconBytes = app?.icon;
     final Brightness themeBrightness = Theme.of(context).brightness;
@@ -2487,6 +2523,7 @@ class _AppPageState extends State<AppPage> {
           hostContext: context,
           builder: (dialogContext) => AlertDialog(
             title: Text(tr('fixPackageId')),
+            contentPadding: appDialogContentPadding,
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -2716,7 +2753,11 @@ class _AppPageState extends State<AppPage> {
                         );
                       } catch (e) {
                         if (!context.mounted) return;
-                        _showPageError(e, context);
+                        _showPageError(
+                          e,
+                          context,
+                          title: tr('errorDownloadingAssets'),
+                        );
                       }
                     },
             ),
@@ -2779,7 +2820,11 @@ class _AppPageState extends State<AppPage> {
                         );
                       } catch (e) {
                         if (!context.mounted) return;
-                        _showPageError(e, context);
+                        _showPageError(
+                          e,
+                          context,
+                          title: tr('errorDownloadingAssets'),
+                        );
                       }
                     },
             ),
@@ -2845,6 +2890,13 @@ class _AppPageState extends State<AppPage> {
           githubAttestationVerified ||
           githubAttestationUnsupported ||
           githubAttestationCantCheck;
+      final String? malwareScanStatus = app?.app.latestMalwareScanStatus;
+      final bool malwareScanFlagged =
+          malwareScanStatus == malwareScanStatusFlagged;
+      final bool malwareScanError = malwareScanStatus == malwareScanStatusError;
+      final bool malwareScanClean = malwareScanStatus == malwareScanStatusClean;
+      final bool malwareScanHasStatus =
+          malwareScanFlagged || malwareScanError || malwareScanClean;
       final bool reproducibleBuildUsesErrorColors =
           reproducibleBuildBlocked && reproducibleBuildNotReproducible;
       final Color reproducibleBuildProblemContainerColor =
@@ -2873,7 +2925,8 @@ class _AppPageState extends State<AppPage> {
       if (app != null &&
           (reproducibleBuildHasDisplayStatus ||
               githubAttestationHasStatus ||
-              githubAttestationBlocked)) {
+              githubAttestationBlocked ||
+              malwareScanHasStatus)) {
         versionCardChildren.add(
           Padding(
             padding: const EdgeInsets.only(bottom: 6),
@@ -3090,6 +3143,88 @@ class _AppPageState extends State<AppPage> {
                                     ),
                               ),
                             ],
+                          ),
+                        ),
+                      if (malwareScanHasStatus)
+                        GestureDetector(
+                          onTap: app.app.latestMalwareScanReportUrl == null
+                              ? null
+                              : () => launchUrlString(
+                                  app.app.latestMalwareScanReportUrl!,
+                                  mode: LaunchMode.externalApplication,
+                                ),
+                          child: Tooltip(
+                            message: app.app.latestMalwareScanDetail ?? '',
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: malwareScanFlagged
+                                    ? Theme.of(pageThemeContext)
+                                          .colorScheme
+                                          .errorContainer
+                                          .withValues(alpha: 0.55)
+                                    : malwareScanError
+                                    ? Colors.orange.withValues(alpha: 0.16)
+                                    : Colors.green.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: malwareScanFlagged
+                                      ? Theme.of(pageThemeContext)
+                                            .colorScheme
+                                            .error
+                                            .withValues(alpha: 0.55)
+                                      : malwareScanError
+                                      ? Colors.orange.withValues(alpha: 0.55)
+                                      : Colors.green.withValues(alpha: 0.5),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    malwareScanFlagged
+                                        ? Icons.gpp_bad_outlined
+                                        : malwareScanError
+                                        ? Icons.warning_amber_rounded
+                                        : Icons.verified_outlined,
+                                    size: 12,
+                                    color: malwareScanFlagged
+                                        ? Theme.of(
+                                            pageThemeContext,
+                                          ).colorScheme.onErrorContainer
+                                        : malwareScanError
+                                        ? Colors.orange.shade800
+                                        : Colors.green,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    tr(
+                                      malwareScanFlagged
+                                          ? 'malwareScanFlaggedChip'
+                                          : malwareScanError
+                                          ? 'malwareScanErrorChip'
+                                          : 'malwareScanCleanChip',
+                                    ),
+                                    style: Theme.of(pageThemeContext)
+                                        .textTheme
+                                        .labelSmall
+                                        ?.copyWith(
+                                          color: malwareScanFlagged
+                                              ? Theme.of(
+                                                  pageThemeContext,
+                                                ).colorScheme.onErrorContainer
+                                              : malwareScanError
+                                              ? Colors.orange.shade800
+                                              : Colors.green,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
                     ],
@@ -3905,6 +4040,7 @@ class _AppPageState extends State<AppPage> {
           _showPageError(
             ObtainiumError(buildVerificationBlockedMessage!),
             context,
+            title: tr('errorInstallingUpdate'),
           );
           return;
         }
@@ -3923,7 +4059,7 @@ class _AppPageState extends State<AppPage> {
           }
         } catch (e) {
           if (context.mounted) {
-            _showPageError(e, context);
+            _showPageError(e, context, title: tr('errorInstallingUpdate'));
           }
         }
       }
@@ -4504,7 +4640,7 @@ class _AppPageState extends State<AppPage> {
                               themedPageContext,
                               pageThemeForPage,
                               effectivePersistentPageError,
-                              title: buildVerificationPersistentPageError,
+                              title: effectivePersistentPageErrorTitle,
                             ),
                           ),
                         ],
@@ -4585,7 +4721,7 @@ class _AppPageState extends State<AppPage> {
                                             pageThemeForPage,
                                             effectivePersistentPageError,
                                             title:
-                                                buildVerificationPersistentPageError,
+                                                effectivePersistentPageErrorTitle,
                                           ),
                                           getInfoColumn(
                                             themedPageContext,

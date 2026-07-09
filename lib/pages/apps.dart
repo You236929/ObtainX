@@ -17,6 +17,7 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:progress_indicator_m3e/progress_indicator_m3e.dart';
 import 'package:obtainium/app_sources/apkmirror.dart';
 import 'package:obtainium/components/app_bottom_sheet.dart';
+import 'package:obtainium/components/app_dropdown_field.dart';
 import 'package:obtainium/components/bulk_category_editor.dart';
 import 'package:obtainium/components/category_action_chip.dart';
 import 'package:obtainium/layout_breakpoints.dart';
@@ -39,6 +40,7 @@ import 'package:obtainium/providers/source_provider.dart';
 import 'package:obtainium/services/bulk_import_service.dart';
 import 'package:obtainium/services/bulk_scan_cache.dart';
 import 'package:obtainium/store_source_icons.dart';
+import 'package:obtainium/theme/app_dialog_theme.dart';
 import 'package:obtainium/theme/app_theme_accent.dart';
 import 'package:obtainium/theme/app_segmented_button_theme.dart';
 import 'package:obtainium/theme/m3e_expressive_list.dart';
@@ -79,6 +81,62 @@ bool appCategoriesMatchFilter(
     };
   }
   return true;
+}
+
+bool appIsTrackOnlyForFilter(App app) =>
+    app.additionalSettings['trackOnly'] == true;
+
+bool appIsUpToDateForFilter(App app) {
+  final installed = app.installedVersion;
+  final latest = app.latestVersion;
+  if (installed == null) {
+    return false;
+  }
+  return isSkipActiveForCurrentLatest(app) ||
+      installed == latest ||
+      versionsEffectivelyEqual(installed, latest) ||
+      (installedVersionIsNewerOrEqual(installed, latest) &&
+          !versionOrderIsUnclear(installed, latest));
+}
+
+bool appMatchesTriStateAttributeFilter({
+  required bool attributeIsTrue,
+  required CategoryFilterIntent intent,
+}) {
+  return switch (intent) {
+    CategoryFilterIntent.neutral => true,
+    CategoryFilterIntent.include => attributeIsTrue,
+    CategoryFilterIntent.exclude => !attributeIsTrue,
+  };
+}
+
+bool appMatchesUpToDateFilter(App app, CategoryFilterIntent intent) {
+  return appMatchesTriStateAttributeFilter(
+    attributeIsTrue: appIsUpToDateForFilter(app),
+    intent: intent,
+  );
+}
+
+bool appMatchesInstalledFilter(App app, CategoryFilterIntent intent) {
+  return appMatchesTriStateAttributeFilter(
+    attributeIsTrue: app.installedVersion != null,
+    intent: intent,
+  );
+}
+
+bool appMatchesTrackOnlyFilter(App app, CategoryFilterIntent intent) {
+  return appMatchesTriStateAttributeFilter(
+    attributeIsTrue: appIsTrackOnlyForFilter(app),
+    intent: intent,
+  );
+}
+
+String visibilityFilterChipLabel(String label, CategoryFilterIntent intent) {
+  return switch (intent) {
+    CategoryFilterIntent.neutral => label,
+    CategoryFilterIntent.include => '+ $label',
+    CategoryFilterIntent.exclude => '- $label',
+  };
 }
 
 /// Group header strip: stronger primary tint than rows; when luminance matches
@@ -747,19 +805,24 @@ class _AppListItem extends StatelessWidget {
 
     Widget buildDownloadProgressControl() {
       final double activeDownloadProgress = downloadProgress ?? 0;
+      final bool isScanning =
+          downloadProgress != null && activeDownloadProgress == -2;
       final bool isInstalling =
-          downloadProgress != null && activeDownloadProgress < 0;
-      final double? progressValue = isInstalling
+          downloadProgress != null && activeDownloadProgress == -1;
+      final bool isBusy = isScanning || isInstalling;
+      final double? progressValue = isBusy
           ? null
           : (activeDownloadProgress / 100).clamp(0.0, 1.0);
       return Semantics(
-        label: isInstalling
+        label: isScanning
+            ? tr('scanningWithVirusTotal')
+            : isInstalling
             ? tr('installing')
             : tr(
                 'percentProgress',
                 args: [activeDownloadProgress.toInt().toString()],
               ),
-        button: !isInstalling,
+        button: !isBusy,
         child: SizedBox.square(
           dimension: 48,
           child: Stack(
@@ -770,12 +833,12 @@ class _AppListItem extends StatelessWidget {
                 child: CircularRipplingWavyProgressIndicator(
                   value: progressValue,
                   size: CircularProgressM3ESize.s,
-                  activeColor: isInstalling
+                  activeColor: isBusy
                       ? colorScheme.secondary
                       : colorScheme.primary,
                 ),
               ),
-              if (!isInstalling)
+              if (!isBusy)
                 IconButton.filledTonal(
                   tooltip: tr('cancel'),
                   style: IconButton.styleFrom(
@@ -1728,6 +1791,13 @@ void showAppsViewOptionsSheet(BuildContext context, {String? folderId}) {
                 )
               : (settingsProvider.groupNonInstalledSeparately = v);
 
+          final effectiveGroupTrackOnlySeparately = folderId != null
+              ? settingsProvider.folderGroupTrackOnlySeparately(folderId)
+              : settingsProvider.groupTrackOnlySeparately;
+          void setEffectiveGroupTrackOnlySeparately(bool v) => folderId != null
+              ? settingsProvider.setFolderGroupTrackOnlySeparately(folderId, v)
+              : (settingsProvider.groupTrackOnlySeparately = v);
+
           final effectiveGroupUpdatesSeparately = folderId != null
               ? settingsProvider.folderGroupUpdatesSeparately(folderId)
               : settingsProvider.groupUpdatesSeparately;
@@ -1749,20 +1819,6 @@ void showAppsViewOptionsSheet(BuildContext context, {String? folderId}) {
                   letterSpacing: 0.5,
                 ),
               ),
-            );
-          }
-
-          Widget sortChip({
-            required String label,
-            required bool selected,
-            required VoidCallback onTap,
-          }) {
-            return FilterChip(
-              label: Text(label),
-              selected: selected,
-              onSelected: (_) => onTap(),
-              showCheckmark: false,
-              visualDensity: VisualDensity.compact,
             );
           }
 
@@ -1819,179 +1875,152 @@ void showAppsViewOptionsSheet(BuildContext context, {String? folderId}) {
               ),
               Divider(color: colorScheme.outlineVariant),
               const SizedBox(height: 8),
-              sectionLabel(tr('sortBy')),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
+              Row(
                 children: [
-                  sortChip(
-                    label: tr('authorName'),
-                    selected:
-                        effectiveSortColumn == SortColumnSettings.authorName,
-                    onTap: () {
-                      setEffectiveSortColumn(SortColumnSettings.authorName);
-                      setSheetState(() {});
-                    },
+                  Expanded(
+                    child: appDropdownField<SortColumnSettings>(
+                      context: ctx,
+                      labelText: tr('sortBy'),
+                      value: effectiveSortColumn,
+                      menuWidth: appDropdownMenuWidth(ctx, [
+                        tr('authorName'),
+                        tr('nameAuthor'),
+                        tr('asAdded'),
+                        tr('releaseDate'),
+                        tr('sortByLastUpdateCheck'),
+                      ]),
+                      items: [
+                        DropdownMenuItem(
+                          value: SortColumnSettings.authorName,
+                          child: Text(tr('authorName')),
+                        ),
+                        DropdownMenuItem(
+                          value: SortColumnSettings.nameAuthor,
+                          child: Text(tr('nameAuthor')),
+                        ),
+                        DropdownMenuItem(
+                          value: SortColumnSettings.added,
+                          child: Text(tr('asAdded')),
+                        ),
+                        DropdownMenuItem(
+                          value: SortColumnSettings.releaseDate,
+                          child: Text(tr('releaseDate')),
+                        ),
+                        DropdownMenuItem(
+                          value: SortColumnSettings.lastUpdateCheck,
+                          child: Text(tr('sortByLastUpdateCheck')),
+                        ),
+                      ],
+                      onChanged: (newValue) {
+                        if (newValue != null) {
+                          setEffectiveSortColumn(newValue);
+                          setSheetState(() {});
+                        }
+                      },
+                    ),
                   ),
-                  sortChip(
-                    label: tr('nameAuthor'),
-                    selected:
-                        effectiveSortColumn == SortColumnSettings.nameAuthor,
-                    onTap: () {
-                      setEffectiveSortColumn(SortColumnSettings.nameAuthor);
-                      setSheetState(() {});
-                    },
-                  ),
-                  sortChip(
-                    label: tr('asAdded'),
-                    selected: effectiveSortColumn == SortColumnSettings.added,
-                    onTap: () {
-                      setEffectiveSortColumn(SortColumnSettings.added);
-                      setSheetState(() {});
-                    },
-                  ),
-                  sortChip(
-                    label: tr('releaseDate'),
-                    selected:
-                        effectiveSortColumn == SortColumnSettings.releaseDate,
-                    onTap: () {
-                      setEffectiveSortColumn(SortColumnSettings.releaseDate);
-                      setSheetState(() {});
-                    },
-                  ),
-                  sortChip(
-                    label: tr('sortByLastUpdateCheck'),
-                    selected:
-                        effectiveSortColumn ==
-                        SortColumnSettings.lastUpdateCheck,
-                    onTap: () {
-                      setEffectiveSortColumn(
-                        SortColumnSettings.lastUpdateCheck,
+                  const SizedBox(width: 8),
+                  IconButton.filledTonal(
+                    icon: Icon(
+                      effectiveSortOrder == SortOrderSettings.ascending
+                          ? Icons.arrow_upward
+                          : Icons.arrow_downward,
+                    ),
+                    tooltip: effectiveSortOrder == SortOrderSettings.ascending
+                        ? tr('ascending')
+                        : tr('descending'),
+                    onPressed: () {
+                      setEffectiveSortOrder(
+                        effectiveSortOrder == SortOrderSettings.ascending
+                            ? SortOrderSettings.descending
+                            : SortOrderSettings.ascending,
                       );
                       setSheetState(() {});
                     },
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              sectionLabel(tr('sortOrder')),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  sortChip(
-                    label: tr('ascending'),
-                    selected: effectiveSortOrder == SortOrderSettings.ascending,
-                    onTap: () {
-                      setEffectiveSortOrder(SortOrderSettings.ascending);
-                      setSheetState(() {});
-                    },
-                  ),
-                  sortChip(
-                    label: tr('descending'),
-                    selected:
-                        effectiveSortOrder == SortOrderSettings.descending,
-                    onTap: () {
-                      setEffectiveSortOrder(SortOrderSettings.descending);
-                      setSheetState(() {});
-                    },
-                  ),
-                ],
-              ),
               const SizedBox(height: 16),
-              Divider(color: colorScheme.outlineVariant),
+              appDropdownField<AppsListGroupBy>(
+                context: ctx,
+                labelText: tr('groupBy'),
+                value: effectiveGroupBy,
+                menuWidth: appDropdownMenuWidth(ctx, [
+                  tr('groupByNone'),
+                  tr('category'),
+                  tr('groupByTrackedSource'),
+                  tr('groupByAppType'),
+                ]),
+                items: [
+                  DropdownMenuItem(
+                    value: AppsListGroupBy.none,
+                    child: Text(tr('groupByNone')),
+                  ),
+                  DropdownMenuItem(
+                    value: AppsListGroupBy.category,
+                    child: Text(tr('category')),
+                  ),
+                  DropdownMenuItem(
+                    value: AppsListGroupBy.source,
+                    child: Text(tr('groupByTrackedSource')),
+                  ),
+                  DropdownMenuItem(
+                    value: AppsListGroupBy.appType,
+                    child: Text(tr('groupByAppType')),
+                  ),
+                ],
+                onChanged: (newValue) {
+                  if (newValue != null) {
+                    setEffectiveGroupBy(newValue);
+                    setSheetState(() {});
+                  }
+                },
+              ),
               const SizedBox(height: 8),
-              sectionLabel(tr('groupBy')),
+              Row(
+                children: [
+                  sectionLabel(tr('groupSeparately')),
+                  const SizedBox(width: 8),
+                  HelpHintIcon(
+                    message: tr('groupSeparatelyDescription'),
+                    padding: EdgeInsets.zero,
+                  ),
+                ],
+              ),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  sortChip(
-                    label: tr('groupByNone'),
-                    selected: effectiveGroupBy == AppsListGroupBy.none,
-                    onTap: () {
-                      setEffectiveGroupBy(AppsListGroupBy.none);
+                  FilterChip(
+                    showCheckmark: false,
+                    label: Text(tr('updates')),
+                    selected: effectiveGroupUpdatesSeparately,
+                    onSelected: (value) {
+                      setEffectiveGroupUpdatesSeparately(value);
                       setSheetState(() {});
                     },
                   ),
-                  sortChip(
-                    label: tr('category'),
-                    selected: effectiveGroupBy == AppsListGroupBy.category,
-                    onTap: () {
-                      setEffectiveGroupBy(AppsListGroupBy.category);
-                      setSheetState(() {});
-                    },
-                  ),
-                  sortChip(
-                    label: tr('groupByTrackedSource'),
-                    selected: effectiveGroupBy == AppsListGroupBy.source,
-                    onTap: () {
-                      setEffectiveGroupBy(AppsListGroupBy.source);
-                      setSheetState(() {});
-                    },
-                  ),
-                  sortChip(
-                    label: tr('groupByAppType'),
-                    selected: effectiveGroupBy == AppsListGroupBy.appType,
-                    onTap: () {
-                      setEffectiveGroupBy(AppsListGroupBy.appType);
-                      setSheetState(() {});
-                    },
-                  ),
-                ],
-              ),
-              if (effectiveGroupBy != AppsListGroupBy.none)
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(tr('groupNonInstalledSeparately')),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      HelpHintIcon(
-                        message: tr('groupNonInstalledSeparatelyDescription'),
-                        padding: EdgeInsets.zero,
-                      ),
-                      Switch(
-                        value: effectiveGroupNonInstalledSeparately,
-                        onChanged: (value) {
-                          setEffectiveGroupNonInstalledSeparately(value);
-                          setSheetState(() {});
-                        },
-                      ),
-                    ],
-                  ),
-                  onTap: () {
-                    setEffectiveGroupNonInstalledSeparately(
-                      !effectiveGroupNonInstalledSeparately,
-                    );
-                    setSheetState(() {});
-                  },
-                ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(tr('groupUpdatesSeparately')),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    HelpHintIcon(
-                      message: tr('groupUpdatesSeparatelyDescription'),
-                      padding: EdgeInsets.zero,
+                  if (effectiveGroupBy != AppsListGroupBy.none) ...[
+                    FilterChip(
+                      showCheckmark: false,
+                      label: Text(tr('nonInstalledApps')),
+                      selected: effectiveGroupNonInstalledSeparately,
+                      onSelected: (value) {
+                        setEffectiveGroupNonInstalledSeparately(value);
+                        setSheetState(() {});
+                      },
                     ),
-                    Switch(
-                      value: effectiveGroupUpdatesSeparately,
-                      onChanged: (value) {
-                        setEffectiveGroupUpdatesSeparately(value);
+                    FilterChip(
+                      showCheckmark: false,
+                      label: Text(tr('trackOnly')),
+                      selected: effectiveGroupTrackOnlySeparately,
+                      onSelected: (value) {
+                        setEffectiveGroupTrackOnlySeparately(value);
                         setSheetState(() {});
                       },
                     ),
                   ],
-                ),
-                onTap: () {
-                  setEffectiveGroupUpdatesSeparately(
-                    !effectiveGroupUpdatesSeparately,
-                  );
-                  setSheetState(() {});
-                },
+                ],
               ),
               Divider(color: colorScheme.outlineVariant),
               const SizedBox(height: 4),
@@ -2192,8 +2221,8 @@ class AppsPageState extends State<AppsPage> {
   AppsFilter filter = AppsFilter();
   final AppsFilter neutralFilter = AppsFilter();
   var updatesOnlyFilter = AppsFilter(
-    includeUptodate: false,
-    includeNonInstalled: false,
+    upToDateFilterIntent: CategoryFilterIntent.exclude,
+    installedFilterIntent: CategoryFilterIntent.include,
   );
   Set<String> selectedAppIds = {};
   DateTime? refreshingSince;
@@ -2287,6 +2316,7 @@ class AppsPageState extends State<AppsPage> {
   /// Maps [AppTypeGroup] → indices into [_listedAppsCache].
   Map<AppTypeGroup, List<int>> _appTypeGroupListedIndices = const {};
   List<int> _nonInstalledListedIndices = const [];
+  List<int> _trackOnlyListedIndices = const [];
 
   /// Indices of apps shown in the "Updates" group (groupUpdatesSeparately).
   List<int> _updatesGroupListedIndices = const [];
@@ -2378,6 +2408,13 @@ class AppsPageState extends State<AppsPage> {
     return id != null
         ? sp.folderGroupNonInstalledSeparately(id)
         : sp.groupNonInstalledSeparately;
+  }
+
+  bool _effectiveGroupTrackOnlySeparately(SettingsProvider sp) {
+    final id = _viewSettingsId;
+    return id != null
+        ? sp.folderGroupTrackOnlySeparately(id)
+        : sp.groupTrackOnlySeparately;
   }
 
   bool _effectiveGroupUpdatesSeparately(SettingsProvider sp) {
@@ -2569,23 +2606,37 @@ class AppsPageState extends State<AppsPage> {
   PreferredSizeWidget? _buildFilterChipsRow() {
     final chips = <Widget>[];
 
-    if (!filter.includeUptodate) {
+    void addVisibilityFilterChip(
+      String label,
+      CategoryFilterIntent intent,
+      ValueChanged<CategoryFilterIntent> onClear,
+    ) {
+      if (intent == CategoryFilterIntent.neutral) {
+        return;
+      }
       chips.add(
         _filterChip(
-          tr('updatesOnly'),
-          () => setState(() => filter.includeUptodate = true),
+          visibilityFilterChipLabel(label, intent),
+          () => setState(() => onClear(CategoryFilterIntent.neutral)),
         ),
       );
     }
 
-    if (!filter.includeNonInstalled) {
-      chips.add(
-        _filterChip(
-          tr('installedOnly'),
-          () => setState(() => filter.includeNonInstalled = true),
-        ),
-      );
-    }
+    addVisibilityFilterChip(
+      tr('visibilityFilterUpToDate'),
+      filter.upToDateFilterIntent,
+      (intent) => filter.upToDateFilterIntent = intent,
+    );
+    addVisibilityFilterChip(
+      tr('visibilityFilterInstalled'),
+      filter.installedFilterIntent,
+      (intent) => filter.installedFilterIntent = intent,
+    );
+    addVisibilityFilterChip(
+      tr('trackOnly'),
+      filter.trackOnlyFilterIntent,
+      (intent) => filter.trackOnlyFilterIntent = intent,
+    );
 
     if (filter.sourceFilter.isNotEmpty) {
       chips.add(
@@ -2684,6 +2735,7 @@ class AppsPageState extends State<AppsPage> {
         s.sortOrder,
         s.appsListGroupBy,
         s.groupNonInstalledSeparately,
+        s.groupTrackOnlySeparately,
         s.groupUpdatesSeparately,
         // categories is a Map<String?, int>; hash by length + sorted entries.
         Object.hashAll(s.categories.entries.map((e) => '${e.key}=${e.value}')),
@@ -2709,6 +2761,7 @@ class AppsPageState extends State<AppsPage> {
                 s.folderSortOrder(watchedFolderId).index,
                 s.folderGroupBy(watchedFolderId).index,
                 s.folderGroupNonInstalledSeparately(watchedFolderId),
+                s.folderGroupTrackOnlySeparately(watchedFolderId),
                 s.folderGroupUpdatesSeparately(watchedFolderId),
               ),
       ]),
@@ -2837,7 +2890,9 @@ class AppsPageState extends State<AppsPage> {
           })
           .whenComplete(() {
             // Allow the progress bar to reach 100% before dismissing.
-            return Future.delayed(const Duration(milliseconds: 500));
+            return Future.delayed(
+              LinearRipplingWavyProgressIndicator.defaultDragDuration,
+            );
           })
           .whenComplete(() {
             setState(() {
@@ -2892,8 +2947,9 @@ class AppsPageState extends State<AppsPage> {
       filter.nameFilter,
       filter.authorFilter,
       filter.idFilter,
-      filter.includeUptodate,
-      filter.includeNonInstalled,
+      filter.upToDateFilterIntent.index,
+      filter.installedFilterIntent.index,
+      filter.trackOnlyFilterIntent.index,
       Object.hashAll(filter.includedCategoryFilter.toList()..sort()),
       Object.hashAll(filter.excludedCategoryFilter.toList()..sort()),
       filter.categoryMatchMode.index,
@@ -2904,6 +2960,7 @@ class AppsPageState extends State<AppsPage> {
       _effectivePinUpdates(settingsProvider),
       _effectiveBuryNonInstalled(settingsProvider),
       _effectiveGroupNonInstalledSeparately(settingsProvider),
+      _effectiveGroupTrackOnlySeparately(settingsProvider),
       _effectiveGroupUpdatesSeparately(settingsProvider),
     ]);
     if (listBuildToken != _lastListBuildToken) {
@@ -2948,19 +3005,13 @@ class AppsPageState extends State<AppsPage> {
       }
 
       workingList = workingList.where((app) {
-        final installed = app.app.installedVersion;
-        final latest = app.app.latestVersion;
-        final upToDate = installed == null
-            ? false
-            : isSkipActiveForCurrentLatest(app.app) ||
-                  installed == latest ||
-                  versionsEffectivelyEqual(installed, latest) ||
-                  (installedVersionIsNewerOrEqual(installed, latest) &&
-                      !versionOrderIsUnclear(installed, latest));
-        if (upToDate && !(filter.includeUptodate)) {
+        if (!appMatchesUpToDateFilter(app.app, filter.upToDateFilterIntent)) {
           return false;
         }
-        if (app.app.installedVersion == null && !(filter.includeNonInstalled)) {
+        if (!appMatchesInstalledFilter(app.app, filter.installedFilterIntent)) {
+          return false;
+        }
+        if (!appMatchesTrackOnlyFilter(app.app, filter.trackOnlyFilterIntent)) {
           return false;
         }
         if (filter.nameFilter.isNotEmpty || filter.authorFilter.isNotEmpty) {
@@ -3252,6 +3303,11 @@ class AppsPageState extends State<AppsPage> {
         (effectiveGroupBy == AppsListGroupBy.category ||
             effectiveGroupBy == AppsListGroupBy.source ||
             effectiveGroupBy == AppsListGroupBy.appType);
+    final segregateTrackOnly =
+        _effectiveGroupTrackOnlySeparately(settingsProvider) &&
+        (effectiveGroupBy == AppsListGroupBy.category ||
+            effectiveGroupBy == AppsListGroupBy.source ||
+            effectiveGroupBy == AppsListGroupBy.appType);
     final separateUpdates = _effectiveGroupUpdatesSeparately(settingsProvider);
 
     // Returns true when an app should be shown in the dedicated "Updates" group.
@@ -3275,11 +3331,13 @@ class AppsPageState extends State<AppsPage> {
     listedApps = [...tempRenamed, ...tempPinned, ...tempNotPinned];
 
     // Apps that go into normal category/source/appType groups (excluding
-    // segregated non-installed and the updates group when those features are on).
+    // segregated non-installed, segregated track-only, and the updates group when those features are on).
     List<AppInMemory> appsForGroups(List<AppInMemory> source) => source
         .where(
           (e) =>
               !(segregateNonInstalled && e.app.installedVersion == null) &&
+              !(segregateTrackOnly &&
+                  e.app.additionalSettings['trackOnly'] == true) &&
               !isInUpdatesGroup(e),
         )
         .toList();
@@ -3287,11 +3345,6 @@ class AppsPageState extends State<AppsPage> {
     final appsListedForCategoryKeys = appsForGroups(listedApps);
     final appsListedForSourceKeys = appsListedForCategoryKeys;
     final appsListedForAppTypeKeys = appsListedForCategoryKeys;
-    final showNonInstalledGroupSection =
-        segregateNonInstalled &&
-        listedApps.any((e) => e.app.installedVersion == null);
-    final showUpdatesGroupSection =
-        separateUpdates && listedApps.any(isInUpdatesGroup);
 
     if (listBuildToken != _lastGroupIndexCacheToken) {
       _lastGroupIndexCacheToken = listBuildToken;
@@ -3336,6 +3389,10 @@ class AppsPageState extends State<AppsPage> {
           ) {
             final AppInMemory row = listedApps[listingIndex];
             if (segregateNonInstalled && row.app.installedVersion == null) {
+              continue;
+            }
+            if (segregateTrackOnly &&
+                row.app.additionalSettings['trackOnly'] == true) {
               continue;
             }
             if (isInUpdatesGroup(row)) continue;
@@ -3388,6 +3445,10 @@ class AppsPageState extends State<AppsPage> {
             if (segregateNonInstalled && row.app.installedVersion == null) {
               continue;
             }
+            if (segregateTrackOnly &&
+                row.app.additionalSettings['trackOnly'] == true) {
+              continue;
+            }
             if (isInUpdatesGroup(row)) continue;
             if (sourceProvider
                     .getSource(
@@ -3429,6 +3490,10 @@ class AppsPageState extends State<AppsPage> {
             if (segregateNonInstalled && row.app.installedVersion == null) {
               continue;
             }
+            if (segregateTrackOnly &&
+                row.app.additionalSettings['trackOnly'] == true) {
+              continue;
+            }
             if (isInUpdatesGroup(row)) continue;
             if (classifyAppType(row) == type) {
               indices.add(listingIndex);
@@ -3443,16 +3508,29 @@ class AppsPageState extends State<AppsPage> {
       }
 
       final nonInstalled = <int>[];
+      final trackOnlyList = <int>[];
       for (
         int listingIndex = 0;
         listingIndex < listedApps.length;
         listingIndex++
       ) {
-        if (listedApps[listingIndex].app.installedVersion == null) {
-          nonInstalled.add(listingIndex);
+        final isTrackOnly =
+            listedApps[listingIndex].app.additionalSettings['trackOnly'] ==
+            true;
+        if (isTrackOnly) {
+          if (segregateTrackOnly) {
+            trackOnlyList.add(listingIndex);
+          } else if (listedApps[listingIndex].app.installedVersion == null) {
+            nonInstalled.add(listingIndex);
+          }
+        } else {
+          if (listedApps[listingIndex].app.installedVersion == null) {
+            nonInstalled.add(listingIndex);
+          }
         }
       }
       _nonInstalledListedIndices = nonInstalled;
+      _trackOnlyListedIndices = trackOnlyList;
 
       final updatesIndices = <int>[];
       for (
@@ -3466,6 +3544,13 @@ class AppsPageState extends State<AppsPage> {
       }
       _updatesGroupListedIndices = updatesIndices;
     }
+
+    final showNonInstalledGroupSection =
+        segregateNonInstalled && _nonInstalledListedIndices.isNotEmpty;
+    final showTrackOnlyGroupSection =
+        segregateTrackOnly && _trackOnlyListedIndices.isNotEmpty;
+    final showUpdatesGroupSection =
+        separateUpdates && listedApps.any(isInUpdatesGroup);
 
     final listedCategories = _listedCategoriesCache;
     final listedSources = _listedSourcesCache;
@@ -3492,6 +3577,9 @@ class AppsPageState extends State<AppsPage> {
       if (showNonInstalledGroupSection) {
         keys.add('${folderPrefix}__nonInstalled__');
       }
+      if (showTrackOnlyGroupSection) {
+        keys.add('${folderPrefix}__trackOnly__');
+      }
       if (showUpdatesGroupSection) {
         keys.add('${folderPrefix}__updates__');
       }
@@ -3510,18 +3598,46 @@ class AppsPageState extends State<AppsPage> {
 
     getLoadingWidgets() {
       final String? progressFolderId = widget.folderId;
-      final int folderMemberCountForProgress = progressFolderId == null
-          ? 0
-          : appsProvider.apps.values
-                .where((a) => folderIdsForApp(a.app).contains(progressFolderId))
-                .length;
-      final int progressDenominator = widget.onDemandOnlyList
-          ? (onDemandOnlyAppCount > 0 ? onDemandOnlyAppCount : 1)
-          : progressFolderId != null
-          ? (folderMemberCountForProgress > 0
-                ? folderMemberCountForProgress
-                : 1)
-          : (appsProvider.apps.isNotEmpty ? appsProvider.apps.length : 1);
+      final bool onlyCheckInstalledOrTrackOnly =
+          settingsProvider.onlyCheckInstalledOrTrackOnlyApps;
+      final bool showFolderedAppsOnMainPage =
+          settingsProvider.showFolderedAppsOnMainPage;
+      final Set<String> existingFolderIdsSet = settingsProvider.appFolders
+          .map((f) => f.id)
+          .toSet();
+
+      int progressCount = 0;
+      for (final a in appsProvider.apps.values) {
+        // 1. On-demand-only check
+        final bool isOnDemand =
+            a.app.additionalSettings['onDemandOnly'] == true;
+        if (widget.onDemandOnlyList) {
+          if (!isOnDemand) continue;
+        } else {
+          if (isOnDemand) continue;
+        }
+
+        // 2. Folder check
+        final String? folder = progressFolderId;
+        if (folder != null) {
+          if (!folderIdsForApp(a.app).contains(folder)) continue;
+        } else if (!widget.onDemandOnlyList && !showFolderedAppsOnMainPage) {
+          final hasFolder = folderIdsForApp(
+            a.app,
+          ).where((id) => existingFolderIdsSet.contains(id)).isNotEmpty;
+          if (hasFolder) continue;
+        }
+
+        // 3. Installed / Track-only check
+        if (onlyCheckInstalledOrTrackOnly) {
+          final isInstalled = a.app.installedVersion != null;
+          final isTrackOnly = a.app.additionalSettings['trackOnly'] == true;
+          if (!isInstalled && !isTrackOnly) continue;
+        }
+
+        progressCount++;
+      }
+      final int progressDenominator = progressCount > 0 ? progressCount : 1;
       return [
         if (listedApps.isEmpty)
           SliverFillRemaining(
@@ -3915,6 +4031,17 @@ class AppsPageState extends State<AppsPage> {
       );
     }
 
+    getTrackOnlyCollapsibleTile() {
+      final folderPrefix = widget.folderId != null
+          ? 'folder_${widget.folderId}_'
+          : '';
+      return buildCollapsibleTile(
+        groupKey: '${folderPrefix}__trackOnly__',
+        title: tr('trackOnly'),
+        matchingIndices: _trackOnlyListedIndices,
+      );
+    }
+
     getSourceCollapsibleTile(int index) {
       final sourceKey = listedSources[index];
       final folderPrefix = widget.folderId != null
@@ -4148,6 +4275,7 @@ class AppsPageState extends State<AppsPage> {
                 args: [selectedAppIds.length.toString()],
               ),
             ),
+            contentPadding: appDialogContentPadding,
             content: Text(
               tr('onlyWorksWithNonVersionDetectApps'),
               style: const TextStyle(
@@ -4267,6 +4395,7 @@ class AppsPageState extends State<AppsPage> {
         builder: (BuildContext ctx) {
           return AlertDialog(
             scrollable: true,
+            contentPadding: appDialogContentPadding,
             content: Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Column(
@@ -4445,25 +4574,6 @@ class AppsPageState extends State<AppsPage> {
                   const Divider(height: 1),
                   const SizedBox(height: 8),
 
-                  // ── Visibility toggles ────────────────────────────────
-                  SwitchListTile(
-                    dense: true,
-                    title: Text(tr('upToDateApps')),
-                    value: filter.includeUptodate,
-                    onChanged: (v) => update(() => filter.includeUptodate = v),
-                  ),
-                  SwitchListTile(
-                    dense: true,
-                    title: Text(tr('nonInstalledApps')),
-                    value: filter.includeNonInstalled,
-                    onChanged: (v) =>
-                        update(() => filter.includeNonInstalled = v),
-                  ),
-
-                  const SizedBox(height: 8),
-                  const Divider(height: 1),
-                  const SizedBox(height: 8),
-
                   // ── Source dropdown ───────────────────────────────────
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
@@ -4532,6 +4642,91 @@ class AppsPageState extends State<AppsPage> {
                         },
                       );
                     })(),
+                  ),
+
+                  const SizedBox(height: 8),
+                  const Divider(height: 1),
+                  const SizedBox(height: 8),
+
+                  // ── Visibility filters ──────────────────────────────────
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          tr('visibilityFilterCycleHint'),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                        const SizedBox(height: 8),
+                        CategoryActionChipGroup(
+                          children: [
+                            _TriStateCategoryFilterChip(
+                              category: tr('visibilityFilterUpToDate'),
+                              color: Theme.of(context).colorScheme.primary,
+                              intent: filter.upToDateFilterIntent,
+                              onCycle: () => update(
+                                () => filter.upToDateFilterIntent =
+                                    nextCategoryFilterIntent(
+                                      filter.upToDateFilterIntent,
+                                    ),
+                              ),
+                              onClear:
+                                  filter.upToDateFilterIntent ==
+                                      CategoryFilterIntent.neutral
+                                  ? null
+                                  : () => update(
+                                      () => filter.upToDateFilterIntent =
+                                          CategoryFilterIntent.neutral,
+                                    ),
+                            ),
+                            _TriStateCategoryFilterChip(
+                              category: tr('visibilityFilterInstalled'),
+                              color: Theme.of(context).colorScheme.primary,
+                              intent: filter.installedFilterIntent,
+                              onCycle: () => update(
+                                () => filter.installedFilterIntent =
+                                    nextCategoryFilterIntent(
+                                      filter.installedFilterIntent,
+                                    ),
+                              ),
+                              onClear:
+                                  filter.installedFilterIntent ==
+                                      CategoryFilterIntent.neutral
+                                  ? null
+                                  : () => update(
+                                      () => filter.installedFilterIntent =
+                                          CategoryFilterIntent.neutral,
+                                    ),
+                            ),
+                            _TriStateCategoryFilterChip(
+                              category: tr('trackOnly'),
+                              color: Theme.of(context).colorScheme.primary,
+                              intent: filter.trackOnlyFilterIntent,
+                              onCycle: () => update(
+                                () => filter.trackOnlyFilterIntent =
+                                    nextCategoryFilterIntent(
+                                      filter.trackOnlyFilterIntent,
+                                    ),
+                              ),
+                              onClear:
+                                  filter.trackOnlyFilterIntent ==
+                                      CategoryFilterIntent.neutral
+                                  ? null
+                                  : () => update(
+                                      () => filter.trackOnlyFilterIntent =
+                                          CategoryFilterIntent.neutral,
+                                    ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
 
                   // ── Category selector ─────────────────────────────────
@@ -4796,6 +4991,10 @@ class AppsPageState extends State<AppsPage> {
         if (showNonInstalledGroupSection) {
           list.add(getNonInstalledCollapsibleTile());
         }
+        // Track-only group.
+        if (showTrackOnlyGroupSection) {
+          list.add(getTrackOnlyCollapsibleTile());
+        }
         // Updates group at bottom (when not pinned).
         if (showUpdatesGroupSection && !pinUpdatesEnabled) {
           list.add(getUpdatesCollapsibleTile());
@@ -4805,8 +5004,10 @@ class AppsPageState extends State<AppsPage> {
 
       final useCategoryGroups =
           groupBy == AppsListGroupBy.category &&
-          (segregateNonInstalled
-              ? (listedCategories.isNotEmpty || showNonInstalledGroupSection)
+          ((segregateNonInstalled || segregateTrackOnly)
+              ? (listedCategories.isNotEmpty ||
+                    showNonInstalledGroupSection ||
+                    showTrackOnlyGroupSection)
               : !(listedCategories.isEmpty ||
                     (listedCategories.length == 1 &&
                         listedCategories[0] == null)));
@@ -4819,7 +5020,9 @@ class AppsPageState extends State<AppsPage> {
 
       final useSourceGroups =
           groupBy == AppsListGroupBy.source &&
-          (listedSources.isNotEmpty || showNonInstalledGroupSection);
+          (listedSources.isNotEmpty ||
+              showNonInstalledGroupSection ||
+              showTrackOnlyGroupSection);
       if (useSourceGroups) {
         return buildGroupedSliverList(
           mainChildCount: listedSources.length,
@@ -4829,7 +5032,9 @@ class AppsPageState extends State<AppsPage> {
 
       final useAppTypeGroups =
           groupBy == AppsListGroupBy.appType &&
-          (listedAppTypes.isNotEmpty || showNonInstalledGroupSection);
+          (listedAppTypes.isNotEmpty ||
+              showNonInstalledGroupSection ||
+              showTrackOnlyGroupSection);
       if (useAppTypeGroups) {
         return buildGroupedSliverList(
           mainChildCount: listedAppTypes.length,
@@ -5978,6 +6183,7 @@ class AppsPageState extends State<AppsPage> {
 
           return AlertDialog(
             title: Text(existing == null ? tr('newFolder') : tr('editFolder')),
+            contentPadding: appDialogContentPadding,
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -6229,6 +6435,7 @@ class AppsPageState extends State<AppsPage> {
               context: dCtx,
               builder: (ctx) => AlertDialog(
                 title: Text(tr('newFolder')),
+                contentPadding: appDialogContentPadding,
                 content: TextField(
                   controller: nameCtrl,
                   autofocus: true,
@@ -6424,6 +6631,7 @@ class AppsPageState extends State<AppsPage> {
                               final confirm = await showDialog<bool>(
                                 context: sheetCtx,
                                 builder: (dCtx) => AlertDialog(
+                                  contentPadding: appDialogContentPadding,
                                   content: Text(
                                     tr(
                                       'deleteFolderConfirm',
@@ -6439,6 +6647,14 @@ class AppsPageState extends State<AppsPage> {
                                     FilledButton(
                                       onPressed: () =>
                                           Navigator.of(dCtx).pop(true),
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: Theme.of(
+                                          dCtx,
+                                        ).colorScheme.error,
+                                        foregroundColor: Theme.of(
+                                          dCtx,
+                                        ).colorScheme.onError,
+                                      ),
                                       child: Text(tr('delete')),
                                     ),
                                   ],
@@ -6663,8 +6879,9 @@ class AppsFilter {
   String nameFilter;
   String authorFilter;
   String idFilter;
-  bool includeUptodate;
-  bool includeNonInstalled;
+  CategoryFilterIntent upToDateFilterIntent;
+  CategoryFilterIntent installedFilterIntent;
+  CategoryFilterIntent trackOnlyFilterIntent;
   Set<String> includedCategoryFilter;
   Set<String> excludedCategoryFilter;
   CategoryFilterMatchMode categoryMatchMode;
@@ -6674,8 +6891,9 @@ class AppsFilter {
     this.nameFilter = '',
     this.authorFilter = '',
     this.idFilter = '',
-    this.includeUptodate = true,
-    this.includeNonInstalled = true,
+    this.upToDateFilterIntent = CategoryFilterIntent.neutral,
+    this.installedFilterIntent = CategoryFilterIntent.neutral,
+    this.trackOnlyFilterIntent = CategoryFilterIntent.neutral,
     Set<String> categoryFilter = const {},
     Set<String>? includedCategoryFilter,
     Set<String>? excludedCategoryFilter,
@@ -6689,9 +6907,34 @@ class AppsFilter {
       'appName': nameFilter,
       'author': authorFilter,
       'appId': idFilter,
-      'upToDateApps': includeUptodate,
-      'nonInstalledApps': includeNonInstalled,
+      'upToDateFilterIntent': upToDateFilterIntent.name,
+      'installedFilterIntent': installedFilterIntent.name,
+      'trackOnlyFilterIntent': trackOnlyFilterIntent.name,
       'sourceFilter': sourceFilter,
+    };
+  }
+
+  CategoryFilterIntent _intentFromLegacyUpdateStatus(String name) {
+    return switch (name) {
+      'needsUpdateOnly' => CategoryFilterIntent.exclude,
+      'upToDateOnly' => CategoryFilterIntent.include,
+      _ => CategoryFilterIntent.neutral,
+    };
+  }
+
+  CategoryFilterIntent _intentFromLegacyInstallStatus(String name) {
+    return switch (name) {
+      'installedOnly' => CategoryFilterIntent.include,
+      'notInstalledOnly' => CategoryFilterIntent.exclude,
+      _ => CategoryFilterIntent.neutral,
+    };
+  }
+
+  CategoryFilterIntent _intentFromLegacyTrackMode(String name) {
+    return switch (name) {
+      'trackOnly' => CategoryFilterIntent.include,
+      'installable' => CategoryFilterIntent.exclude,
+      _ => CategoryFilterIntent.neutral,
     };
   }
 
@@ -6699,8 +6942,43 @@ class AppsFilter {
     nameFilter = values['appName']!;
     authorFilter = values['author']!;
     idFilter = values['appId']!;
-    includeUptodate = values['upToDateApps'];
-    includeNonInstalled = values['nonInstalledApps'];
+    if (values.containsKey('upToDateFilterIntent')) {
+      upToDateFilterIntent = CategoryFilterIntent.values.byName(
+        values['upToDateFilterIntent'] as String,
+      );
+    } else if (values.containsKey('updateStatusFilter')) {
+      upToDateFilterIntent = _intentFromLegacyUpdateStatus(
+        values['updateStatusFilter'] as String,
+      );
+    } else if (values['upToDateApps'] == false) {
+      upToDateFilterIntent = CategoryFilterIntent.exclude;
+    } else {
+      upToDateFilterIntent = CategoryFilterIntent.neutral;
+    }
+    if (values.containsKey('installedFilterIntent')) {
+      installedFilterIntent = CategoryFilterIntent.values.byName(
+        values['installedFilterIntent'] as String,
+      );
+    } else if (values.containsKey('installStatusFilter')) {
+      installedFilterIntent = _intentFromLegacyInstallStatus(
+        values['installStatusFilter'] as String,
+      );
+    } else if (values['nonInstalledApps'] == false) {
+      installedFilterIntent = CategoryFilterIntent.include;
+    } else {
+      installedFilterIntent = CategoryFilterIntent.neutral;
+    }
+    if (values.containsKey('trackOnlyFilterIntent')) {
+      trackOnlyFilterIntent = CategoryFilterIntent.values.byName(
+        values['trackOnlyFilterIntent'] as String,
+      );
+    } else if (values.containsKey('trackModeFilter')) {
+      trackOnlyFilterIntent = _intentFromLegacyTrackMode(
+        values['trackModeFilter'] as String,
+      );
+    } else {
+      trackOnlyFilterIntent = CategoryFilterIntent.neutral;
+    }
     sourceFilter = values['sourceFilter'];
   }
 
@@ -6708,8 +6986,9 @@ class AppsFilter {
       authorFilter.trim() == other.authorFilter.trim() &&
       nameFilter.trim() == other.nameFilter.trim() &&
       idFilter.trim() == other.idFilter.trim() &&
-      includeUptodate == other.includeUptodate &&
-      includeNonInstalled == other.includeNonInstalled &&
+      upToDateFilterIntent == other.upToDateFilterIntent &&
+      installedFilterIntent == other.installedFilterIntent &&
+      trackOnlyFilterIntent == other.trackOnlyFilterIntent &&
       settingsProvider.setEqual(
         includedCategoryFilter,
         other.includedCategoryFilter,

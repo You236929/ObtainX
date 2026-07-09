@@ -14,6 +14,7 @@ class CoolApk extends AppSource {
     allowSubDomains = true;
     naiveStandardVersionDetection = true;
     allowOverride = false;
+    regionalStore = true;
     canSearch = true;
   }
 
@@ -50,7 +51,6 @@ class CoolApk extends AppSource {
 
     // get latest
     var detailUrl = '$apiUrl/v6/apk/detail?id=$appId';
-    var headers = await getRequestHeaders(additionalSettings, detailUrl);
     var res = await sourceRequest(detailUrl, additionalSettings);
 
     if (res.statusCode != 200) {
@@ -80,7 +80,7 @@ class CoolApk extends AppSource {
       appId,
       aid,
       version,
-      headers,
+      additionalSettings,
     );
     if (apkUrl.isEmpty) {
       throw NoAPKError();
@@ -116,10 +116,14 @@ class CoolApk extends AppSource {
     String appId,
     String aid,
     String version,
-    Map<String, String>? headers,
+    Map<String, dynamic> additionalSettings,
   ) async {
     String url = '$apiUrl/v6/apk/download?pn=$appId&aid=$aid';
-    var res = await sourceRequest(url, {}, followRedirects: false);
+    var res = await sourceRequest(
+      url,
+      additionalSettings,
+      followRedirects: false,
+    );
     if (res.statusCode >= 300 && res.statusCode < 400) {
       String location = res.headers['location'] ?? '';
       return location;
@@ -136,7 +140,7 @@ class CoolApk extends AppSource {
     var tokenPair = _getToken();
     // CoolAPK header
     return {
-      'User-Agent':
+      'user-agent':
           'Dalvik/2.1.0 (Linux; U; Android 9; MI 8 SE MIUI/9.5.9) (#Build; Xiaomi; MI 8 SE; PKQ1.181121.001; 9) +CoolMarket/12.4.2-2208241-universal',
       'X-App-Id': 'com.coolapk.market',
       'X-Requested-With': 'XMLHttpRequest',

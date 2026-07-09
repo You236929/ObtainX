@@ -55,6 +55,16 @@ private const val RELEASE_DIR = "releases"
 private const val INSTALL_TIMEOUT_MS = 120_000L
 private const val INSTALL_BROADCAST_BATCH_CONTINUE_DELAY_MS = 200L
 private const val OPEN_PERSISTED_DOCUMENT_TREE_REQUEST_CODE = 5107
+/// Third-party installers that implement the standard Intent.EXTRA_RETURN_RESULT convention
+/// (e.g. the stock PackageInstaller, InstallerX-Revived 26.07 preview+) call
+/// setResult(RESULT_OK/RESULT_FIRST_USER) before finishing, delivered here as an authoritative
+/// fast-path signal. Installers that don't implement it finish() without calling setResult(),
+/// which Android reports as RESULT_CANCELED — indistinguishable from an explicit cancel, so
+/// RESULT_CANCELED is never treated as failure; the broadcast/focus/timeout watcher below
+/// remains the source of truth for that case. Requires omitting FLAG_ACTIVITY_NEW_TASK on the
+/// launch intent (see [launchInstallIntent]) — that flag makes Android return a synthetic
+/// immediate RESULT_CANCELED instead of ever delivering the installer's real result.
+private const val THIRD_PARTY_INSTALL_REQUEST_CODE = 5108
 /// Ignore focus regain if it arrived within this window of the FIRST focus loss (transition bounce).
 /// Only the first loss is recorded; subsequent oscillations during TPI teardown are ignored.
 private const val FOCUS_REGAIN_CANCEL_MIN_MS = 200L
@@ -212,6 +222,19 @@ class MainActivity : FlutterActivity() {
         super.onCreate(savedInstanceState)
     }
 
+    private fun handleThirdPartyInstallActivityResult(resultCode: Int) {
+        val watcher = installWatcher ?: return
+        when (resultCode) {
+            Activity.RESULT_OK -> completeThirdPartyInstallSession(watcher, InstallSessionOutcome.Success(true))
+            Activity.RESULT_FIRST_USER -> completeThirdPartyInstallSession(watcher, InstallSessionOutcome.Success(false))
+            else -> {
+                // RESULT_CANCELED (or anything else): not a real signal — also what an installer
+                // that doesn't implement EXTRA_RETURN_RESULT produces by default. Let the
+                // broadcast/focus/timeout watcher keep running.
+            }
+        }
+    }
+
     private fun completeThirdPartyInstallSession(watcher: InstallWatcher, outcome: InstallSessionOutcome) {
         if (watcher.responded) return
         watcher.responded = true
@@ -346,6 +369,10 @@ class MainActivity : FlutterActivity() {
                 "releaseDownloadKeepAwake" -> {
                     releaseDownloadKeepAwake()
                     result.success(null)
+                }
+                "isDeviceInteractive" -> {
+                    val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+                    result.success(powerManager.isInteractive)
                 }
                 else -> result.notImplemented()
             }
@@ -517,6 +544,11 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == THIRD_PARTY_INSTALL_REQUEST_CODE) {
+            handleThirdPartyInstallActivityResult(resultCode)
+            return
+        }
+
         if (requestCode != OPEN_PERSISTED_DOCUMENT_TREE_REQUEST_CODE) {
             super.onActivityResult(requestCode, resultCode, data)
             return
@@ -896,9 +928,16 @@ class MainActivity : FlutterActivity() {
                 }
                 setDataAndType(contentUris[0], primaryMime)
             }
-            flags = installFlag or Intent.FLAG_ACTIVITY_NEW_TASK
+            // FLAG_ACTIVITY_NEW_TASK is only safe for the fire-and-forget path below: Android
+            // returns a synthetic immediate RESULT_CANCELED for startActivityForResult() when
+            // the launch intent carries this flag, before the installer even runs. The tracked
+            // path relies on receiving the installer's real result, so it must omit the flag.
+            flags = installFlag or if (expectedPkgName.isNullOrEmpty()) Intent.FLAG_ACTIVITY_NEW_TASK else 0
             if (!targetPackage.isNullOrEmpty() && !targetActivity.isNullOrEmpty()) {
                 component = ComponentName(targetPackage, targetActivity)
+            }
+            if (!expectedPkgName.isNullOrEmpty()) {
+                putExtra(Intent.EXTRA_RETURN_RESULT, true)
             }
         }
 
@@ -984,7 +1023,7 @@ class MainActivity : FlutterActivity() {
 
         handler.post {
             try {
-                startActivity(intent)
+                startActivityForResult(intent, THIRD_PARTY_INSTALL_REQUEST_CODE)
             } catch (ex: Exception) {
                 if (installWatcher === sessionWatcher && !sessionWatcher.responded) {
                     completeThirdPartyInstallSession(

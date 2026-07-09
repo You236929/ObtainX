@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/components/tv_slider_wrapper.dart';
+import 'package:obtainium/theme/app_dialog_theme.dart';
 import 'package:obtainium/theme/app_theme_accent.dart';
 import 'package:provider/provider.dart';
 
@@ -55,6 +56,7 @@ class _ThemeAccentSwatchesItemState extends State<_ThemeAccentSwatchesItem> {
         builder: (BuildContext dialogContext) {
           return AlertDialog(
             title: Text(tr('settingsCustomSeedRemoveTitle')),
+            contentPadding: appDialogContentPadding,
             content: Text(tr('settingsCustomSeedRemoveMessage')),
             actions: [
               TextButton(
@@ -63,6 +65,9 @@ class _ThemeAccentSwatchesItemState extends State<_ThemeAccentSwatchesItem> {
               ),
               TextButton(
                 onPressed: () => Navigator.of(dialogContext).pop(true),
+                style: TextButton.styleFrom(
+                  foregroundColor: Theme.of(dialogContext).colorScheme.error,
+                ),
                 child: Text(tr('remove')),
               ),
             ],

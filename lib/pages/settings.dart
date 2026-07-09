@@ -29,6 +29,8 @@ import 'package:obtainium/providers/logs_provider.dart';
 import 'package:obtainium/providers/native_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
+import 'package:obtainium/providers/virustotal_provider.dart';
+import 'package:obtainium/theme/app_dialog_theme.dart';
 import 'package:obtainium/theme/app_theme_accent.dart';
 import 'package:obtainium/theme/app_segmented_button_theme.dart';
 import 'package:obtainium/theme/m3e_expressive_list.dart';
@@ -81,6 +83,8 @@ class _SettingsCategory {
 class SettingsPageState extends State<SettingsPage> {
   final GlobalKey<_SourceSpecificSectionState> _sourceSpecificKey =
       GlobalKey<_SourceSpecificSectionState>();
+  final GlobalKey<_IntegrationsSectionState> _integrationsKey =
+      GlobalKey<_IntegrationsSectionState>();
   late final Future<AndroidDeviceInfo> _androidInfo =
       DeviceInfoPlugin().androidInfo;
   final ValueNotifier<Map<String, bool>> _expandedSettingsSections =
@@ -134,34 +138,42 @@ class SettingsPageState extends State<SettingsPage> {
 
   Future<bool> confirmDiscardUnsavedChanges() async {
     final sourceSpecificState = _sourceSpecificKey.currentState;
-    if (sourceSpecificState != null) {
-      if (sourceSpecificState.isGithubDirty ||
-          sourceSpecificState.isGitlabDirty) {
-        final bool? discard = await showDialog<bool>(
-          context: context,
-          builder: (BuildContext dialogContext) {
-            return AlertDialog(
-              title: Text(tr('discardUnsavedChangesQuestion')),
-              content: Text(tr('discardUnsavedPATChangesExplanation')),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(false),
-                  child: Text(tr('cancel')),
+    final integrationsState = _integrationsKey.currentState;
+    final bool hasUnsavedChanges =
+        (sourceSpecificState != null &&
+            (sourceSpecificState.isGithubDirty ||
+                sourceSpecificState.isGitlabDirty)) ||
+        (integrationsState?.isVirusTotalApiKeyDirty ?? false);
+    if (hasUnsavedChanges) {
+      final bool? discard = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext dialogContext) {
+          return AlertDialog(
+            title: Text(tr('discardUnsavedChangesQuestion')),
+            contentPadding: appDialogContentPadding,
+            content: Text(tr('discardUnsavedPATChangesExplanation')),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                style: TextButton.styleFrom(
+                  foregroundColor: Theme.of(dialogContext).colorScheme.error,
                 ),
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(true),
-                  child: Text(tr('continue')),
-                ),
-              ],
-            );
-          },
-        );
-        if (discard == true) {
-          sourceSpecificState.discardChanges();
-          return true;
-        }
-        return false;
+                child: Text(tr('discard')),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: Text(tr('stayHere')),
+              ),
+            ],
+          );
+        },
+      );
+      if (discard == true) {
+        sourceSpecificState?.discardChanges();
+        integrationsState?.discardChanges();
+        return true;
       }
+      return false;
     }
     return true;
   }
@@ -455,7 +467,7 @@ class SettingsPageState extends State<SettingsPage> {
         key: 'integrations',
         title: tr('integrations'),
         icon: Icons.extension_rounded,
-        widget: const _IntegrationsSection(),
+        widget: _IntegrationsSection(key: _integrationsKey),
       ),
       _SettingsCategory(
         key: 'warnings',
@@ -836,7 +848,7 @@ class SettingsPageState extends State<SettingsPage> {
                               ),
                               collapsibleCard(
                                 'integrations',
-                                const _IntegrationsSection(),
+                                _IntegrationsSection(key: _integrationsKey),
                               ),
                               // ── Warnings ─────────────────────────────────
                               sectionHeader(
@@ -1448,6 +1460,11 @@ class _SourceSpecificSectionState extends State<_SourceSpecificSection> {
                       decoration: InputDecoration(
                         labelText: tr('githubPATLabel'),
                         border: const OutlineInputBorder(),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 12,
+                        ),
                         suffixIcon: IconButton(
                           icon: const Icon(Icons.open_in_new_rounded),
                           onPressed: () => launchUrlString(
@@ -1583,6 +1600,11 @@ class _SourceSpecificSectionState extends State<_SourceSpecificSection> {
                   labelText: tr('GHReqPrefix'),
                   hintText: 'gh-proxy.org',
                   border: const OutlineInputBorder(),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 12,
+                  ),
                   suffixIcon: IconButton(
                     icon: const Icon(Icons.open_in_new_rounded),
                     onPressed: () => launchUrlString(
@@ -1625,6 +1647,11 @@ class _SourceSpecificSectionState extends State<_SourceSpecificSection> {
                       decoration: InputDecoration(
                         labelText: tr('gitlabPATLabel'),
                         border: const OutlineInputBorder(),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 12,
+                        ),
                         suffixIcon: IconButton(
                           icon: const Icon(Icons.open_in_new_rounded),
                           onPressed: () => launchUrlString(
@@ -2278,7 +2305,7 @@ class _InteractionSection extends StatelessWidget {
 }
 
 class _IntegrationsSection extends StatefulWidget {
-  const _IntegrationsSection();
+  const _IntegrationsSection({super.key});
 
   @override
   State<_IntegrationsSection> createState() => _IntegrationsSectionState();
@@ -2287,21 +2314,44 @@ class _IntegrationsSection extends StatefulWidget {
 class _IntegrationsSectionState extends State<_IntegrationsSection>
     with WidgetsBindingObserver {
   bool _appManagerInstalled = false;
-  bool _appVerifierInstalled = false;
   bool _letMeDowngradeInstalled = false;
   bool _loading = true;
+  late final TextEditingController _virusTotalApiKeyController;
+  bool _virusTotalChecking = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _checkInstalledApps();
+    _virusTotalApiKeyController = TextEditingController(
+      text:
+          context.read<SettingsProvider>().getSettingString(
+            virusTotalApiKeyKey,
+          ) ??
+          '',
+    );
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _virusTotalApiKeyController.dispose();
     super.dispose();
+  }
+
+  bool get isVirusTotalApiKeyDirty {
+    final String currentText = _virusTotalApiKeyController.text.trim();
+    final SettingsProvider sp = context.read<SettingsProvider>();
+    final String savedText = sp.getSettingString(virusTotalApiKeyKey) ?? '';
+    return currentText != savedText;
+  }
+
+  void discardChanges() {
+    final SettingsProvider sp = context.read<SettingsProvider>();
+    _virusTotalApiKeyController.text =
+        sp.getSettingString(virusTotalApiKeyKey) ?? '';
+    setState(() {});
   }
 
   @override
@@ -2314,14 +2364,12 @@ class _IntegrationsSectionState extends State<_IntegrationsSection>
   Future<void> _checkInstalledApps() async {
     final results = await Future.wait([
       getInstalledInfo('io.github.muntashirakon.AppManager'),
-      getInstalledInfo('dev.soupslurpr.appverifier'),
       getInstalledInfo('com.berdik.letmedowngrade'),
     ]);
     if (mounted) {
       setState(() {
         _appManagerInstalled = results[0] != null;
-        _appVerifierInstalled = results[1] != null;
-        _letMeDowngradeInstalled = results[2] != null;
+        _letMeDowngradeInstalled = results[1] != null;
         _loading = false;
       });
     }
@@ -2330,6 +2378,7 @@ class _IntegrationsSectionState extends State<_IntegrationsSection>
   static int _integrationsSettingsHash(SettingsProvider sp) => Object.hash(
     sp.openAppInfoInAppManager,
     sp.beforeNewInstallsShareToAppVerifier,
+    sp.enableVirusTotalScanning,
     sp.enableLetMeDowngrade,
   );
 
@@ -2354,6 +2403,11 @@ class _IntegrationsSectionState extends State<_IntegrationsSection>
                   : cs.onSurface.withValues(alpha: 0.38),
             ),
           ),
+          onTap: !_loading && !_appManagerInstalled
+              ? () => ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(tr('appManagerNotInstalledSnackbar'))),
+                )
+              : null,
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -2391,40 +2445,20 @@ class _IntegrationsSectionState extends State<_IntegrationsSection>
           title: Text(
             tr('beforeNewInstallsShareToAppVerifier'),
             style: TextStyle(
-              color: _loading
-                  ? cs.onSurface.withValues(alpha: 0.38)
-                  : _appVerifierInstalled
-                  ? null
-                  : cs.onSurface.withValues(alpha: 0.38),
+              color: _loading ? cs.onSurface.withValues(alpha: 0.38) : null,
             ),
           ),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              IconButton(
-                tooltip: tr('about'),
-                onPressed: () {
-                  launchUrlString(
-                    tr('aboutAppVerifierUrl'),
-                    mode: LaunchMode.externalApplication,
-                  );
-                },
-                style: IconButton.styleFrom(
-                  foregroundColor: cs.onSurfaceVariant,
-                  iconSize: 20,
-                  padding: const EdgeInsets.all(4),
-                  minimumSize: const Size(32, 32),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
-                ),
-                icon: const Icon(Icons.open_in_new_rounded),
+              HelpHintIcon(
+                message: tr('shareToAppVerifierTooltip'),
+                size: 20,
+                padding: EdgeInsets.zero,
               ),
               Switch(
-                value:
-                    !_loading &&
-                    _appVerifierInstalled &&
-                    sp.beforeNewInstallsShareToAppVerifier,
-                onChanged: !_loading && _appVerifierInstalled
+                value: !_loading && sp.beforeNewInstallsShareToAppVerifier,
+                onChanged: !_loading
                     ? (bool value) =>
                           sp.beforeNewInstallsShareToAppVerifier = value
                     : null,
@@ -2443,6 +2477,13 @@ class _IntegrationsSectionState extends State<_IntegrationsSection>
                   : cs.onSurface.withValues(alpha: 0.38),
             ),
           ),
+          onTap: !_loading && !_letMeDowngradeInstalled
+              ? () => ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(tr('letMeDowngradeNotInstalledSnackbar')),
+                  ),
+                )
+              : null,
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -2472,6 +2513,173 @@ class _IntegrationsSectionState extends State<_IntegrationsSection>
                 onChanged: !_loading && _letMeDowngradeInstalled
                     ? (bool value) => sp.enableLetMeDowngrade = value
                     : null,
+              ),
+            ],
+          ),
+        ),
+        Builder(
+          builder: (context) {
+            final String savedApiKey =
+                sp.getSettingString(virusTotalApiKeyKey) ?? '';
+            final bool hasValidatedKey =
+                savedApiKey.isNotEmpty && hasValidatedApiKey(savedApiKey, sp);
+            return ListTile(
+              title: Text(tr('enableVirusTotalScanning')),
+              onTap: !hasValidatedKey
+                  ? () => ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(tr('virusTotalNotValidatedSnackbar')),
+                      ),
+                    )
+                  : null,
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  HelpHintIcon(
+                    message: tr('virusTotalScanningTooltip'),
+                    size: 20,
+                    padding: EdgeInsets.zero,
+                  ),
+                  Switch(
+                    value: hasValidatedKey && sp.enableVirusTotalScanning,
+                    onChanged: hasValidatedKey
+                        ? (bool value) => sp.enableVirusTotalScanning = value
+                        : null,
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _virusTotalApiKeyController,
+                  obscureText: true,
+                  decoration: InputDecoration(
+                    labelText: tr('virusTotalApiKeyLabel'),
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.open_in_new_rounded),
+                      onPressed: () => launchUrlString(
+                        'https://www.virustotal.com/gui/my-apikey',
+                        mode: LaunchMode.externalApplication,
+                      ),
+                      tooltip: tr('about'),
+                    ),
+                  ),
+                  onChanged: (val) {
+                    setState(() {});
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Builder(
+                builder: (context) {
+                  final String enteredText = _virusTotalApiKeyController.text
+                      .trim();
+                  final String savedText =
+                      sp.getSettingString(virusTotalApiKeyKey) ?? '';
+                  final bool isDirty = enteredText != savedText;
+                  final bool isValidated = hasValidatedApiKey(enteredText, sp);
+                  final bool buttonIsEnabled =
+                      isDirty || (enteredText.isNotEmpty && !isValidated);
+                  return SizedBox(
+                    width: 48,
+                    height: 56,
+                    child: Center(
+                      child: _virusTotalChecking
+                          ? SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: ExpressiveLoadingIndicator(
+                                color: cs.primary,
+                                constraints: const BoxConstraints.tightFor(
+                                  width: 20,
+                                  height: 20,
+                                ),
+                              ),
+                            )
+                          : (isValidated
+                                ? Tooltip(
+                                    message: tr('virusTotalKeyValidated'),
+                                    child: Icon(
+                                      Icons.verified_user,
+                                      color: cs.primary,
+                                    ),
+                                  )
+                                : IconButton.filledTonal(
+                                    icon: const Icon(Icons.save_rounded),
+                                    onPressed: buttonIsEnabled
+                                        ? () async {
+                                            FocusManager.instance.primaryFocus
+                                                ?.unfocus();
+                                            if (enteredText.isEmpty) {
+                                              sp.setSettingString(
+                                                virusTotalApiKeyKey,
+                                                '',
+                                              );
+                                              clearApiKeyValidation(sp);
+                                              sp.enableVirusTotalScanning =
+                                                  false;
+                                              setState(() {});
+                                              return;
+                                            }
+                                            setState(() {
+                                              _virusTotalChecking = true;
+                                            });
+                                            final String? error =
+                                                await VirusTotalScanner()
+                                                    .validateApiKey(
+                                                      enteredText,
+                                                    );
+                                            if (!context.mounted) return;
+                                            setState(() {
+                                              _virusTotalChecking = false;
+                                            });
+                                            if (error == null) {
+                                              sp.setSettingString(
+                                                virusTotalApiKeyKey,
+                                                enteredText,
+                                              );
+                                              storeApiKeyValidation(
+                                                enteredText,
+                                                sp,
+                                              );
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                    tr(
+                                                      'virusTotalKeyValidated',
+                                                    ),
+                                                  ),
+                                                ),
+                                              );
+                                              setState(() {});
+                                            } else {
+                                              clearApiKeyValidation(sp);
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                SnackBar(content: Text(error)),
+                                              );
+                                            }
+                                          }
+                                        : null,
+                                  )),
+                    ),
+                  );
+                },
               ),
             ],
           ),
@@ -3195,6 +3403,7 @@ class _LogsDialogState extends State<LogsDialog> {
 
     return AlertDialog(
       title: Text(tr('appLogs')),
+      contentPadding: appDialogContentPadding,
       content: SizedBox(
         width: double.maxFinite,
         height: MediaQuery.of(context).size.height * 0.6,
@@ -3260,6 +3469,9 @@ class _LogsDialogState extends State<LogsDialog> {
                                 items: const [],
                                 initValid: true,
                                 message: tr('removeFromObtainX'),
+                                primaryActionColour: Theme.of(
+                                  modalContext,
+                                ).colorScheme.error,
                               );
                             },
                           )) !=
@@ -3270,6 +3482,9 @@ class _LogsDialogState extends State<LogsDialog> {
                         Navigator.of(context).pop();
                       }
                     },
+                    style: TextButton.styleFrom(
+                      foregroundColor: Theme.of(context).colorScheme.error,
+                    ),
                     child: Text(tr('remove')),
                   ),
                   TextButton(
@@ -3358,7 +3573,13 @@ Map<String, MapEntry<int, bool>> _mergeCategoryEditorMaps(
       merged[entry.key] = entry.value;
     }
   }
-  return merged;
+  final List<MapEntry<String, MapEntry<int, bool>>> sortedEntries =
+      merged.entries.toList()..sort((a, b) {
+        final int cmp = a.key.toLowerCase().compareTo(b.key.toLowerCase());
+        if (cmp != 0) return cmp;
+        return a.key.compareTo(b.key);
+      });
+  return Map<String, MapEntry<int, bool>>.fromEntries(sortedEntries);
 }
 
 class CategoryEditorSelector extends StatefulWidget {

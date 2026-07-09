@@ -7,6 +7,9 @@ import 'package:progress_indicator_m3e/progress_indicator_m3e.dart';
 /// [LinearProgressIndicatorM3E] and adds phase animation
 /// and smooth value transitions.
 class LinearRipplingWavyProgressIndicator extends StatefulWidget {
+  /// Shared default for [dragDuration]; also used when dismissing refresh UI.
+  static const defaultDragDuration = Duration(milliseconds: 500);
+
   final double? value;
   final LinearProgressM3ESize size;
   final Color? activeColor;
@@ -31,7 +34,7 @@ class LinearRipplingWavyProgressIndicator extends StatefulWidget {
     this.inset = 10.0,
     this.waveSpeed = 1.0,
     this.flatBelow = 0.01,
-    this.dragDuration = const Duration(milliseconds: 500),
+    this.dragDuration = defaultDragDuration,
   });
 
   @override
@@ -61,7 +64,7 @@ class _LinearRipplingWavyProgressState
       duration: _getDuration(widget.waveSpeed),
       lowerBound: 1e-10,
       upperBound: 2 * math.pi,
-    )..repeat();
+    );
     _valueController = AnimationController(
       vsync: this,
       duration: widget.dragDuration,
@@ -71,18 +74,28 @@ class _LinearRipplingWavyProgressState
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _updatePhaseAnimating();
+  }
+
+  @override
   void didUpdateWidget(
     covariant LinearRipplingWavyProgressIndicator oldWidget,
   ) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.waveSpeed != widget.waveSpeed) {
       _phaseController.duration = _getDuration(widget.waveSpeed);
-      if (_shouldAnimate) _phaseController.repeat();
+    }
+    if (oldWidget.dragDuration != widget.dragDuration) {
+      _valueController.duration = widget.dragDuration;
     }
 
     // Only animate when the value increases else snap
     if (oldWidget.value != widget.value) {
-      if (widget.value == null || widget.value! <= _valueController.value) {
+      if (widget.value == null ||
+          widget.value! <= _valueController.value ||
+          MediaQuery.disableAnimationsOf(context)) {
         _valueController.value = widget.value ?? _valueController.lowerBound;
       } else {
         _valueController.animateTo(
@@ -95,13 +108,14 @@ class _LinearRipplingWavyProgressState
     _updatePhaseAnimating();
   }
 
-  bool get _shouldAnimate {
+  bool get _shouldShowWavyShape {
+    if (MediaQuery.disableAnimationsOf(context)) return false;
     if (widget.value == null) return true;
     return widget.value! >= widget.flatBelow;
   }
 
   void _updatePhaseAnimating() {
-    if (_shouldAnimate) {
+    if (_shouldShowWavyShape) {
       if (!_phaseController.isAnimating) _phaseController.repeat();
     } else {
       if (_phaseController.isAnimating) _phaseController.stop();
@@ -125,7 +139,9 @@ class _LinearRipplingWavyProgressState
             : _valueController.value;
         return LinearProgressIndicatorM3E(
           value: displayedValue,
-          shape: _shouldAnimate ? ProgressM3EShape.wavy : ProgressM3EShape.flat,
+          shape: _shouldShowWavyShape
+              ? ProgressM3EShape.wavy
+              : ProgressM3EShape.flat,
           size: widget.size,
           activeColor: widget.activeColor,
           trackColor: widget.trackColor,
