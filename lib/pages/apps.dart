@@ -41,6 +41,7 @@ import 'package:obtainium/services/bulk_import_service.dart';
 import 'package:obtainium/services/bulk_scan_cache.dart';
 import 'package:obtainium/store_source_icons.dart';
 import 'package:obtainium/theme/app_dialog_theme.dart';
+import 'package:obtainium/theme/app_form_field_styles.dart';
 import 'package:obtainium/theme/app_theme_accent.dart';
 import 'package:obtainium/theme/app_segmented_button_theme.dart';
 import 'package:obtainium/theme/m3e_expressive_list.dart';
@@ -2527,56 +2528,69 @@ class AppsPageState extends State<AppsPage> {
       controller: _searchController,
       focusNode: focusNode,
       autofocus: true,
-      decoration: InputDecoration(
-        hintText: tr('search'),
-        isDense: true,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(30)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        suffixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
-        suffixIcon: Padding(
-          padding: const EdgeInsetsDirectional.only(end: 10),
-          child: Align(
-            alignment: Alignment.center,
-            widthFactor: 1,
-            child: GestureDetector(
-              onTap: showFilterSheet,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: anyFilterActive
-                      ? colorScheme.primaryContainer
-                      : colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      fieldLabel,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        color: anyFilterActive
-                            ? colorScheme.onPrimaryContainer
-                            : colorScheme.onSurfaceVariant,
-                      ),
+      decoration:
+          appPageOutlinedInputDecoration(
+            context,
+            labelText: null,
+            hintText: tr('search'),
+            isDense: true,
+            borderRadius: 30,
+          ).copyWith(
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 8,
+            ),
+            suffixIconConstraints: const BoxConstraints(
+              minWidth: 0,
+              minHeight: 0,
+            ),
+            suffixIcon: Padding(
+              padding: const EdgeInsetsDirectional.only(end: 10),
+              child: Align(
+                alignment: Alignment.center,
+                widthFactor: 1,
+                child: GestureDetector(
+                  onTap: showFilterSheet,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
                     ),
-                    const SizedBox(width: 2),
-                    Icon(
-                      Icons.arrow_drop_down,
-                      size: 14,
+                    decoration: BoxDecoration(
                       color: anyFilterActive
-                          ? colorScheme.onPrimaryContainer
-                          : colorScheme.onSurfaceVariant,
+                          ? colorScheme.primaryContainer
+                          : colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                  ],
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          fieldLabel,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: anyFilterActive
+                                ? colorScheme.onPrimaryContainer
+                                : colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(width: 2),
+                        Icon(
+                          Icons.arrow_drop_down,
+                          size: 14,
+                          color: anyFilterActive
+                              ? colorScheme.onPrimaryContainer
+                              : colorScheme.onSurfaceVariant,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-      ),
     );
   }
 
@@ -4577,71 +4591,27 @@ class AppsPageState extends State<AppsPage> {
                   // ── Source dropdown ───────────────────────────────────
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
-                    child: (() {
-                      double maxW = 0.0;
-                      final TextStyle? style = Theme.of(
+                    child: appDropdownField<String>(
+                      key: ValueKey(filter.sourceFilter),
+                      context: context,
+                      value: filter.sourceFilter,
+                      labelText: tr('appSource'),
+                      menuWidth: appDropdownMenuWidth(
                         context,
-                      ).textTheme.bodyLarge;
-                      for (final sourceItem in sourceItems) {
-                        final String text = sourceItem.value;
-                        final textPainter = TextPainter(
-                          text: TextSpan(text: text, style: style),
-                          textDirection: TextDirection.ltr,
-                        )..layout();
-                        if (textPainter.width > maxW) {
-                          maxW = textPainter.width;
-                        }
-                      }
-                      final double calculatedMenuWidth = (maxW + 64.0).clamp(
-                        120.0,
-                        MediaQuery.sizeOf(context).width - 88.0,
-                      );
-                      return FormField<String>(
-                        key: ValueKey(filter.sourceFilter),
-                        initialValue: filter.sourceFilter,
-                        builder: (FormFieldState<String> fieldState) {
-                          final InputDecoration decoration = InputDecoration(
-                            labelText: tr('appSource'),
-                            isDense: true,
-                            border: const OutlineInputBorder(),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 10,
+                        sourceItems.map((sourceItem) => sourceItem.value),
+                      ),
+                      items: sourceItems
+                          .map(
+                            (sourceItem) => DropdownMenuItem(
+                              value: sourceItem.key,
+                              child: Text(sourceItem.value),
                             ),
-                          ).copyWith(errorText: fieldState.errorText);
-                          return ButtonTheme(
-                            alignedDropdown: true,
-                            child: InputDecorator(
-                              decoration: decoration,
-                              isEmpty: fieldState.value == null,
-                              child: DropdownButtonHideUnderline(
-                                child: DropdownButton<String>(
-                                  value: fieldState.value,
-                                  isExpanded: true,
-                                  isDense: true,
-                                  menuWidth: calculatedMenuWidth,
-                                  items: sourceItems
-                                      .map(
-                                        (sourceItem) => DropdownMenuItem(
-                                          value: sourceItem.key,
-                                          child: Text(sourceItem.value),
-                                        ),
-                                      )
-                                      .toList(),
-                                  onChanged: (newValue) {
-                                    fieldState.didChange(newValue);
-                                    update(
-                                      () =>
-                                          filter.sourceFilter = newValue ?? '',
-                                    );
-                                  },
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      );
-                    })(),
+                          )
+                          .toList(),
+                      onChanged: (newValue) {
+                        update(() => filter.sourceFilter = newValue ?? '');
+                      },
+                    ),
                   ),
 
                   const SizedBox(height: 8),
@@ -6191,9 +6161,9 @@ class AppsPageState extends State<AppsPage> {
                 children: [
                   TextField(
                     controller: nameCtrl,
-                    decoration: InputDecoration(
+                    decoration: appPageOutlinedInputDecoration(
+                      dCtx,
                       labelText: tr('folderName'),
-                      border: const OutlineInputBorder(),
                     ),
                     autofocus: true,
                     textCapitalization: TextCapitalization.words,
@@ -6229,9 +6199,10 @@ class AppsPageState extends State<AppsPage> {
                           )
                           .toList(),
                       child: InputDecorator(
-                        decoration: InputDecoration(
+                        decoration: appPageOutlinedInputDecoration(
+                          dCtx,
                           labelText: tr('folderRuleField'),
-                          border: const OutlineInputBorder(),
+                        ).copyWith(
                           suffixIcon: const Icon(Icons.arrow_drop_down),
                           contentPadding: const EdgeInsets.fromLTRB(
                             12,
@@ -6256,9 +6227,10 @@ class AppsPageState extends State<AppsPage> {
                           )
                           .toList(),
                       child: InputDecorator(
-                        decoration: InputDecoration(
+                        decoration: appPageOutlinedInputDecoration(
+                          dCtx,
                           labelText: tr('folderRuleMatch'),
-                          border: const OutlineInputBorder(),
+                        ).copyWith(
                           suffixIcon: const Icon(Icons.arrow_drop_down),
                           contentPadding: const EdgeInsets.fromLTRB(
                             12,
@@ -6273,9 +6245,10 @@ class AppsPageState extends State<AppsPage> {
                     const SizedBox(height: 8),
                     TextField(
                       controller: ruleValueCtrl,
-                      decoration: InputDecoration(
+                      decoration: appPageOutlinedInputDecoration(
+                        dCtx,
                         labelText: tr('folderRuleValue'),
-                        border: const OutlineInputBorder(),
+                      ).copyWith(
                         helperText: matchCount != null
                             ? tr(
                                 'ruleMatchesXApps',
@@ -6440,9 +6413,9 @@ class AppsPageState extends State<AppsPage> {
                   controller: nameCtrl,
                   autofocus: true,
                   textCapitalization: TextCapitalization.sentences,
-                  decoration: InputDecoration(
+                  decoration: appPageOutlinedInputDecoration(
+                    ctx,
                     labelText: tr('folderName'),
-                    border: const OutlineInputBorder(),
                   ),
                   onSubmitted: (_) =>
                       Navigator.of(ctx).pop(nameCtrl.text.trim()),
@@ -6778,21 +6751,24 @@ class _TriStateCategoryFilterSelector extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            AppSegmentedButton<CategoryFilterMatchMode>(
-              segments: [
-                ButtonSegment(
-                  value: CategoryFilterMatchMode.any,
-                  label: AppSegmentedButtonLabel(tr('categoryMatchAny')),
-                ),
-                ButtonSegment(
-                  value: CategoryFilterMatchMode.all,
-                  label: AppSegmentedButtonLabel(tr('categoryMatchAll')),
-                ),
-              ],
-              selected: {matchMode},
-              onSelectionChanged: (selection) {
-                onMatchModeChanged(selection.first);
-              },
+            SizedBox(
+              width: 112,
+              child: AppSegmentedButton<CategoryFilterMatchMode>(
+                segments: [
+                  ButtonSegment(
+                    value: CategoryFilterMatchMode.any,
+                    label: AppSegmentedButtonLabel(tr('categoryMatchAny')),
+                  ),
+                  ButtonSegment(
+                    value: CategoryFilterMatchMode.all,
+                    label: AppSegmentedButtonLabel(tr('categoryMatchAll')),
+                  ),
+                ],
+                selected: {matchMode},
+                onSelectionChanged: (selection) {
+                  onMatchModeChanged(selection.first);
+                },
+              ),
             ),
           ],
         ),

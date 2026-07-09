@@ -386,8 +386,9 @@ ObtainX adds **Folders**: persistent named views that pull apps off the main lis
 - **Exclusions** — If you manually remove an app from a rule-based folder, it's excluded and the rule won't re-add it. Manually adding it back clears the exclusion.
 **Per-folder view settings** — Each folder (and the On-Demand Only page) remembers its own sort column, group-by mode, pinned state, and filter — completely independent from the main list and from each other.
 
-<img src="https://github.com/user-attachments/assets/5785396f-cee9-41e5-98e2-b052a73cbef3" alt="Folders with rules" width="300" />
-
+<p align="center">
+<img src="../fastlane/metadata/android/en-US/images/phoneScreenshots/10_folders.jpg" alt="Folders with rules" width="300" />
+</p>
 ---
 
 ## On-Demand Only

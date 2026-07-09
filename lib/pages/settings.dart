@@ -31,6 +31,7 @@ import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
 import 'package:obtainium/providers/virustotal_provider.dart';
 import 'package:obtainium/theme/app_dialog_theme.dart';
+import 'package:obtainium/theme/app_form_field_styles.dart';
 import 'package:obtainium/theme/app_theme_accent.dart';
 import 'package:obtainium/theme/app_segmented_button_theme.dart';
 import 'package:obtainium/theme/m3e_expressive_list.dart';
@@ -1457,23 +1458,21 @@ class _SourceSpecificSectionState extends State<_SourceSpecificSection> {
                     child: TextField(
                       controller: _githubPatController,
                       obscureText: true,
-                      decoration: InputDecoration(
-                        labelText: tr('githubPATLabel'),
-                        border: const OutlineInputBorder(),
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 12,
-                        ),
-                        suffixIcon: IconButton(
-                          icon: const Icon(Icons.open_in_new_rounded),
-                          onPressed: () => launchUrlString(
-                            'https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens',
-                            mode: LaunchMode.externalApplication,
+                      decoration:
+                          appPageOutlinedInputDecoration(
+                            context,
+                            labelText: tr('githubPATLabel'),
+                            isDense: true,
+                          ).copyWith(
+                            suffixIcon: IconButton(
+                              icon: const Icon(Icons.open_in_new_rounded),
+                              onPressed: () => launchUrlString(
+                                'https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens',
+                                mode: LaunchMode.externalApplication,
+                              ),
+                              tooltip: tr('about'),
+                            ),
                           ),
-                          tooltip: tr('about'),
-                        ),
-                      ),
                       onChanged: (val) {
                         setState(() {});
                       },
@@ -1596,24 +1595,22 @@ class _SourceSpecificSectionState extends State<_SourceSpecificSection> {
               const SizedBox(height: 16),
               TextField(
                 controller: _hubProxyController,
-                decoration: InputDecoration(
-                  labelText: tr('GHReqPrefix'),
-                  hintText: 'gh-proxy.org',
-                  border: const OutlineInputBorder(),
-                  isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 12,
-                  ),
-                  suffixIcon: IconButton(
-                    icon: const Icon(Icons.open_in_new_rounded),
-                    onPressed: () => launchUrlString(
-                      'https://github.com/sky22333/hubproxy',
-                      mode: LaunchMode.externalApplication,
+                decoration:
+                    appPageOutlinedInputDecoration(
+                      context,
+                      labelText: tr('GHReqPrefix'),
+                      hintText: 'gh-proxy.org',
+                      isDense: true,
+                    ).copyWith(
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.open_in_new_rounded),
+                        onPressed: () => launchUrlString(
+                          'https://github.com/sky22333/hubproxy',
+                          mode: LaunchMode.externalApplication,
+                        ),
+                        tooltip: tr('about'),
+                      ),
                     ),
-                    tooltip: tr('about'),
-                  ),
-                ),
                 onChanged: (val) {
                   sp.setSettingString(GitHub.githubReqPrefixKey, val.trim());
                 },
@@ -1644,23 +1641,21 @@ class _SourceSpecificSectionState extends State<_SourceSpecificSection> {
                     child: TextField(
                       controller: _gitlabPatController,
                       obscureText: true,
-                      decoration: InputDecoration(
-                        labelText: tr('gitlabPATLabel'),
-                        border: const OutlineInputBorder(),
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 12,
-                        ),
-                        suffixIcon: IconButton(
-                          icon: const Icon(Icons.open_in_new_rounded),
-                          onPressed: () => launchUrlString(
-                            'https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html#create-a-personal-access-token',
-                            mode: LaunchMode.externalApplication,
+                      decoration:
+                          appPageOutlinedInputDecoration(
+                            context,
+                            labelText: tr('gitlabPATLabel'),
+                            isDense: true,
+                          ).copyWith(
+                            suffixIcon: IconButton(
+                              icon: const Icon(Icons.open_in_new_rounded),
+                              onPressed: () => launchUrlString(
+                                'https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html#create-a-personal-access-token',
+                                mode: LaunchMode.externalApplication,
+                              ),
+                              tooltip: tr('about'),
+                            ),
                           ),
-                          tooltip: tr('about'),
-                        ),
-                      ),
                       onChanged: (val) {
                         setState(() {});
                       },
@@ -2559,23 +2554,21 @@ class _IntegrationsSectionState extends State<_IntegrationsSection>
                 child: TextField(
                   controller: _virusTotalApiKeyController,
                   obscureText: true,
-                  decoration: InputDecoration(
-                    labelText: tr('virusTotalApiKeyLabel'),
-                    border: const OutlineInputBorder(),
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
-                    ),
-                    suffixIcon: IconButton(
-                      icon: const Icon(Icons.open_in_new_rounded),
-                      onPressed: () => launchUrlString(
-                        'https://www.virustotal.com/gui/my-apikey',
-                        mode: LaunchMode.externalApplication,
+                  decoration:
+                      appPageOutlinedInputDecoration(
+                        context,
+                        labelText: tr('virusTotalApiKeyLabel'),
+                        isDense: true,
+                      ).copyWith(
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.open_in_new_rounded),
+                          onPressed: () => launchUrlString(
+                            'https://www.virustotal.com/gui/my-apikey',
+                            mode: LaunchMode.externalApplication,
+                          ),
+                          tooltip: tr('about'),
+                        ),
                       ),
-                      tooltip: tr('about'),
-                    ),
-                  ),
                   onChanged: (val) {
                     setState(() {});
                   },
@@ -3692,18 +3685,64 @@ class _ThirdPartyInstallerSelectorState
     _loadInstallers();
   }
 
-  Future<void> _loadInstallers() async {
+  Future<List<installer.InstallerAppInfo>?> _loadInstallers({
+    bool showLoading = false,
+  }) async {
+    if (showLoading && mounted) {
+      setState(() => _loading = true);
+    }
     final apps = await installer.getApkInstallerApps();
-    if (mounted) {
-      setState(() {
-        _installerApps = apps;
-        _loading = false;
-      });
+    if (!mounted) return null;
+    _repairSelectedInstaller(apps);
+    setState(() {
+      _installerApps = apps;
+      _loading = false;
+    });
+    return apps;
+  }
+
+  void _repairSelectedInstaller(List<installer.InstallerAppInfo> apps) {
+    final selectedPackage = widget.settingsProvider.legacyInstallerPackage;
+    final selectedActivity = widget.settingsProvider.legacyInstallerActivity;
+    final selectedActivityStillAvailable =
+        selectedPackage == null ||
+        selectedActivity == null ||
+        apps.any(
+          (app) =>
+              app.packageName == selectedPackage &&
+              app.activityName == selectedActivity,
+        );
+    if (!selectedActivityStillAvailable) {
+      final replacement = apps
+          .where((app) => app.packageName == selectedPackage)
+          .firstOrNull;
+      if (replacement != null) {
+        widget.settingsProvider.legacyInstallerActivity =
+            replacement.activityName;
+      }
     }
   }
 
-  void _showInstallerPicker() {
-    if (_installerApps == null || _installerApps!.isEmpty) return;
+  Future<void> _showInstallerPicker() async {
+    if (_loading) return;
+    final installerApps =
+        await _loadInstallers(showLoading: _installerApps == null);
+    if (!mounted || installerApps == null || installerApps.isEmpty) {
+      return;
+    }
+
+    void updateSelectedInstaller(String? value) {
+      if (value != null) {
+        final selected = installerApps.firstWhere(
+          (a) => '${a.packageName}|${a.activityName}' == value,
+        );
+        widget.settingsProvider.legacyInstallerPackage = selected.packageName;
+        widget.settingsProvider.legacyInstallerActivity = selected.activityName;
+      }
+      setState(() {
+        _installerApps = installerApps;
+      });
+    }
 
     final currentPkg = widget.settingsProvider.legacyInstallerPackage;
     final currentAct = widget.settingsProvider.legacyInstallerActivity;
@@ -3721,24 +3760,15 @@ class _ThirdPartyInstallerSelectorState
               groupValue: selectedValue,
               onChanged: (String? value) {
                 setSheetState(() => selectedValue = value);
-                if (value != null) {
-                  final selected = _installerApps!.firstWhere(
-                    (a) => '${a.packageName}|${a.activityName}' == value,
-                  );
-                  widget.settingsProvider.legacyInstallerPackage =
-                      selected.packageName;
-                  widget.settingsProvider.legacyInstallerActivity =
-                      selected.activityName;
-                }
+                updateSelectedInstaller(value);
                 Navigator.pop(sheetContext);
               },
               child: AppSheetContent(
-                padding: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
                 children: [
                   Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Align(
-                      alignment: AlignmentDirectional.centerStart,
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Center(
                       child: Text(
                         tr('thirdPartyInstallerSelect'),
                         style: Theme.of(builderContext).textTheme.titleMedium
@@ -3746,9 +3776,12 @@ class _ThirdPartyInstallerSelectorState
                       ),
                     ),
                   ),
-                  ..._installerApps!.map((app) {
+                  ...installerApps.map((app) {
                     final radioValue = '${app.packageName}|${app.activityName}';
                     return RadioListTile<String>(
+                      contentPadding: const EdgeInsetsDirectional.only(
+                        end: 16,
+                      ),
                       secondary: app.icon != null && app.icon!.isNotEmpty
                           ? ClipRRect(
                               borderRadius: BorderRadius.circular(8),
@@ -3797,8 +3830,13 @@ class _ThirdPartyInstallerSelectorState
   @override
   Widget build(BuildContext context) {
     final selectedPkg = widget.settingsProvider.legacyInstallerPackage;
+    final selectedAct = widget.settingsProvider.legacyInstallerActivity;
     final selectedApp = (_installerApps ?? [])
-        .where((app) => app.packageName == selectedPkg)
+        .where(
+          (app) =>
+              app.packageName == selectedPkg &&
+              app.activityName == selectedAct,
+        )
         .firstOrNull;
 
     return Column(

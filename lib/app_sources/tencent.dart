@@ -11,6 +11,7 @@ class Tencent extends AppSource {
     naiveStandardVersionDetection = true;
     showReleaseDateAsVersionToggle = true;
     canSearch = true;
+    regionalStore = true;
   }
 
   @override

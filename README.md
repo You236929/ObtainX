@@ -32,7 +32,9 @@ These features have been built from the ground up and do not exist in Obtainium.
 
 ### 🛡️ Security & Integrity
 
-- **🛡️ Build Verification Checks** — Runs automated cryptographic checks (F-Droid/Izzy reproducible builds, GitHub Release Attestations) on apps you add to flag manipulated binaries before install. For total integrity, ObtainX's own updates are secured with GitHub Release Attestations as well. Learn more in the [Build Verification Guide](docs/build-verification-guide.md).
+- **🛡️ Build Verification Checks** — Runs automated cryptographic checks (F-Droid/Izzy reproducible builds, GitHub Release Attestations) on apps you add to flag tampered binaries before install. For total integrity, ObtainX's own updates are secured with GitHub Release Attestations as well. Learn more in the [Build Verification Guide](docs/build-verification-guide.md).
+
+- **🦠 VirusTotal APK scanning** — Optionally scan downloaded APKs with VirusTotal before installation. You are in control - flagged or failed scans ask you what to do during installs.
 
 - **📦 Third-Party Installer Support** — Hand off updates to third-party installers like InstallerX or App Manager to review APK metadata (trackers, permissions, target SDK etc.) before installing (data hidden by stock installers). Essential for devices running under Google _Advanced Protection_.
 
@@ -188,13 +190,13 @@ Read the original Obtainium [README here](https://github.com/ImranR98/Obtainium/
 <table>
   <tr>
     <td width="50%" align="center">
-      <a href="https://bikram-agarwal.github.io/remember/">
+      <a href="https://github.com/bikram-agarwal/Remember">
         <img src="docs/assets/feature_remember.jpg" alt="Remember feature graphic" width="100%">
       <b>Remember</b></a>
       <p>Notes, tasks, and reminders that keep coming back until they are done.</p>
     </td>
     <td width="50%" align="center">
-      <a href="https://bikram-agarwal.github.io/filepipe/">
+      <a href="https://github.com/bikram-agarwal/FilePipe">
         <img src="docs/assets/feature_filepipe.jpg" alt="FilePipe feature graphic" width="100%">
       <b>FilePipe</b></a>
       <p>Your files, your rules. Automatically sort and move media with smart rules.</p>

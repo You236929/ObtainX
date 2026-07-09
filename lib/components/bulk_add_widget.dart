@@ -23,6 +23,7 @@ import 'package:obtainium/store_source_icons.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/gestures.dart';
 import 'package:obtainium/providers/settings_provider.dart';
+import 'package:obtainium/theme/app_form_field_styles.dart';
 
 const double _bulkBottomActionGap = 8.0;
 const double _bulkBottomActionHorizontalPadding = 16.0;
@@ -789,18 +790,23 @@ class BulkAddWidgetState extends State<BulkAddWidget> {
                         Expanded(
                           child: TextField(
                             controller: _searchController,
-                            decoration: InputDecoration(
-                              hintText: tr('search'),
-                              prefixIcon: const Icon(Icons.search, size: 18),
-                              isDense: true,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(30),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                            ),
+                            decoration:
+                                appPageOutlinedInputDecoration(
+                                  context,
+                                  labelText: null,
+                                  hintText: tr('search'),
+                                  isDense: true,
+                                  borderRadius: 30,
+                                ).copyWith(
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
+                                  prefixIcon: const Icon(
+                                    Icons.search,
+                                    size: 18,
+                                  ),
+                                ),
                             onChanged: (String value) {
                               _searchDebounceTimer?.cancel();
                               if (value.isEmpty) {
@@ -2660,11 +2666,10 @@ class _GithubPatSheetState extends State<_GithubPatSheet> {
               TextField(
                 controller: _controller,
                 autofocus: true,
-                decoration: InputDecoration(
+                decoration: appPageOutlinedInputDecoration(
+                  context,
                   labelText: tr('githubPATLabel'),
-                  errorText: _validationError,
-                  border: const OutlineInputBorder(),
-                ),
+                ).copyWith(errorText: _validationError),
                 obscureText: true,
                 enableSuggestions: false,
                 autocorrect: false,

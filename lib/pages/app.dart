@@ -15,6 +15,7 @@ import 'package:obtainium/app_sources/apkmirror.dart';
 import 'package:obtainium/app_sources/github.dart';
 import 'package:obtainium/components/app_bottom_sheet.dart';
 import 'package:obtainium/components/app_page_section_title.dart';
+import 'package:obtainium/components/app_smooth_surface.dart';
 import 'package:obtainium/components/category_action_chip.dart';
 import 'package:obtainium/pages/additional_options_page.dart';
 import 'package:obtainium/pages/page_route_slide_up.dart';
@@ -185,28 +186,34 @@ String? _resolveStoreUrl({
 /// Returns the Play Store URL if the app is present, or null if absent.
 /// Returns null also on network error — caller should not cache the result.
 Future<String?> _checkPlayStoreAvailability(String packageId) async {
-  try {
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 10);
-    final uri = Uri.parse(
-      'https://play.google.com/store/apps/details?id=$packageId&hl=en&gl=US',
-    );
-    final request = await client.headUrl(uri);
-    request.followRedirects = false;
-    request.headers.set(
-      HttpHeaders.userAgentHeader,
-      'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
-    );
-    final response = await request.close().timeout(const Duration(seconds: 10));
-    await response.drain<void>();
-    client.close();
-    if (response.statusCode == 200) {
-      return 'https://play.google.com/store/apps/details?id=$packageId';
+  final candidates = BulkImportService.getPackageIdCandidates(packageId);
+  for (final candidate in candidates) {
+    try {
+      final client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 10);
+      final uri = Uri.parse(
+        'https://play.google.com/store/apps/details?id=$candidate&hl=en&gl=US',
+      );
+      final request = await client.headUrl(uri);
+      request.followRedirects = false;
+      request.headers.set(
+        HttpHeaders.userAgentHeader,
+        'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36',
+      );
+      final response =
+          await request.close().timeout(const Duration(seconds: 10));
+      await response.drain<void>();
+      client.close();
+      if (response.statusCode == 200) {
+        return 'https://play.google.com/store/apps/details?id=$candidate';
+      }
+    } catch (_) {
+      if (candidate == packageId) {
+        return null; // network error on primary -> skip caching
+      }
     }
-    return null; // 302 = redirect to search (not found); 404 = also not found
-  } catch (_) {
-    return null; // network error — caller skips caching
   }
+  return null;
 }
 
 void _toastUrl(String url) {
@@ -1709,7 +1716,7 @@ class _AppPageState extends State<AppPage> {
     final futures = <Future<MapEntry<String, String?>>>[];
 
     if (!_trackedUrlIsFromHost(trackedUrl, 'apkmirror.com') &&
-        !storeData.containsKey('APKMirror')) {
+        (storeData['APKMirror'] ?? '').isEmpty) {
       futures.add(
         BulkImportService.checkApkMirror([
           appId,
@@ -1717,7 +1724,7 @@ class _AppPageState extends State<AppPage> {
       );
     }
     if (!_trackedUrlIsFromHost(trackedUrl, 'f-droid.org') &&
-        !storeData.containsKey('F-Droid')) {
+        (storeData['F-Droid'] ?? '').isEmpty) {
       futures.add(
         BulkImportService.checkFDroid([
           appId,
@@ -1725,7 +1732,7 @@ class _AppPageState extends State<AppPage> {
       );
     }
     if (!_trackedUrlIsFromHost(trackedUrl, 'apkpure.') &&
-        !storeData.containsKey('APKPure')) {
+        (storeData['APKPure'] ?? '').isEmpty) {
       futures.add(
         BulkImportService.checkApkPure([
           appId,
@@ -1733,7 +1740,7 @@ class _AppPageState extends State<AppPage> {
       );
     }
     if (!_trackedUrlIsFromHost(trackedUrl, 'play.google.com') &&
-        !storeData.containsKey('PlayStore')) {
+        (storeData['PlayStore'] ?? '').isEmpty) {
       futures.add(
         _checkPlayStoreAvailability(
           appId,
@@ -2213,18 +2220,14 @@ class _AppPageState extends State<AppPage> {
     }) {
       Widget versionChip(String text) {
         final ColorScheme scheme = Theme.of(ctx).colorScheme;
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          decoration: BoxDecoration(
-            color: Color.alphaBlend(
-              scheme.primary.withValues(alpha: 0.08),
-              scheme.surfaceContainerHighest,
-            ),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: scheme.outlineVariant.withValues(alpha: 0.9),
-            ),
+        return AppSmoothRoundedSurface(
+          backgroundColor: Color.alphaBlend(
+            scheme.primary.withValues(alpha: 0.12),
+            scheme.surfaceContainerHighest,
           ),
+          borderColor: null,
+          borderRadius: 999,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           child: Text(
             text,
             style: Theme.of(ctx).textTheme.labelSmall?.copyWith(
@@ -2536,7 +2539,8 @@ class _AppPageState extends State<AppPage> {
                   const SizedBox(height: 16),
                   TextField(
                     controller: packageIdController,
-                    decoration: InputDecoration(
+                    decoration: appPageOutlinedInputDecoration(
+                      dialogContext,
                       labelText: tr('package'),
                       isDense: true,
                     ),
@@ -2922,6 +2926,46 @@ class _AppPageState extends State<AppPage> {
           : reproducibleBuildUsesErrorColors
           ? Theme.of(pageThemeContext).colorScheme.onErrorContainer
           : Theme.of(pageThemeContext).colorScheme.onSurfaceVariant;
+      Widget statusBadge({
+        required Color backgroundColor,
+        required Color? borderColor,
+        required Color contentColor,
+        required IconData icon,
+        required String label,
+        VoidCallback? onTap,
+        String? tooltip,
+      }) {
+        final Color resolvedBackgroundColor = borderColor == null
+            ? backgroundColor
+            : Color.alphaBlend(
+                borderColor.withValues(alpha: 0.10),
+                backgroundColor,
+              );
+        return AppSmoothRoundedSurface(
+          backgroundColor: resolvedBackgroundColor,
+          borderColor: null,
+          borderRadius: 8,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          onTap: onTap,
+          tooltip: tooltip,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 12, color: contentColor),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: Theme.of(pageThemeContext).textTheme.labelSmall
+                    ?.copyWith(
+                      color: contentColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ],
+          ),
+        );
+      }
+
       if (app != null &&
           (reproducibleBuildHasDisplayStatus ||
               githubAttestationHasStatus ||
@@ -2956,276 +3000,119 @@ class _AppPageState extends State<AppPage> {
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       if (reproducibleBuildVerified)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.green.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: Colors.green.withValues(alpha: 0.5),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.verified_outlined,
-                                size: 12,
-                                color: Colors.green,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                tr('reproducibleBuild'),
-                                style: Theme.of(pageThemeContext)
-                                    .textTheme
-                                    .labelSmall
-                                    ?.copyWith(
-                                      color: Colors.green,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                              ),
-                            ],
-                          ),
+                        statusBadge(
+                          backgroundColor: Colors.green.withValues(alpha: 0.15),
+                          borderColor: Colors.green.withValues(alpha: 0.5),
+                          contentColor: Colors.green,
+                          icon: Icons.verified_outlined,
+                          label: tr('reproducibleBuild'),
                         ),
                       if (githubAttestationVerified)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: Colors.blue.withValues(alpha: 0.5),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.shield_outlined,
-                                size: 12,
-                                color: Colors.blue,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                tr('verifiedBuild'),
-                                style: Theme.of(pageThemeContext)
-                                    .textTheme
-                                    .labelSmall
-                                    ?.copyWith(
-                                      color: Colors.blue,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                              ),
-                            ],
-                          ),
+                        statusBadge(
+                          backgroundColor: Colors.blue.withValues(alpha: 0.15),
+                          borderColor: Colors.blue.withValues(alpha: 0.5),
+                          contentColor: Colors.blue,
+                          icon: Icons.shield_outlined,
+                          label: tr('verifiedBuild'),
                         ),
                       if (reproducibleBuildNotReproducible ||
                           reproducibleBuildNoData ||
                           reproducibleBuildUnknown)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: reproducibleBuildProblemContainerColor,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: reproducibleBuildProblemBorderColor,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                reproducibleBuildUnknown
-                                    ? Icons.warning_amber_rounded
-                                    : reproducibleBuildNoData
-                                    ? Icons.shield_outlined
-                                    : Icons.gpp_bad_outlined,
-                                size: 12,
-                                color: reproducibleBuildProblemContentColor,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                tr(
-                                  reproducibleBuildUnknown
-                                      ? 'verificationCantCheck'
-                                      : reproducibleBuildNoData
-                                      ? 'verificationNoData'
-                                      : 'notReproducibleBuild',
-                                ),
-                                style: Theme.of(pageThemeContext)
-                                    .textTheme
-                                    .labelSmall
-                                    ?.copyWith(
-                                      color:
-                                          reproducibleBuildProblemContentColor,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                              ),
-                            ],
+                        statusBadge(
+                          backgroundColor:
+                              reproducibleBuildProblemContainerColor,
+                          borderColor: reproducibleBuildProblemBorderColor,
+                          contentColor: reproducibleBuildProblemContentColor,
+                          icon: reproducibleBuildUnknown
+                              ? Icons.warning_amber_rounded
+                              : reproducibleBuildNoData
+                              ? Icons.shield_outlined
+                              : Icons.gpp_bad_outlined,
+                          label: tr(
+                            reproducibleBuildUnknown
+                                ? 'verificationCantCheck'
+                                : reproducibleBuildNoData
+                                ? 'verificationNoData'
+                                : 'notReproducibleBuild',
                           ),
                         ),
                       if (githubAttestationUnsupported ||
                           githubAttestationCantCheck)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: githubAttestationCantCheck
-                                ? Colors.orange.withValues(alpha: 0.16)
-                                : githubAttestationUnsupported
-                                ? Theme.of(pageThemeContext)
-                                      .colorScheme
-                                      .surfaceContainerHighest
-                                      .withValues(alpha: 0.75)
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: githubAttestationCantCheck
-                                  ? Colors.orange.withValues(alpha: 0.55)
-                                  : githubAttestationUnsupported
-                                  ? Theme.of(pageThemeContext)
-                                        .colorScheme
-                                        .outline
-                                        .withValues(alpha: 0.45)
-                                  : Colors.transparent,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                githubAttestationCantCheck
-                                    ? Icons.warning_amber_rounded
-                                    : Icons.shield_outlined,
-                                size: 12,
-                                color: githubAttestationCantCheck
-                                    ? Colors.orange.shade800
-                                    : githubAttestationUnsupported
-                                    ? Theme.of(
-                                        pageThemeContext,
-                                      ).colorScheme.onSurfaceVariant
-                                    : Theme.of(
-                                        pageThemeContext,
-                                      ).colorScheme.onSurfaceVariant,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                tr(
-                                  githubAttestationCantCheck
-                                      ? 'verificationCantCheck'
-                                      : 'unverifiedBuild',
-                                ),
-                                style: Theme.of(pageThemeContext)
-                                    .textTheme
-                                    .labelSmall
-                                    ?.copyWith(
-                                      color: githubAttestationCantCheck
-                                          ? Colors.orange.shade800
-                                          : githubAttestationUnsupported
-                                          ? Theme.of(
-                                              pageThemeContext,
-                                            ).colorScheme.onSurfaceVariant
-                                          : Theme.of(
-                                              pageThemeContext,
-                                            ).colorScheme.onSurfaceVariant,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                              ),
-                            ],
+                        statusBadge(
+                          backgroundColor: githubAttestationCantCheck
+                              ? Colors.orange.withValues(alpha: 0.16)
+                              : githubAttestationUnsupported
+                              ? Theme.of(pageThemeContext)
+                                    .colorScheme
+                                    .surfaceContainerHighest
+                                    .withValues(alpha: 0.75)
+                              : Colors.transparent,
+                          borderColor: githubAttestationCantCheck
+                              ? Colors.orange.withValues(alpha: 0.55)
+                              : githubAttestationUnsupported
+                              ? Theme.of(pageThemeContext)
+                                    .colorScheme
+                                    .outline
+                                    .withValues(alpha: 0.45)
+                              : null,
+                          contentColor: githubAttestationCantCheck
+                              ? Colors.orange.shade800
+                              : Theme.of(
+                                  pageThemeContext,
+                                ).colorScheme.onSurfaceVariant,
+                          icon: githubAttestationCantCheck
+                              ? Icons.warning_amber_rounded
+                              : Icons.shield_outlined,
+                          label: tr(
+                            githubAttestationCantCheck
+                                ? 'verificationCantCheck'
+                                : 'unverifiedBuild',
                           ),
                         ),
                       if (malwareScanHasStatus)
-                        GestureDetector(
+                        statusBadge(
+                          backgroundColor: malwareScanFlagged
+                              ? Theme.of(pageThemeContext)
+                                    .colorScheme
+                                    .errorContainer
+                                    .withValues(alpha: 0.55)
+                              : malwareScanError
+                              ? Colors.orange.withValues(alpha: 0.16)
+                              : Colors.green.withValues(alpha: 0.15),
+                          borderColor: malwareScanFlagged
+                              ? Theme.of(pageThemeContext)
+                                    .colorScheme
+                                    .error
+                                    .withValues(alpha: 0.55)
+                              : malwareScanError
+                              ? Colors.orange.withValues(alpha: 0.55)
+                              : Colors.green.withValues(alpha: 0.5),
+                          contentColor: malwareScanFlagged
+                              ? Theme.of(
+                                  pageThemeContext,
+                                ).colorScheme.onErrorContainer
+                              : malwareScanError
+                              ? Colors.orange.shade800
+                              : Colors.green,
+                          icon: malwareScanFlagged
+                              ? Icons.gpp_bad_outlined
+                              : malwareScanError
+                              ? Icons.warning_amber_rounded
+                              : Icons.verified_outlined,
+                          label: tr(
+                            malwareScanFlagged
+                                ? 'malwareScanFlaggedChip'
+                                : malwareScanError
+                                ? 'malwareScanErrorChip'
+                                : 'malwareScanCleanChip',
+                          ),
                           onTap: app.app.latestMalwareScanReportUrl == null
                               ? null
                               : () => launchUrlString(
                                   app.app.latestMalwareScanReportUrl!,
                                   mode: LaunchMode.externalApplication,
                                 ),
-                          child: Tooltip(
-                            message: app.app.latestMalwareScanDetail ?? '',
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: malwareScanFlagged
-                                    ? Theme.of(pageThemeContext)
-                                          .colorScheme
-                                          .errorContainer
-                                          .withValues(alpha: 0.55)
-                                    : malwareScanError
-                                    ? Colors.orange.withValues(alpha: 0.16)
-                                    : Colors.green.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: malwareScanFlagged
-                                      ? Theme.of(pageThemeContext)
-                                            .colorScheme
-                                            .error
-                                            .withValues(alpha: 0.55)
-                                      : malwareScanError
-                                      ? Colors.orange.withValues(alpha: 0.55)
-                                      : Colors.green.withValues(alpha: 0.5),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    malwareScanFlagged
-                                        ? Icons.gpp_bad_outlined
-                                        : malwareScanError
-                                        ? Icons.warning_amber_rounded
-                                        : Icons.verified_outlined,
-                                    size: 12,
-                                    color: malwareScanFlagged
-                                        ? Theme.of(
-                                            pageThemeContext,
-                                          ).colorScheme.onErrorContainer
-                                        : malwareScanError
-                                        ? Colors.orange.shade800
-                                        : Colors.green,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    tr(
-                                      malwareScanFlagged
-                                          ? 'malwareScanFlaggedChip'
-                                          : malwareScanError
-                                          ? 'malwareScanErrorChip'
-                                          : 'malwareScanCleanChip',
-                                    ),
-                                    style: Theme.of(pageThemeContext)
-                                        .textTheme
-                                        .labelSmall
-                                        ?.copyWith(
-                                          color: malwareScanFlagged
-                                              ? Theme.of(
-                                                  pageThemeContext,
-                                                ).colorScheme.onErrorContainer
-                                              : malwareScanError
-                                              ? Colors.orange.shade800
-                                              : Colors.green,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
+                          tooltip: app.app.latestMalwareScanDetail,
                         ),
                     ],
                   ),

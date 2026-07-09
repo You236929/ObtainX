@@ -58,12 +58,12 @@ private const val OPEN_PERSISTED_DOCUMENT_TREE_REQUEST_CODE = 5107
 /// Third-party installers that implement the standard Intent.EXTRA_RETURN_RESULT convention
 /// (e.g. the stock PackageInstaller, InstallerX-Revived 26.07 preview+) call
 /// setResult(RESULT_OK/RESULT_FIRST_USER) before finishing, delivered here as an authoritative
-/// fast-path signal. Installers that don't implement it finish() without calling setResult(),
-/// which Android reports as RESULT_CANCELED — indistinguishable from an explicit cancel, so
-/// RESULT_CANCELED is never treated as failure; the broadcast/focus/timeout watcher below
-/// remains the source of truth for that case. Requires omitting FLAG_ACTIVITY_NEW_TASK on the
-/// launch intent (see [launchInstallIntent]) — that flag makes Android return a synthetic
-/// immediate RESULT_CANCELED instead of ever delivering the installer's real result.
+/// fast-path signal. Unknown installers stay on the broadcast/focus/timeout watcher because
+/// some installers, such as App Manager, return RESULT_CANCELED even when they may have
+/// installed successfully.
+/// Requires omitting FLAG_ACTIVITY_NEW_TASK on the launch intent (see [launchInstallIntent])
+/// because that flag makes Android return a synthetic immediate RESULT_CANCELED instead of ever
+/// delivering the installer's real result.
 private const val THIRD_PARTY_INSTALL_REQUEST_CODE = 5108
 /// Ignore focus regain if it arrived within this window of the FIRST focus loss (transition bounce).
 /// Only the first loss is recorded; subsequent oscillations during TPI teardown are ignored.
@@ -188,6 +188,7 @@ class MainActivity : FlutterActivity() {
         val handler: Handler,
         val receiver: BroadcastReceiver,
         val releaseCacheFiles: List<File>,
+        val installerSupportsReturnResult: Boolean,
         var responded: Boolean = false,
         var focusLost: Boolean = false,
         var focusLostAtUptimeMs: Long = 0L,
@@ -227,12 +228,48 @@ class MainActivity : FlutterActivity() {
         when (resultCode) {
             Activity.RESULT_OK -> completeThirdPartyInstallSession(watcher, InstallSessionOutcome.Success(true))
             Activity.RESULT_FIRST_USER -> completeThirdPartyInstallSession(watcher, InstallSessionOutcome.Success(false))
-            else -> {
-                // RESULT_CANCELED (or anything else): not a real signal — also what an installer
-                // that doesn't implement EXTRA_RETURN_RESULT produces by default. Let the
-                // broadcast/focus/timeout watcher keep running.
+            Activity.RESULT_CANCELED -> {
+                if (watcher.installerSupportsReturnResult) {
+                    completeThirdPartyInstallSession(
+                        watcher,
+                        InstallSessionOutcome.Success(watcher.packageInstallBroadcastReceived),
+                    )
+                }
+            }
+            else -> completeThirdPartyInstallSession(watcher, InstallSessionOutcome.Success(false))
+        }
+    }
+
+    private fun installerSupportsReturnResult(
+        installerPackageName: String?,
+        installerActivityName: String?,
+    ): Boolean {
+        val packageName = installerPackageName?.lowercase().orEmpty()
+        val activityName = installerActivityName?.lowercase().orEmpty()
+        if (
+            packageName == "com.android.packageinstaller" ||
+            packageName == "com.google.android.packageinstaller"
+        ) {
+            return true
+        }
+        if (packageName.contains("installerx") || activityName.contains("installerx")) {
+            return true
+        }
+        if (!installerPackageName.isNullOrEmpty() && !installerActivityName.isNullOrEmpty()) {
+            val label = try {
+                val activityInfo = packageManager.getActivityInfo(
+                    ComponentName(installerPackageName, installerActivityName),
+                    0,
+                )
+                activityInfo.loadLabel(packageManager).toString().lowercase()
+            } catch (_: Exception) {
+                ""
+            }
+            if (label.contains("installerx")) {
+                return true
             }
         }
+        return false
     }
 
     private fun completeThirdPartyInstallSession(watcher: InstallWatcher, outcome: InstallSessionOutcome) {
@@ -820,6 +857,7 @@ class MainActivity : FlutterActivity() {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         for (resolveInfo in packageManager.queryIntentActivities(installIntent, 0)) {
+            if (!shouldShowInstallerActivity(resolveInfo)) continue
             val key = "${resolveInfo.activityInfo.packageName}|${resolveInfo.activityInfo.name}"
             if (!results.containsKey(key)) {
                 results[key] = resolveInfoToMap(resolveInfo)
@@ -831,6 +869,7 @@ class MainActivity : FlutterActivity() {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         for (resolveInfo in packageManager.queryIntentActivities(viewIntent, 0)) {
+            if (!shouldShowInstallerActivity(resolveInfo)) continue
             val key = "${resolveInfo.activityInfo.packageName}|${resolveInfo.activityInfo.name}"
             if (!results.containsKey(key)) {
                 results[key] = resolveInfoToMap(resolveInfo)
@@ -838,6 +877,21 @@ class MainActivity : FlutterActivity() {
         }
 
         return results.values.toList()
+    }
+
+    private fun shouldShowInstallerActivity(resolveInfo: ResolveInfo): Boolean {
+        val packageName = resolveInfo.activityInfo.packageName
+        if (!packageName.equals("io.github.muntashirakon.AppManager", ignoreCase = true)) {
+            return true
+        }
+        val activityName = resolveInfo.activityInfo.name.lowercase()
+        if (activityName.endsWith("packageinstalleractivity")) {
+            return true
+        }
+        return resolveInfo.loadLabel(packageManager)
+            .toString()
+            .trim()
+            .equals("install", ignoreCase = true)
     }
 
     private fun resolveInfoToMap(resolveInfo: ResolveInfo): Map<String, Any> {
@@ -1009,7 +1063,13 @@ class MainActivity : FlutterActivity() {
             addAction(Intent.ACTION_PACKAGE_REPLACED)
             addDataScheme("package")
         }
-        val sessionWatcher = InstallWatcher(methodResult, handler, receiver, releaseFiles)
+        val sessionWatcher = InstallWatcher(
+            methodResult,
+            handler,
+            receiver,
+            releaseFiles,
+            installerSupportsReturnResult(targetPackage, targetActivity),
+        )
         installWatcher = sessionWatcher
         registerReceiver(receiver, filter)
 

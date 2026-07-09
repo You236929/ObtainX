@@ -1297,31 +1297,12 @@ class AddAppPageState extends State<AddAppPage> {
                   );
                 }
               },
-              decoration: InputDecoration(
+              decoration: appPageOutlinedInputDecoration(
+                context,
+                labelText: null,
                 hintText: tr('searchSomeSourcesLabel'),
                 isDense: true,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(30),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(30),
-                  borderSide: BorderSide(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.outline.withValues(alpha: 0.55),
-                  ),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(30),
-                  borderSide: BorderSide(
-                    color: Theme.of(context).colorScheme.primary,
-                    width: 2,
-                  ),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
+                borderRadius: 30,
               ),
             ),
           ),
@@ -1420,27 +1401,25 @@ class AddAppPageState extends State<AddAppPage> {
           TextField(
             controller: _searchResultFilterController,
             onChanged: (v) => setState(() => _searchResultFilter = v),
-            decoration: InputDecoration(
-              hintText: tr('filter'),
-              prefixIcon: const Icon(Icons.filter_list_rounded, size: 20),
-              suffixIcon: _searchResultFilter.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.close, size: 18),
-                      onPressed: () {
-                        _searchResultFilterController.clear();
-                        setState(() => _searchResultFilter = '');
-                      },
-                    )
-                  : null,
-              isDense: true,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(30),
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 10,
-              ),
-            ),
+            decoration:
+                appPageOutlinedInputDecoration(
+                  context,
+                  labelText: null,
+                  hintText: tr('filter'),
+                  isDense: true,
+                  borderRadius: 30,
+                ).copyWith(
+                  prefixIcon: const Icon(Icons.filter_list_rounded, size: 20),
+                  suffixIcon: _searchResultFilter.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.close, size: 18),
+                          onPressed: () {
+                            _searchResultFilterController.clear();
+                            setState(() => _searchResultFilter = '');
+                          },
+                        )
+                      : null,
+                ),
           ),
           if (entries.isEmpty)
             Padding(

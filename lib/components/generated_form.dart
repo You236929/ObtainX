@@ -363,16 +363,20 @@ InputDecoration _generatedFormDropdownDecoration({
   double borderRadius = 12,
 }) {
   if (!outlined) {
-    return InputDecoration(labelText: labelText);
+    return appPageDropdownInputDecoration(
+      context,
+      labelText: labelText,
+      borderRadius: borderRadius,
+    );
   }
   if (externalLabels) {
-    return appPageOutlinedInputDecoration(
+    return appPageDropdownInputDecoration(
       context,
       labelText: null,
       borderRadius: borderRadius,
     );
   }
-  return appPageOutlinedInputDecoration(
+  return appPageDropdownInputDecoration(
     context,
     labelText: labelText,
     borderRadius: borderRadius,
@@ -558,7 +562,6 @@ class CategoryEditorFields extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final String hex = categoryColorToHex(color);
-    final BorderRadius fieldRadius = BorderRadius.circular(12);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -582,17 +585,6 @@ class CategoryEditorFields extends StatelessWidget {
                     ).copyWith(
                       suffixText:
                           '${nameController.text.length}/$nameMaxLength',
-                      border: OutlineInputBorder(borderRadius: fieldRadius),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: fieldRadius,
-                        borderSide: BorderSide(
-                          color: scheme.outline.withValues(alpha: 0.45),
-                        ),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: fieldRadius,
-                        borderSide: BorderSide(color: scheme.primary),
-                      ),
                     ),
                 onChanged: onNameChanged,
               ),

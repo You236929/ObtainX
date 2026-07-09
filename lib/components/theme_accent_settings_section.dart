@@ -388,9 +388,11 @@ class _CustomColorSliderPanelState extends State<CustomColorSliderPanel> {
             );
 
     final BoxDecoration decoration = BoxDecoration(
-      color: scheme.surfaceContainerHigh,
+      color: Color.alphaBlend(
+        scheme.onSurface.withValues(alpha: 0.055),
+        scheme.surfaceContainerHigh,
+      ),
       borderRadius: BorderRadius.circular(18),
-      border: Border.all(color: scheme.outlineVariant),
     );
 
     if (!_hexEditing) {
@@ -854,6 +856,7 @@ class _ThemeAccentPaletteItem extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(height: 8),
           FutureBuilder<AndroidDeviceInfo>(
             future: androidInfoFuture,
             builder:
@@ -898,9 +901,15 @@ class _AccentSourceSwatch extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final Color borderColor = selected
-        ? scheme.primary
-        : scheme.outline.withValues(alpha: 0.35);
+    final Color haloColor = selected
+        ? Color.alphaBlend(
+            scheme.primary.withValues(alpha: 0.58),
+            scheme.surfaceContainerHighest,
+          )
+        : Color.alphaBlend(
+            scheme.onSurface.withValues(alpha: 0.055),
+            scheme.surfaceContainerHighest,
+          );
     return Semantics(
       button: true,
       selected: selected,
@@ -915,7 +924,7 @@ class _AccentSourceSwatch extends StatelessWidget {
             height: _kAccentSwatchSize,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: borderColor, width: selected ? 3 : 1),
+              color: haloColor,
             ),
             alignment: Alignment.center,
             child: _AccentCircleContent(source: source),
@@ -1016,9 +1025,15 @@ class _CustomHexSwatch extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final Color borderColor = selected
-        ? scheme.primary
-        : scheme.outline.withValues(alpha: 0.35);
+    final Color haloColor = selected
+        ? Color.alphaBlend(
+            scheme.primary.withValues(alpha: 0.58),
+            scheme.surfaceContainerHighest,
+          )
+        : Color.alphaBlend(
+            scheme.onSurface.withValues(alpha: 0.055),
+            scheme.surfaceContainerHighest,
+          );
     final Color fill =
         colorFromNormalizedHex(normalizeCustomSeedHexOrNull(hex) ?? '') ??
         scheme.surfaceContainerHighest;
@@ -1037,7 +1052,7 @@ class _CustomHexSwatch extends StatelessWidget {
             height: _kAccentSwatchSize,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: borderColor, width: selected ? 3 : 1),
+              color: haloColor,
             ),
             alignment: Alignment.center,
             child: ClipOval(
@@ -1076,8 +1091,10 @@ class _AddCustomHexSwatch extends StatelessWidget {
             height: _kAccentSwatchSize,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: scheme.outline.withValues(alpha: 0.35)),
-              color: scheme.surfaceContainerHighest.withValues(alpha: 0.85),
+              color: Color.alphaBlend(
+                scheme.onSurface.withValues(alpha: 0.055),
+                scheme.surfaceContainerHighest,
+              ),
             ),
             alignment: Alignment.center,
             child: Icon(
