@@ -913,33 +913,38 @@ sourceRequestStreamResponse(
     var httpClient = createHttpClient(
       additionalSettings['allowInsecure'] == true,
     );
-    var request = await httpClient.openUrl(method, currentUrl);
-    if (requestHeaders != null) {
-      requestHeaders.forEach((key, value) {
-        request.headers.set(key, value);
-      });
-    }
-    request.cookies.addAll(cookies);
-    request.followRedirects = false;
-    if (postBody != null) {
-      request.headers.contentType = ContentType.json;
-      request.write(jsonEncode(postBody));
-    }
-    final response = await request.close();
-
-    if (followRedirects &&
-        (response.statusCode >= 300 && response.statusCode <= 399)) {
-      final location = response.headers.value(HttpHeaders.locationHeader);
-      if (location != null) {
-        currentUrl = Uri.parse(ensureAbsoluteUrl(location, currentUrl));
-        redirectCount++;
-        cookies = response.cookies;
-        httpClient.close();
-        continue;
+    try {
+      var request = await httpClient.openUrl(method, currentUrl);
+      if (requestHeaders != null) {
+        requestHeaders.forEach((key, value) {
+          request.headers.set(key, value);
+        });
       }
-    }
+      request.cookies.addAll(cookies);
+      request.followRedirects = false;
+      if (postBody != null) {
+        request.headers.contentType = ContentType.json;
+        request.write(jsonEncode(postBody));
+      }
+      final response = await request.close();
 
-    return MapEntry(currentUrl, MapEntry(httpClient, response));
+      if (followRedirects &&
+          (response.statusCode >= 300 && response.statusCode <= 399)) {
+        final location = response.headers.value(HttpHeaders.locationHeader);
+        if (location != null) {
+          currentUrl = Uri.parse(ensureAbsoluteUrl(location, currentUrl));
+          redirectCount++;
+          cookies = response.cookies;
+          httpClient.close();
+          continue;
+        }
+      }
+
+      return MapEntry(currentUrl, MapEntry(httpClient, response));
+    } catch (e) {
+      httpClient.close(force: true);
+      rethrow;
+    }
   }
   throw ObtainiumError('Too many redirects ($maxRedirects)');
 }
@@ -991,6 +996,7 @@ abstract class AppSource {
   bool urlsAlwaysHaveExtension = false;
   bool allowIncludeZips = false;
   bool allowIncludeTarballs = false;
+  bool regionalStore = false;
 
   /// Transient per-check context: the app as it was known before this update
   /// check, set by [SourceProvider.getApp] right before [getLatestAPKDetails].

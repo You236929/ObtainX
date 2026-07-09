@@ -1336,6 +1336,16 @@ class AddAppPageState extends State<AddAppPage> {
           .where((e) => e.canSearch)
           .toList();
       if (searchableSources.isEmpty) return const SizedBox.shrink();
+
+      searchableSources.sort((a, b) {
+        if (a.regionalStore && !b.regionalStore) {
+          return 1;
+        } else if (!a.regionalStore && b.regionalStore) {
+          return -1;
+        }
+        return a.name.compareTo(b.name);
+      });
+
       return Wrap(
         spacing: 8,
         runSpacing: 4,

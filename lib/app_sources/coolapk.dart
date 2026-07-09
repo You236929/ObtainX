@@ -14,6 +14,7 @@ class CoolApk extends AppSource {
     allowSubDomains = true;
     naiveStandardVersionDetection = true;
     allowOverride = false;
+    regionalStore = true;
   }
 
   @override

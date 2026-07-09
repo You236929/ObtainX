@@ -14,6 +14,7 @@ class VivoAppStore extends AppSource {
     naiveStandardVersionDetection = true;
     canSearch = true;
     allowOverride = false;
+    regionalStore = true;
   }
 
   @override
