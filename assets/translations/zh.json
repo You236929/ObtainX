@@ -851,5 +851,7 @@
   "virusTotalErrorGeneric": "VirusTotal 扫描失败：{}",
   "virusTotalDetectionSummary": "{}/{}个引擎标记了此文件",
   "stayHere": "留在当前页",
-  "scanningWithVirusTotal": "正在使用 VirusTotal 扫描"
+  "scanningWithVirusTotal": "正在使用 VirusTotal 扫描",
+  "flaggedByVirusTotal": "VirusTotal 已标记",
+  "virusTotalScanFailed": "VirusTotal 扫描失败"
 }
