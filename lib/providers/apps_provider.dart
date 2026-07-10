@@ -1587,9 +1587,9 @@ class AppsProvider with ChangeNotifier {
       app.latestMalwareScanDetail =
           '3/70 security vendors flagged this file (TEST result - '
           'debugForceFlaggedMalwareScan is on)';
+      final hash = await sha256.bind(file.openRead()).first;
       app.latestMalwareScanReportUrl =
-          'https://www.virustotal.com/gui/file/'
-          '0000000000000000000000000000000000000000000000000000000000000000';
+          'https://www.virustotal.com/gui/file/$hash';
       return malwareScanStatusFlagged;
     }
     if (!willScanApkWithVirusTotal()) {
@@ -1656,11 +1656,14 @@ class AppsProvider with ChangeNotifier {
         // ignore: use_build_context_synchronously
         context: malwareScanContext,
         barrierDismissible: false,
-        builder: (BuildContext ctx) => MalwareScanWarningDialog(
-          appName: app.finalName,
-          status: status,
-          detail: app.latestMalwareScanDetail,
-          reportUrl: app.latestMalwareScanReportUrl,
+        builder: (BuildContext ctx) => Theme(
+          data: Theme.of(malwareScanContext),
+          child: MalwareScanWarningDialog(
+            appName: app.finalName,
+            status: status,
+            detail: app.latestMalwareScanDetail,
+            reportUrl: app.latestMalwareScanReportUrl,
+          ),
         ),
       );
       if (proceed == true) {
@@ -2506,16 +2509,16 @@ class AppsProvider with ChangeNotifier {
           app,
           dir.file,
         );
-        apps[dir.appId]?.downloadProgress = -1;
-        notifyListeners();
         if (malwareScanStatus != null) {
           app.latestMalwareScanStatus = malwareScanStatus;
+          final double progress = malwareScanStatus != malwareScanStatusClean ? -3 : -1;
           apps[dir.appId] = AppInMemory(
             app,
-            appInMemory.downloadProgress,
+            progress,
             appInMemory.installedInfo,
             appInMemory.icon,
           );
+          notifyListeners();
           final bool proceedAfterScan = await _handleMalwareScanResult(
             app: app,
             status: malwareScanStatus,
@@ -2535,6 +2538,11 @@ class AppsProvider with ChangeNotifier {
           if (!proceedAfterScan) {
             return false;
           }
+          apps[dir.appId]?.downloadProgress = -1;
+          notifyListeners();
+        } else {
+          apps[dir.appId]?.downloadProgress = -1;
+          notifyListeners();
         }
       }
       MultiAppMultiError errors = MultiAppMultiError();
@@ -2774,18 +2782,16 @@ class AppsProvider with ChangeNotifier {
         final String? malwareScanStatus = skipMalwareScan
             ? null
             : await scanApkWithVirusTotal(app, file.file);
-        if (!skipMalwareScan) {
-          apps[file.appId]?.downloadProgress = -1;
-          notifyListeners();
-        }
         if (malwareScanStatus != null) {
           app.latestMalwareScanStatus = malwareScanStatus;
+          final double progress = malwareScanStatus != malwareScanStatusClean ? -3 : -1;
           apps[file.appId] = AppInMemory(
             app,
-            appInMemory.downloadProgress,
+            progress,
             appInMemory.installedInfo,
             appInMemory.icon,
           );
+          notifyListeners();
           final bool proceedAfterScan = await _handleMalwareScanResult(
             app: app,
             status: malwareScanStatus,
@@ -2806,6 +2812,13 @@ class AppsProvider with ChangeNotifier {
           );
           if (!proceedAfterScan) {
             return false;
+          }
+          apps[file.appId]?.downloadProgress = -1;
+          notifyListeners();
+        } else {
+          if (!skipMalwareScan) {
+            apps[file.appId]?.downloadProgress = -1;
+            notifyListeners();
           }
         }
       }
@@ -5739,9 +5752,6 @@ class MalwareScanWarningDialog extends StatelessWidget {
           onPressed: () {
             Navigator.of(context).pop(null);
           },
-          style: TextButton.styleFrom(
-            foregroundColor: Theme.of(context).colorScheme.error,
-          ),
           child: Text(tr('cancelInstall')),
         ),
         TextButton(
@@ -5749,6 +5759,9 @@ class MalwareScanWarningDialog extends StatelessWidget {
             hapticSelection();
             Navigator.of(context).pop(true);
           },
+          style: TextButton.styleFrom(
+            foregroundColor: Theme.of(context).colorScheme.error,
+          ),
           child: Text(tr('installAnyway')),
         ),
       ],

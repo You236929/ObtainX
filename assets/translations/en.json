@@ -851,5 +851,7 @@
   "virusTotalErrorGeneric": "VirusTotal scan failed: {}",
   "virusTotalDetectionSummary": "{}/{} engines flagged this file",
   "stayHere": "Stay here",
-  "scanningWithVirusTotal": "Scanning with VirusTotal"
+  "scanningWithVirusTotal": "Scanning with VirusTotal",
+  "flaggedByVirusTotal": "Flagged by VirusTotal",
+  "virusTotalScanFailed": "VirusTotal scan failed"
 }

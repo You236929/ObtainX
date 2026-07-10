@@ -327,10 +327,14 @@ class _DownloadProgressAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (double? dpOrNull, int? totalBytes) = context
-        .select<AppsProvider, (double?, int?)>((p) {
+    final (double? dpOrNull, int? totalBytes, String? scanStatus) = context
+        .select<AppsProvider, (double?, int?, String?)>((p) {
           final a = p.apps[appId];
-          return (a?.downloadProgress, a?.downloadTotalBytes);
+          return (
+            a?.downloadProgress,
+            a?.downloadTotalBytes,
+            a?.app.latestMalwareScanStatus,
+          );
         });
     // Race guard: the download may have ended between the page rebuild that
     // mounted this widget and this build. The page will rebuild and remove us.
@@ -340,15 +344,26 @@ class _DownloadProgressAction extends StatelessWidget {
     final double dp = dpOrNull;
     final bool isScanning = dp == -2;
     final bool isInstalling = dp == -1;
+    final bool isFlaggedState = dp == -3;
     final bool isBusy = isScanning || isInstalling;
-    final String bytesLabel = !isBusy && totalBytes != null
+    final String bytesLabel = !isBusy && !isFlaggedState && totalBytes != null
         ? ' · ${formatBytesForDisplay((dp / 100 * totalBytes).round())} / ${formatBytesForDisplay(totalBytes)}'
         : '';
     final String label = isScanning
         ? '${tr('scanningWithVirusTotal')}…'
         : isInstalling
         ? '${tr('installing')}…'
+        : isFlaggedState
+        ? (scanStatus == malwareScanStatusFlagged
+            ? tr('flaggedByVirusTotal')
+            : tr('virusTotalScanFailed'))
         : tr('downloadingX', args: ['${dp.round()}%$bytesLabel']);
+    final Color barColor = isFlaggedState
+        ? actionTheme.colorScheme.error
+        : actionTheme.colorScheme.primary;
+    final Color textColor = isFlaggedState
+        ? actionTheme.colorScheme.onError
+        : actionTheme.colorScheme.onSurface.withAlpha(200);
     final Widget progressBar = ClipRRect(
       borderRadius: BorderRadius.circular(expressiveRadius),
       child: SizedBox(
@@ -360,10 +375,10 @@ class _DownloadProgressAction extends StatelessWidget {
             Align(
               alignment: Alignment.centerLeft,
               child: FractionallySizedBox(
-                widthFactor: isBusy ? 1.0 : dp / 100,
+                widthFactor: (isBusy || isFlaggedState) ? 1.0 : dp / 100,
                 child: Container(
-                  color: actionTheme.colorScheme.primary.withAlpha(
-                    isBusy ? 55 : 220,
+                  color: barColor.withAlpha(
+                    isFlaggedState ? 220 : (isBusy ? 55 : 220),
                   ),
                 ),
               ),
@@ -377,7 +392,7 @@ class _DownloadProgressAction extends StatelessWidget {
               child: Text(
                 label,
                 style: actionTheme.textTheme.labelLarge?.copyWith(
-                  color: actionTheme.colorScheme.onSurface.withAlpha(200),
+                  color: textColor,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -3926,7 +3941,7 @@ class _AppPageState extends State<AppPage> {
         if (buildVerificationBlocked) {
           _showPageError(
             ObtainiumError(buildVerificationBlockedMessage!),
-            context,
+            themeContext,
             title: tr('errorInstallingUpdate'),
           );
           return;
@@ -3938,15 +3953,15 @@ class _AppPageState extends State<AppPage> {
           hapticHeavyImpact();
           final res = await appsProvider.downloadAndInstallLatestApps(
             app?.app.id != null ? [app!.app.id] : [],
-            context,
+            themeContext,
             dialogTheme: _cachedPageTheme,
           );
-          if (res.isNotEmpty && !trackOnly && context.mounted) {
-            _showPageMessage(successMessage, context);
+          if (res.isNotEmpty && !trackOnly && themeContext.mounted) {
+            _showPageMessage(successMessage, themeContext);
           }
         } catch (e) {
-          if (context.mounted) {
-            _showPageError(e, context, title: tr('errorInstallingUpdate'));
+          if (themeContext.mounted) {
+            _showPageError(e, themeContext, title: tr('errorInstallingUpdate'));
           }
         }
       }
