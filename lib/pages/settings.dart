@@ -1603,188 +1603,189 @@ class _SourceSpecificSectionState extends State<_SourceSpecificSection> {
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _hubProxyController,
-                decoration:
-                    appPageOutlinedInputDecoration(
-                      context,
-                      labelText: tr('GHReqPrefix'),
-                      hintText: 'gh-proxy.org',
-                      isDense: true,
-                    ).copyWith(
-                      suffixIcon: IconButton(
-                        icon: const Icon(Icons.open_in_new_rounded),
-                        onPressed: () => launchUrlString(
-                          'https://github.com/sky22333/hubproxy',
-                          mode: LaunchMode.externalApplication,
-                        ),
-                        tooltip: tr('about'),
-                      ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: TextField(
+            controller: _hubProxyController,
+            decoration:
+                appPageOutlinedInputDecoration(
+                  context,
+                  labelText: tr('GHReqPrefix'),
+                  hintText: 'gh-proxy.org',
+                  isDense: true,
+                ).copyWith(
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.open_in_new_rounded),
+                    onPressed: () => launchUrlString(
+                      'https://github.com/sky22333/hubproxy',
+                      mode: LaunchMode.externalApplication,
                     ),
-                onChanged: (val) {
-                  sp.setSettingString(GitHub.githubReqPrefixKey, val.trim());
-                },
-              ),
-              const SizedBox(height: 8),
-              SwitchListTile(
-                title: Text(tr('GHReqPrefixUseToken')),
-                value:
-                    sp.getSettingBool(GitHub.githubReqPrefixUseTokenKey) ??
-                    false,
-                onChanged: (val) {
-                  sp.setSettingBool(GitHub.githubReqPrefixUseTokenKey, val);
-                },
-                contentPadding: EdgeInsets.zero,
-              ),
-              SwitchListTile(
-                title: Text(tr('repoRenamedCheck')),
-                value: sp.getSettingBool('checkRepoRename') ?? false,
-                onChanged: (val) {
-                  sp.setSettingBool('checkRepoRename', val);
-                },
-                contentPadding: EdgeInsets.zero,
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _gitlabPatController,
-                      obscureText: true,
-                      decoration:
-                          appPageOutlinedInputDecoration(
-                            context,
-                            labelText: tr('gitlabPATLabel'),
-                            isDense: true,
-                          ).copyWith(
-                            suffixIcon: IconButton(
-                              icon: const Icon(Icons.open_in_new_rounded),
-                              onPressed: () => launchUrlString(
-                                'https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html#create-a-personal-access-token',
-                                mode: LaunchMode.externalApplication,
-                              ),
-                              tooltip: tr('about'),
-                            ),
-                          ),
-                      onChanged: (val) {
-                        setState(() {});
-                      },
-                    ),
+                    tooltip: tr('about'),
                   ),
-                  const SizedBox(width: 8),
-                  Builder(
-                    builder: (context) {
-                      final String enteredText = _gitlabPatController.text
-                          .trim();
-                      final String savedText =
-                          sp.getSettingString('gitlab-creds') ?? '';
-                      final bool isDirty = enteredText != savedText;
-                      final bool isValidated = GitLab.hasValidatedPAT(
-                        enteredText,
-                        sp,
-                      );
-                      final bool buttonIsEnabled =
-                          isDirty || (enteredText.isNotEmpty && !isValidated);
+                ),
+            onChanged: (val) {
+              sp.setSettingString(GitHub.githubReqPrefixKey, val.trim());
+            },
+          ),
+        ),
+        SwitchListTile(
+          title: Text(tr('GHReqPrefixUseToken')),
+          value:
+              sp.getSettingBool(GitHub.githubReqPrefixUseTokenKey) ??
+              false,
+          onChanged: (val) {
+            sp.setSettingBool(GitHub.githubReqPrefixUseTokenKey, val);
+          },
+        ),
+        SwitchListTile(
+          title: Text(tr('repoRenamedCheck')),
+          value: sp.getSettingBool('checkRepoRename') ?? false,
+          onChanged: (val) {
+            sp.setSettingBool('checkRepoRename', val);
+          },
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _gitlabPatController,
+                  obscureText: true,
+                  decoration:
+                      appPageOutlinedInputDecoration(
+                        context,
+                        labelText: tr('gitlabPATLabel'),
+                        isDense: true,
+                      ).copyWith(
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.open_in_new_rounded),
+                          onPressed: () => launchUrlString(
+                            'https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html#create-a-personal-access-token',
+                            mode: LaunchMode.externalApplication,
+                          ),
+                          tooltip: tr('about'),
+                        ),
+                      ),
+                  onChanged: (val) {
+                    setState(() {});
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Builder(
+                builder: (context) {
+                  final String enteredText = _gitlabPatController.text
+                      .trim();
+                  final String savedText =
+                      sp.getSettingString('gitlab-creds') ?? '';
+                  final bool isDirty = enteredText != savedText;
+                  final bool isValidated = GitLab.hasValidatedPAT(
+                    enteredText,
+                    sp,
+                  );
+                  final bool buttonIsEnabled =
+                      isDirty || (enteredText.isNotEmpty && !isValidated);
 
-                      return SizedBox(
-                        width: 48,
-                        height: 56,
-                        child: Center(
-                          child: _gitlabChecking
-                              ? SizedBox(
+                  return SizedBox(
+                    width: 48,
+                    height: 56,
+                    child: Center(
+                      child: _gitlabChecking
+                          ? SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: ExpressiveLoadingIndicator(
+                                color: cs.primary,
+                                constraints: const BoxConstraints.tightFor(
                                   width: 20,
                                   height: 20,
-                                  child: ExpressiveLoadingIndicator(
-                                    color: cs.primary,
-                                    constraints: const BoxConstraints.tightFor(
-                                      width: 20,
-                                      height: 20,
+                                ),
+                              ),
+                            )
+                          : (GitLab.hasValidatedPAT(enteredText, sp)
+                                ? Tooltip(
+                                    message: tr('gitlabPATValidated'),
+                                    child: Icon(
+                                      Icons.verified_user,
+                                      color: cs.primary,
                                     ),
-                                  ),
-                                )
-                              : (GitLab.hasValidatedPAT(enteredText, sp)
-                                    ? Tooltip(
-                                        message: tr('gitlabPATValidated'),
-                                        child: Icon(
-                                          Icons.verified_user,
-                                          color: cs.primary,
-                                        ),
-                                      )
-                                    : IconButton.filledTonal(
-                                        icon: const Icon(Icons.save_rounded),
-                                        onPressed: buttonIsEnabled
-                                            ? () async {
-                                                FocusManager
-                                                    .instance
-                                                    .primaryFocus
-                                                    ?.unfocus();
-                                                if (enteredText.isEmpty) {
-                                                  sp.setSettingString(
-                                                    'gitlab-creds',
-                                                    '',
-                                                  );
-                                                  GitLab.clearPATValidation(sp);
-                                                  ScaffoldMessenger.of(
-                                                    context,
-                                                  ).showSnackBar(
-                                                    SnackBar(
-                                                      content: Text(
-                                                        tr('dismiss'),
-                                                      ),
+                                  )
+                                : IconButton.filledTonal(
+                                    icon: const Icon(Icons.save_rounded),
+                                    onPressed: buttonIsEnabled
+                                        ? () async {
+                                            FocusManager
+                                                .instance
+                                                .primaryFocus
+                                                ?.unfocus();
+                                            if (enteredText.isEmpty) {
+                                              sp.setSettingString(
+                                                'gitlab-creds',
+                                                '',
+                                              );
+                                              GitLab.clearPATValidation(sp);
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                    tr('dismiss'),
+                                                  ),
+                                                ),
+                                              );
+                                              setState(() {});
+                                              return;
+                                            }
+                                            setState(() {
+                                              _gitlabChecking = true;
+                                            });
+                                            final String? error =
+                                                await GitLab.validatePAT(
+                                                  enteredText,
+                                                );
+                                            if (!context.mounted) return;
+                                            setState(() {
+                                              _gitlabChecking = false;
+                                            });
+                                            if (error == null) {
+                                              sp.setSettingString(
+                                                'gitlab-creds',
+                                                enteredText,
+                                              );
+                                              GitLab.storePATValidation(
+                                                enteredText,
+                                                sp,
+                                              );
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                    tr(
+                                                      'gitlabPATValidated',
                                                     ),
-                                                  );
-                                                  setState(() {});
-                                                  return;
-                                                }
-                                                setState(() {
-                                                  _gitlabChecking = true;
-                                                });
-                                                final String? error =
-                                                    await GitLab.validatePAT(
-                                                      enteredText,
-                                                    );
-                                                if (!context.mounted) return;
-                                                setState(() {
-                                                  _gitlabChecking = false;
-                                                });
-                                                if (error == null) {
-                                                  sp.setSettingString(
-                                                    'gitlab-creds',
-                                                    enteredText,
-                                                  );
-                                                  GitLab.storePATValidation(
-                                                    enteredText,
-                                                    sp,
-                                                  );
-                                                  ScaffoldMessenger.of(
-                                                    context,
-                                                  ).showSnackBar(
-                                                    SnackBar(
-                                                      content: Text(
-                                                        tr(
-                                                          'gitlabPATValidated',
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  );
-                                                } else {
-                                                  ScaffoldMessenger.of(
-                                                    context,
-                                                  ).showSnackBar(
-                                                    SnackBar(
-                                                      content: Text(error),
-                                                    ),
-                                                  );
-                                                }
-                                              }
-                                            : null,
-                                      )),
-                        ),
-                      );
-                    },
-                  ),
-                ],
+                                                  ),
+                                                ),
+                                              );
+                                            } else {
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                SnackBar(
+                                                  content: Text(error),
+                                                ),
+                                              );
+                                            }
+                                          }
+                                        : null,
+                                  )),
+                    ),
+                  );
+                },
               ),
             ],
           ),

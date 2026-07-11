@@ -814,7 +814,7 @@
   "discardUnsavedPATChangesExplanation": "You have unsaved Personal Access Token changes. To save, tap the Save button. If you switch tabs without saving, these changes will be discarded.",
   "saved": "Saved",
   "bulkScanDiscardResultsBody": "You have unsaved scan results. Leaving this page will discard the results. Continue?",
-  "shareToAppVerifierTooltip": "Share the APK to verifier apps like AppVerifier, AppVerifierBG, Verified Apps etc. before first installation so you can verify its signing certificate hash.",
+  "shareToAppVerifierTooltip": "During new app installs (not updates), pass the APK to verifier apps like AppVerifier to check their certificate signature before installation.",
   "enableVirusTotalScanning": "Scan APKs with VirusTotal",
   "virusTotalScanningTooltip": "Scan downloaded APKs via VirusTotal before they are installed. A flagged or failed scan prompts you to decide during interactive installs, and skips that app (with a notification) during background updates.\n\nEach scan can take a few minutes to finish, especially for an APK VirusTotal hasn't seen before.\n\nYou need a VirusTotal API key to use this feature. The free tier allows 4 requests per minute.",
   "virusTotalApiKeyLabel": "VirusTotal API key",

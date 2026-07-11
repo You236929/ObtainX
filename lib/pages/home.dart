@@ -34,6 +34,119 @@ class NavigationPageItem {
   NavigationPageItem(this.title, this.icon, this.widget);
 }
 
+class _DirectionalIndexedStack extends StatefulWidget {
+  const _DirectionalIndexedStack({
+    required this.index,
+    required this.axis,
+    required this.children,
+  });
+
+  final int index;
+  final Axis axis;
+  final List<Widget> children;
+
+  @override
+  State<_DirectionalIndexedStack> createState() =>
+      _DirectionalIndexedStackState();
+}
+
+class _DirectionalIndexedStackState extends State<_DirectionalIndexedStack>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final CurvedAnimation _animation;
+  int _currentIndex = 0;
+  int? _previousIndex;
+  int _direction = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.index;
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      value: 1.0,
+      vsync: this,
+    );
+    _animation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeInOutCubicEmphasized,
+    );
+    _controller.addStatusListener((status) {
+      if (status != AnimationStatus.completed || !mounted) return;
+      setState(() {
+        _previousIndex = null;
+      });
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _DirectionalIndexedStack oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.index == _currentIndex) return;
+    _direction = widget.index > _currentIndex ? 1 : -1;
+    _previousIndex = _currentIndex;
+    _currentIndex = widget.index;
+    _controller.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _animation.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Offset _offsetFor(int index, double progress) {
+    if (index == _currentIndex) {
+      final double incomingOffset = _direction * (1.0 - progress);
+      return widget.axis == Axis.horizontal
+          ? Offset(incomingOffset, 0)
+          : Offset(0, incomingOffset);
+    }
+    if (index == _previousIndex) {
+      final double outgoingOffset = -_direction * progress;
+      return widget.axis == Axis.horizontal
+          ? Offset(outgoingOffset, 0)
+          : Offset(0, outgoingOffset);
+    }
+    return Offset.zero;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRect(
+      child: AnimatedBuilder(
+        animation: _animation,
+        builder: (context, _) {
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              for (int index = 0; index < widget.children.length; index++)
+                Positioned.fill(
+                  child: Offstage(
+                    offstage:
+                        index != _currentIndex && index != _previousIndex,
+                    child: TickerMode(
+                      enabled:
+                          index == _currentIndex || index == _previousIndex,
+                      child: IgnorePointer(
+                        ignoring: index != _currentIndex,
+                        child: FractionalTranslation(
+                          translation: _offsetFor(index, _animation.value),
+                          child: widget.children[index],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
 class HomePageState extends State<HomePage> {
   List<int> selectedIndexHistory = [];
   int pageSwitchRequestId = 0;
@@ -326,8 +439,8 @@ class HomePageState extends State<HomePage> {
         .select<AppsProvider, (int, bool, int)>(
           (p) => (p.apps.length, p.loadingApps, p.pendingUpdateCount),
         );
-    // Only the blur toggle is read in build now; page-transition settings
-    // are unused after switching to IndexedStack.
+    // Only the blur toggle is read in build now; page switching is handled
+    // locally by the mounted tab stack.
     context.select<SettingsProvider, bool>((s) => s.progressiveBlurEnabled);
     SettingsProvider settingsProvider = context.read<SettingsProvider>();
 
@@ -398,6 +511,11 @@ class HomePageState extends State<HomePage> {
           final ColorScheme scheme = Theme.of(context).colorScheme;
           final bool blurBottomNav = settingsProvider.progressiveBlurEnabled;
           final double screenWidth = MediaQuery.sizeOf(context).width;
+          final Orientation orientation = MediaQuery.orientationOf(context);
+          final Axis pageTransitionAxis =
+              orientation == Orientation.landscape
+              ? Axis.vertical
+              : Axis.horizontal;
           final bool isLargeScreen = screenWidth >= kLargeScreenWidthBreakpoint;
 
           // Shared icon builder (adds the update-count badge to the first tab),
@@ -498,8 +616,9 @@ class HomePageState extends State<HomePage> {
                               context: context,
                               removeLeft: true,
                               removeRight: true,
-                              child: IndexedStack(
+                              child: _DirectionalIndexedStack(
                                 index: homeNavSelectedIndex,
+                                axis: pageTransitionAxis,
                                 children: pages.map((p) => p.widget).toList(),
                               ),
                             ),
@@ -511,10 +630,11 @@ class HomePageState extends State<HomePage> {
                 : Stack(
                     fit: StackFit.expand,
                     children: [
-                      // IndexedStack keeps all four pages mounted so tab switches
-                      // are a single paint op — no rebuild, no tear-down.
-                      IndexedStack(
+                      // Keep all four pages mounted while sliding only the
+                      // active page pair during tab changes.
+                      _DirectionalIndexedStack(
                         index: homeNavSelectedIndex,
+                        axis: pageTransitionAxis,
                         children: pages.map((p) => p.widget).toList(),
                       ),
                     ],
