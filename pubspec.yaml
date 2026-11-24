@@ -130,6 +130,11 @@ dependencies:
 dependency_overrides:
   flutter_charset_detector_web:
     path: third_party/flutter_charset_detector_web_stub
+  # Same reasoning for flutter_local_notifications: its web implementation is
+  # unused on Android and would pull the `web` interop package and JS
+  # notification glue. See third_party/flutter_local_notifications_web_stub.
+  flutter_local_notifications_web:
+    path: third_party/flutter_local_notifications_web_stub
 
 dev_dependencies:
   flutter_test:
