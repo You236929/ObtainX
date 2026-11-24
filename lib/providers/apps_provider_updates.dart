@@ -9,6 +9,7 @@ import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/folders/app_folder.dart';
 import 'package:obtainium/http/source_request_session.dart';
 import 'package:obtainium/providers/apps_provider.dart';
+import 'package:obtainium/providers/logs_provider.dart';
 import 'package:obtainium/providers/notifications_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
@@ -788,6 +789,52 @@ extension AppsProviderUpdates on AppsProvider {
   /// Keeping fetch and save separate lets [checkUpdates] batch many checks into
   /// a few [saveApps] calls instead of saving (and triggering a full UI
   /// rebuild) once per app.
+  /// Site-level batch prefetch (see [AppSource.prefetchBatchUpdate]): groups the
+  /// apps being checked by source and lets each batch-capable source answer
+  /// several of them in one request, into the current session cache. Anything a
+  /// batch cannot answer is left to the per-app path, so failures here are
+  /// logged and dropped rather than surfaced as check errors.
+  Future<void> _prefetchBatchUpdateResponses(
+    List<String> appIds,
+    CancellationToken cancellation,
+  ) async {
+    if (appIds.length < 2) return;
+    final SourceProvider sourceProvider = SourceProvider();
+    final Map<String, AppSource> sourcesByKey = {};
+    final Map<String, List<App>> appsBySource = {};
+    for (final String appId in appIds) {
+      if (cancellation.isCancelled) return;
+      final App? app = apps[appId]?.app;
+      if (app == null || app.url.isEmpty || app.hasPendingRepoRename) continue;
+      AppSource source;
+      try {
+        source = sourceProvider.getSource(
+          app.url,
+          overrideSource: app.overrideSource,
+        );
+      } catch (_) {
+        continue;
+      }
+      if (!source.supportsBatchUpdate) continue;
+      final String key = source.runtimeType.toString();
+      sourcesByKey[key] = source;
+      appsBySource.putIfAbsent(key, () => []).add(app);
+    }
+    for (final MapEntry<String, List<App>> entry in appsBySource.entries) {
+      // One app saves nothing over its own single request.
+      if (entry.value.length < 2 || cancellation.isCancelled) continue;
+      try {
+        await sourcesByKey[entry.key]!.prefetchBatchUpdate(entry.value);
+      } catch (e) {
+        unawaited(
+          LogsProvider().add(
+            'Batch update prefetch failed for ${entry.key}: $e',
+          ),
+        );
+      }
+    }
+  }
+
   Future<_FetchedAppUpdate?> _fetchUpdateSnapshot(String appId) async {
     final App? currentApp = apps[appId]?.app;
     // Pause update checks until the user resolves a pending repo rename.
@@ -1268,6 +1315,10 @@ extension AppsProviderUpdates on AppsProvider {
         );
       }
       total = appIds.length;
+      // Sources that can answer several apps in one request (GitHub's GraphQL
+      // batch) fill the session cache here, so the per-app fetches below hit
+      // it. Never fatal: whatever is left unanswered takes the normal path.
+      await _prefetchBatchUpdateResponses(appIds, cancellation);
       final List<_FetchedAppUpdate> pendingResults = [];
       // Checked, but the source had nothing usable (see
       // sourceAnsweredWithoutUpdate), keyed to that answer. Saved with the

@@ -10,6 +10,10 @@ class SourceRequestSession {
   static final Object _zoneKey = Object();
   final Map<bool, HttpClient> _clients = {};
   final Map<String, Future<http.Response>> _repositoryResponses = {};
+  // Site-level batch prefetch (see AppSource.prefetchBatchUpdate): one request
+  // answers several apps, and the per-app requests then take their answer here
+  // instead of hitting the network again.
+  final Map<String, http.Response> _prefetchedResponses = {};
   bool _closed = false;
 
   static SourceRequestSession? get current {
@@ -25,6 +29,7 @@ class SourceRequestSession {
     } finally {
       session._closed = true;
       session._repositoryResponses.clear();
+      session._prefetchedResponses.clear();
       for (final client in session._clients.values) {
         client.close();
       }
@@ -43,6 +48,19 @@ class SourceRequestSession {
       return client;
     });
   }
+
+  /// Keeps [response] for [url] so the next GET of that URL in this session
+  /// resolves from memory. [url] is the request URL after the source's
+  /// prefetch modifier, i.e. the key [takePrefetchedResponse] is asked for.
+  void prefetchResponse(String url, http.Response response) {
+    if (_closed) return;
+    _prefetchedResponses[url] = response;
+  }
+
+  /// The prefetched answer for [url], consumed so a later request of the same
+  /// URL (a second check in the same session) is not served stale data.
+  http.Response? takePrefetchedResponse(String url) =>
+      _prefetchedResponses.remove(url);
 
   Future<http.Response> repositoryResponse(
     String key,
