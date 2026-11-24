@@ -123,6 +123,14 @@ dependencies:
   # bruckcode.de, MIT, also via m3e_design.
   progress_indicator_m3e: ^0.1.1
 
+# Android-only app: flutter_charset_detector's web implementation is never
+# compiled here, and the published package drags in flutter_web_plugins plus a
+# bundled jschardet asset. Override it with the local no-op stand-in so the
+# federated plugin graph still resolves. See third_party/flutter_charset_detector_web_stub.
+dependency_overrides:
+  flutter_charset_detector_web:
+    path: third_party/flutter_charset_detector_web_stub
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
