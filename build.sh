@@ -43,12 +43,19 @@ flutter clean
 flutter pub get
 APP_VERSION="$(grep '^version: ' pubspec.yaml | sed 's/version: //; s/+.*//' | head -1)"
 DART_DEFINE="--dart-define=APP_VERSION=$APP_VERSION"
+# Release AOT flags: rename identifiers, keep the symbol map out of the APK
+# (./debug_symbols) and strip the AOT snapshot, which shrinks libapp.so. Keep
+# the generated app.android-*.symbols files around, or stack traces from
+# obfuscated builds cannot be symbolized with `flutter symbolize`.
+AOT_FLAGS="--release --obfuscate --split-debug-info=./debug_symbols --extra-gen-snapshot-options=--strip"
 # TODO: Remove once Flutter's libdartjni.so no longer embeds a non-reproducible build ID
 sed -i -E 's/^(-Wl,)(--build-id=none,)?/\1--build-id=none,/' ${PUB_CACHE:-$HOME/.pub-cache}/hosted/*/jni-*/src/CMakeLists.txt
 
-flutter build apk $DART_DEFINE --flavor normal && flutter build apk $DART_DEFINE --split-per-abi --flavor normal
+flutter build apk $DART_DEFINE $AOT_FLAGS --flavor normal && flutter build apk $DART_DEFINE $AOT_FLAGS --split-per-abi --flavor normal
 for file in ./build/app/outputs/flutter-apk/app-*normal*.apk*; do mv "$file" "${file//-normal/}"; done
-# Do the same for the F-Droid flavour
+# Do the same for the F-Droid flavour. No AOT_FLAGS here: F-Droid rebuilds this
+# flavour independently and must reproduce it byte for byte, so it stays on the
+# plain release build the fdroiddata recipe uses.
 flutter build apk $DART_DEFINE --flavor fdroid -t lib/main_fdroid.dart && \
     flutter build apk $DART_DEFINE --split-per-abi --flavor fdroid -t lib/main_fdroid.dart
 for file in ./build/app/outputs/flutter-apk/*.sha1; do gpg --sign --detach-sig "$file"; done

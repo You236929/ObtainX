@@ -93,19 +93,26 @@ jobs:
         run: |
           set -e
           APK_DIR=build/app/outputs/flutter-apk
+          # Release AOT flags: obfuscate, keep the symbol map out of the APK
+          # (./debug_symbols) and strip the AOT snapshot, which shrinks
+          # libapp.so. The symbol files are uploaded below so crash reports can
+          # be symbolized with `flutter symbolize`.
+          AOT_FLAGS="--release --obfuscate --split-debug-info=./debug_symbols --extra-gen-snapshot-options=--strip"
           VERSION=${{ steps.extract_version.outputs.version }}
           BUILD_NAME="$VERSION"
           if [[ "$GITHUB_REF" == refs/heads/* && "$GITHUB_REF" != refs/heads/main ]]; then
             BUILD_NAME="${VERSION}-Preview-${GITHUB_RUN_NUMBER}"
           fi
 
-          flutter build apk --split-per-abi --flavor normal --build-name="$BUILD_NAME"
+          flutter build apk $AOT_FLAGS --split-per-abi --flavor normal --build-name="$BUILD_NAME"
           for f in "$APK_DIR"/app-*-normal-release.apk; do
             arch=$(basename "$f" | sed -E 's/^app-(.+)-normal-release\.apk$/\1/')
             mv "$f" "$APK_DIR/ObtainX-v${VERSION}-${arch}.apk"
           done
 
           rm -f android/key.properties
+          # The fdroid flavour stays unobfuscated: F-Droid rebuilds it
+          # independently and must reproduce it byte for byte.
           flutter build apk --split-per-abi --flavor fdroid -t lib/main_fdroid.dart --build-name="$BUILD_NAME"
           APKSIGNER="$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)"
           echo "Using apksigner: $APKSIGNER"
@@ -137,6 +144,13 @@ jobs:
           path: |
             build/app/outputs/flutter-apk/ObtainX-*.apk
             build/app/outputs/flutter-apk/ObtainX-*-attestation.json
+
+      - name: Upload debug symbols
+        uses: actions/upload-artifact@v7
+        with:
+          name: obtainx-debug-symbols-v${{ steps.extract_version.outputs.version }}
+          path: debug_symbols/*.symbols
+          if-no-files-found: error
 
       # - name: Delete Newest Preview Release
       #   shell: bash
