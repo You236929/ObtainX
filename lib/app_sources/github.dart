@@ -6,10 +6,13 @@ import 'package:crypto/crypto.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:http/http.dart';
+import 'package:http/io_client.dart';
+import 'package:obtainium/app_sources/github_batch.dart';
 import 'package:obtainium/app_sources/gradle_app_id.dart';
 import 'package:obtainium/app_sources/html.dart';
 import 'package:obtainium/components/generated_form_model.dart';
 import 'package:obtainium/custom_errors.dart';
+import 'package:obtainium/http/source_request_session.dart';
 import 'package:obtainium/providers/logs_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
 import 'package:obtainium/providers/source_provider.dart';
@@ -512,6 +515,9 @@ class GitHub extends AppSource {
     bool followRedirects = true,
     Object? postBody,
   }) async {
+    if (forceSkipTlsVerification) {
+      additionalSettings = _tlsUnverifiedSettings(additionalSettings);
+    }
     final Response res = await super.sourceRequest(
       url,
       additionalSettings,
@@ -530,6 +536,9 @@ class GitHub extends AppSource {
       final Map<String, dynamic> unauthSettings = Map<String, dynamic>.from(
         additionalSettings,
       )..[_skipAuthKey] = true;
+      if (forceSkipTlsVerification) {
+        unauthSettings['allowInsecure'] = true;
+      }
       final Response retryRes = await super.sourceRequest(
         url,
         unauthSettings,
@@ -546,6 +555,24 @@ class GitHub extends AppSource {
       }
     }
     return res;
+  }
+
+  /// TEST BRANCH ONLY (`feat/batch-update-test`): force-skip TLS certificate
+  /// verification on every GitHub API request, REST and the GraphQL batch
+  /// alike, so the API layer can be verified behind a TLS-inspecting proxy or
+  /// against a host with a broken certificate chain.
+  ///
+  /// This defeats the point of certificate checks: never merge it into a
+  /// shipping branch.
+  static const bool forceSkipTlsVerification = true;
+
+  /// [additionalSettings] plus the flag [AppSource.sourceRequest] reads to pick
+  /// its certificate-relaxed client (see [forceSkipTlsVerification]).
+  Map<String, dynamic> _tlsUnverifiedSettings(
+    Map<String, dynamic> additionalSettings,
+  ) {
+    return Map<String, dynamic>.from(additionalSettings)
+      ..['allowInsecure'] = true;
   }
 
   /// Request-local flag (never persisted): send the request without the token.
@@ -1732,6 +1759,161 @@ class GitHub extends AppSource {
 
   /// [repoApiUrl], [releaseListLoader]: see [_fetchReleaseDetails]. The tags
   /// fallback uses the same loader.
+  /// GitHub can answer several repositories' update checks in one GraphQL
+  /// request (REST has no multi-repo endpoint), so a batch is worth it
+  /// whenever two or more of the apps being checked share one PAT.
+  @override
+  bool get supportsBatchUpdate => !hostChanged;
+
+  @override
+  Future<int> prefetchBatchUpdate(List<App> apps) async {
+    final SourceRequestSession? session = SourceRequestSession.current;
+    if (session == null || apps.isEmpty) return 0;
+    final SettingsProvider settingsProvider = SettingsProvider();
+    await settingsProvider.initializeSettings();
+    // Responses are keyed per token: apps may carry different PATs, and one
+    // token's answer must never be handed to another's request headers.
+    final Map<String, List<_GitHubBatchRequest>> byToken = {};
+    for (final App app in apps) {
+      if (app.url.isEmpty || app.hasPendingRepoRename) continue;
+      final Map<String, dynamic> mergedSettings = await buildMergedSettings(
+        app.additionalSettings,
+        settingsProvider,
+      );
+      // Proxied requests rewrite the URL and drop the token (see
+      // [getTokenIfAny]): no batch, the per-app path stays authoritative.
+      if ((mergedSettings[githubReqPrefixKey] as String? ?? '').isNotEmpty) {
+        continue;
+      }
+      final String? token = await getTokenIfAny(app.additionalSettings);
+      if (token == null || token.isEmpty) continue; // GraphQL needs auth
+      AppNames names;
+      try {
+        names = getAppNames(standardizeUrl(app.url));
+      } catch (_) {
+        continue;
+      }
+      byToken
+          .putIfAbsent(token, () => [])
+          .add(
+            _GitHubBatchRequest(
+              GitHubBatchRepo(names.author, names.name),
+              mergedSettings,
+            ),
+          );
+    }
+    int cached = 0;
+    for (final MapEntry<String, List<_GitHubBatchRequest>> entry
+        in byToken.entries) {
+      if (entry.value.length < 2) continue; // a batch of one saves nothing
+      for (
+        int start = 0;
+        start < entry.value.length;
+        start += gitHubBatchRepoLimit
+      ) {
+        final int end = start + gitHubBatchRepoLimit < entry.value.length
+            ? start + gitHubBatchRepoLimit
+            : entry.value.length;
+        final chunk = entry.value.sublist(start, end);
+        try {
+          cached += await _prefetchGitHubBatchChunk(
+            chunk,
+            entry.key,
+            session,
+          );
+        } catch (e) {
+          // A failed batch is not a failed check: the per-app requests below
+          // run normally for every app this chunk was meant to answer.
+          unawaited(
+            LogsProvider().add('GitHub batch update check failed: $e'),
+          );
+        }
+      }
+    }
+    return cached;
+  }
+
+  /// Runs one query for [requests] and stores the answers in [session]. Returns
+  /// how many requests were answered.
+  Future<int> _prefetchGitHubBatchChunk(
+    List<_GitHubBatchRequest> requests,
+    String token,
+    SourceRequestSession session,
+  ) async {
+    final List<GitHubBatchRepo> repos = requests
+        .map((request) => request.repo)
+        .toList();
+    // The batch posts straight to the GraphQL endpoint, so it needs its own
+    // client: the shared session client only takes the relaxed certificate
+    // callback through `allowInsecure`, which does not travel with this POST.
+    // TEST BRANCH ONLY: this client is created for the batch POST and skips
+    // certificate verification unconditionally, so the GraphQL answer can be
+    // verified through a TLS-inspecting proxy without trusting its root.
+    final HttpClient rawClient = HttpClient()
+      ..badCertificateCallback = (_, _, _) => true;
+    final IOClient client = IOClient(rawClient);
+    Response response;
+    try {
+      response = await client.post(
+        Uri.parse('https://api.github.com/graphql'),
+        headers: {
+          HttpHeaders.authorizationHeader: 'Bearer $token',
+          HttpHeaders.contentTypeHeader: 'application/json',
+          HttpHeaders.acceptHeader: 'application/json',
+          HttpHeaders.userAgentHeader: 'Obtainium',
+        },
+        body: jsonEncode({
+          'query': gitHubBatchQuery(repos.length),
+          'variables': gitHubBatchVariables(repos),
+        }),
+      );
+    } finally {
+      client.close();
+    }
+    if (response.statusCode != HttpStatus.ok) return 0;
+    final Map<String, dynamic>? data = gitHubBatchData(response.body);
+    if (data == null) return 0;
+    int cached = 0;
+    for (int i = 0; i < requests.length; i++) {
+      final _GitHubBatchRequest request = requests[i];
+      final Map<String, dynamic>? node = gitHubBatchRepositoryNode(data, i);
+      if (node == null) continue;
+      final Map<String, dynamic>? repoJson = gitHubRestRepoJson(
+        node,
+        request.repo,
+      );
+      // A renamed repository is left to the per-app REST probe, which reports
+      // the new URL to the user instead of silently answering for the old one.
+      if (repoJson == null) continue;
+      final String repoApiUrl =
+          'https://api.github.com/repos/${request.repo.nameWithOwner}';
+      final String releasesUrl = '$repoApiUrl/releases?per_page=100';
+      final String repoKey = await generalReqPrefetchModifier(
+        repoApiUrl,
+        request.settings,
+      );
+      final String releasesKey = await generalReqPrefetchModifier(
+        releasesUrl,
+        request.settings,
+      );
+      session.prefetchResponse(repoKey, _jsonResponse(repoJson));
+      session.prefetchResponse(
+        releasesKey,
+        _jsonResponse(gitHubRestReleasesJson(node)),
+      );
+      cached++;
+    }
+    return cached;
+  }
+
+  Response _jsonResponse(Object json) => Response.bytes(
+    utf8.encode(jsonEncode(json)),
+    HttpStatus.ok,
+    headers: {
+      HttpHeaders.contentTypeHeader: 'application/json; charset=utf-8',
+    },
+  );
+
   Future<APKDetails> fetchReleaseDetailsWithTagFallback(
     String standardUrl,
     Map<String, dynamic> additionalSettings,
@@ -1948,4 +2130,14 @@ class GitHub extends AppSource {
     }
     rateLimitErrorCheck(res);
   }
+}
+
+/// One app's place in a GitHub batch request: the repository to look up and
+/// the settings its per-app request will use (so the cached response is keyed
+/// the way that request will ask for it).
+class _GitHubBatchRequest {
+  final GitHubBatchRepo repo;
+  final Map<String, dynamic> settings;
+
+  const _GitHubBatchRequest(this.repo, this.settings);
 }

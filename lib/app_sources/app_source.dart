@@ -197,6 +197,12 @@ abstract class AppSource {
     Future<http.Response> loadResponse([
       Map<String, String> conditionalHeaders = const {},
     ]) async {
+      // A site-level batch prefetch may already hold this answer (see
+      // [prefetchBatchUpdate]); the batch used the same GET and URL key.
+      final prefetched = conditionalHeaders.isEmpty && method == 'GET'
+          ? session?.takePrefetchedResponse(url)
+          : null;
+      if (prefetched != null) return prefetched;
       final service = HttpService();
       final sharedClient = session?.clientFor(allowInsecure);
       final streamed = await service.sourceRequestStreamResponse(
@@ -323,6 +329,19 @@ abstract class AppSource {
   ) {
     throw NotImplementedError();
   }
+
+  /// Whether this source can answer the update checks of several apps with a
+  /// single site-level request (see [prefetchBatchUpdate]).
+  bool get supportsBatchUpdate => false;
+
+  /// Prefetches the update-check responses for [apps] from this source into the
+  /// current [SourceRequestSession], so the per-app requests that follow hit
+  /// that cache instead of the network.
+  ///
+  /// Runs before the per-app worker pool and must never fail a check: anything
+  /// it cannot answer is simply left to the normal per-app path. Returns how
+  /// many app responses were cached. Default: nothing to do.
+  Future<int> prefetchBatchUpdate(List<App> apps) async => 0;
 
   /// Per-source additional form items (e.g. GitHub's sort method, HTML's version regex).
   List<List<GeneratedFormItem>>
