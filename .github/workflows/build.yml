@@ -108,7 +108,7 @@ jobs:
           # stores it), so mangling them would break tracked apps, backups and
           # cross-flavor installs. Symbols are uploaded below for line-number
           # symbolication with `flutter symbolize`.
-          AOT_FLAGS="--release --split-debug-info=./debug_symbols/split-per-abi --extra-gen-snapshot-options=--strip"
+          AOT_FLAGS="--release --split-debug-info=./debug_symbols/split-per-abi"
           VERSION=${{ steps.extract_version.outputs.version }}
           BUILD_NAME="${{ steps.extract_version.outputs.build_name }}"
 
