@@ -15,6 +15,7 @@ import 'package:obtainium/date_time_format.dart'
 import 'package:obtainium/services/app_language.dart';
 import 'package:obtainium/services/bulk_import_service.dart'
     show BulkImportService;
+import 'package:obtainium/services/memory_probe.dart';
 import 'package:obtainium/theme/app_dialog_theme.dart';
 import 'package:obtainium/theme/app_segmented_button_theme.dart';
 import 'package:obtainium/theme/app_text_button_theme.dart';
@@ -279,6 +280,18 @@ void main() async {
       ),
     ),
   );
+  if (memoryProbeEnabled) {
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => unawaited(
+        scheduleMemoryProbe(
+          () => (
+            appCount: appsProvider.apps.length,
+            folderCount: settingsProvider.appFolders.length,
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class Obtainium extends StatefulWidget {
